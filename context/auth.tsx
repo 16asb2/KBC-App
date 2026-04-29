@@ -1,8 +1,12 @@
 import { GoogleSignin, isSuccessResponse } from '@react-native-google-signin/google-signin';
 import { createContext, useContext, useEffect, useState } from 'react';
 
+const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
+
 GoogleSignin.configure({
-  webClientId: '935469832384-5lt4dolp216lrugqtjrcn3274hjqenqj.apps.googleusercontent.com',
+  webClientId: '935469832384-02ign2e0dfo6sj1ergotr445fb6nqv2b.apps.googleusercontent.com',
+  scopes: ['https://www.googleapis.com/auth/calendar'],
+  offlineAccess: false,
 });
 
 type User = {
@@ -17,6 +21,7 @@ type AuthContextType = {
   loading: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  getAccessToken: () => Promise<string | null>;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -26,17 +31,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    GoogleSignin.getCurrentUser().then((currentUser) => {
+    try {
+      const currentUser = GoogleSignin.getCurrentUser();
       if (currentUser) {
         setUser({
-          id: currentUser.data.user.id,
-          name: currentUser.data.user.name,
-          email: currentUser.data.user.email,
-          photo: currentUser.data.user.photo,
+          id: currentUser.user.id,
+          name: currentUser.user.name,
+          email: currentUser.user.email,
+          photo: currentUser.user.photo,
         });
       }
+    } catch (e) {
+      console.warn('Error getting current user:', e);
+    } finally {
       setLoading(false);
-    });
+    }
   }, []);
 
   async function signIn() {
@@ -57,8 +66,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }
 
+  async function getAccessToken(): Promise<string | null> {
+    try {
+      await GoogleSignin.clearCachedAccessToken((await GoogleSignin.getTokens()).accessToken);
+      const tokens = await GoogleSignin.getTokens();
+      return tokens.accessToken;
+    } catch (e) {
+      console.warn('Error getting access token:', e);
+      return null;
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signOut, getAccessToken }}>
       {children}
     </AuthContext.Provider>
   );
