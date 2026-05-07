@@ -1,149 +1,238 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback } from 'react';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
+import { TimelineView } from '@/components/timeline-view';
+import { KBC } from '@/constants/theme';
+import { isAdmin } from '@/constants/admins';
 import { useAuth } from '@/context/auth';
-import { CalendarEvent, fetchEvents } from '@/services/calendar';
+import { useProfile } from '@/context/profile';
+import { useSchedule } from '@/context/schedule';
 
-function formatTime(dateTime: string) {
-  return new Date(dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function isSameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
 }
 
-function formatDate(dateTime: string) {
-  return new Date(dateTime).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
-function isSupervisorSlot(event: CalendarEvent) {
-  const title = event.summary?.toLowerCase() ?? '';
-  return title.includes('super') || title.includes('supervisor');
-}
-
-function isRequested(event: CalendarEvent) {
-  const title = event.summary?.toLowerCase() ?? '';
-  return title.includes('request');
-}
-
-function EventCard({ event }: { event: CalendarEvent }) {
-  const supervisor = isSupervisorSlot(event);
-  const requested = isRequested(event);
-
-  return (
-    <View style={[styles.card, supervisor && styles.supervisorCard, requested && styles.requestedCard]}>
-      <View style={styles.cardLeft}>
-        <Text style={styles.cardDate}>{formatDate(event.start.dateTime)}</Text>
-        <Text style={styles.cardTime}>
-          {formatTime(event.start.dateTime)} – {formatTime(event.end.dateTime)}
-        </Text>
-      </View>
-      <View style={styles.cardRight}>
-        <Text style={styles.cardTitle}>{event.summary}</Text>
-        {supervisor && <Text style={styles.badge}>SUPERVISOR</Text>}
-        {requested && <Text style={[styles.badge, styles.requestedBadge]}>REQUESTED</Text>}
-      </View>
-    </View>
-  );
+function formatHeader(date: Date) {
+  const today = new Date();
+  if (isSameDay(date, today)) return 'Today';
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  if (isSameDay(date, tomorrow)) return 'Tomorrow';
+  return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
 export default function ScheduleScreen() {
-  const { getAccessToken, signOut } = useAuth();
-  const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { user, signOut } = useAuth();
+  const { profile }       = useProfile();
+  const { selectedDate, setSelectedDate, goToToday, allEvents, loading, error, reload } = useSchedule();
+  const isSupervisor = profile?.isSupervisor ?? false;
+  const isAdminUser  = isAdmin(user?.email);
 
-  async function loadEvents() {
-    setLoading(true);
-    setError(null);
-    try {
-      const token = await getAccessToken();
-      if (!token) throw new Error('Not authenticated - please sign out and sign in again');
-      const data = await fetchEvents(token);
-      setEvents(data);
-    } catch (e: any) {
-      const msg = e?.message ?? String(e);
-      console.error('Calendar error:', msg);
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
+  useFocusEffect(useCallback(() => { reload(); }, []));
+
+  function changeDay(offset: number) {
+    const next = new Date(selectedDate);
+    next.setDate(selectedDate.getDate() + offset);
+    setSelectedDate(next);
   }
 
-  useEffect(() => {
-    loadEvents();
-  }, []);
+  const isToday = isSameDay(selectedDate, new Date());
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#c0005a" />
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={loadEvents}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.retryButton, { backgroundColor: '#666', marginTop: 12 }]} onPress={signOut}>
-          <Text style={styles.retryText}>Sign out & try again</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
+  const dayEvents = allEvents.filter(e =>
+    e.start?.dateTime && isSameDay(new Date(e.start.dateTime), selectedDate)
+  );
 
   return (
     <View style={styles.container}>
-      <FlatList
-        data={events}
-        keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <EventCard event={item} />}
-        contentContainerStyle={styles.list}
-        ListHeaderComponent={<Text style={styles.heading}>KBC Schedule</Text>}
-        ListEmptyComponent={<Text style={styles.emptyText}>No upcoming events</Text>}
-        onRefresh={loadEvents}
-        refreshing={loading}
-      />
+      {/* Day navigator */}
+      <View style={styles.dayNav}>
+        <TouchableOpacity style={styles.navArrow} onPress={() => changeDay(-1)}>
+          <Text style={styles.navArrowText}>‹</Text>
+        </TouchableOpacity>
+        <View style={styles.dayTitleGroup}>
+          <Text style={styles.dayTitle}>{formatHeader(selectedDate)}</Text>
+          {!isToday && (
+            <TouchableOpacity style={styles.todayBtn} onPress={goToToday}>
+              <Text style={styles.todayBtnText}>Today</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity style={styles.navArrow} onPress={() => changeDay(1)}>
+          <Text style={styles.navArrowText}>›</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Legend */}
+      <View style={styles.legend}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#c0005a' }]} />
+          <Text style={styles.legendLabel}>Supervisor</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: KBC.purple }]} />
+          <Text style={styles.legendLabel}>Requested</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: KBC.cyan }]} />
+          <Text style={styles.legendLabel}>Events</Text>
+        </View>
+      </View>
+
+      {/* Timeline */}
+      {loading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#c0005a" />
+        </View>
+      ) : error ? (
+        <View style={styles.center}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={reload}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.retryButton, { backgroundColor: '#666', marginTop: 10 }]} onPress={signOut}>
+            <Text style={styles.retryText}>Sign out & try again</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TimelineView
+          events={dayEvents}
+          selectedDate={selectedDate}
+          scrollToFirstEvent
+          onEventPress={event => router.push({ pathname: '/edit-session', params: {
+            id: event.id,
+            summary: event.summary,
+            start: event.start.dateTime,
+            end: event.end.dateTime,
+            description: event.description ?? '',
+          }})}
+          onTimePress={date => router.push({ pathname: '/add-session', params: {
+            presetStart: date.toISOString(),
+          }})}
+        />
+      )}
+
+      {/* Bottom action buttons */}
+      <View style={styles.buttonRow}>
+        {isSupervisor ? (
+          // Supervisors: single "Climb Session" button
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => router.push('/add-session')}
+          >
+            <Text style={styles.addButtonText}>+ Climb Session</Text>
+          </TouchableOpacity>
+        ) : (
+          // Non-supervisors: two buttons — session (goes in as normal) + request
+          <>
+            <TouchableOpacity
+              style={[styles.addButton, styles.addButtonSession]}
+              onPress={() => router.push('/add-session')}
+            >
+              <Text style={styles.addButtonText}>+ Session</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.addButton, styles.addButtonRequest]}
+              onPress={() => router.push({ pathname: '/add-session', params: { isRequest: 'true' } } as any)}
+            >
+              <Text style={styles.addButtonText}>+ Request</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {isAdminUser && (
+          <TouchableOpacity
+            style={styles.addEventButton}
+            onPress={() => router.push({ pathname: '/add-event', params: { presetStart: selectedDate.toISOString() } } as any)}
+          >
+            <Text style={styles.addEventButtonLabel}>+ Special Event</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  list: { padding: 16, gap: 10 },
-  heading: { fontSize: 22, fontWeight: '700', marginBottom: 8, color: '#111' },
-  card: {
+  dayNav: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+    alignItems: 'center',
+    backgroundColor: '#1c1c1c',
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
   },
-  supervisorCard: { borderLeftWidth: 4, borderLeftColor: '#c0005a' },
-  requestedCard: { borderLeftWidth: 4, borderLeftColor: '#f5a623' },
-  cardLeft: { alignItems: 'center', justifyContent: 'center', minWidth: 60 },
-  cardDate: { fontSize: 11, color: '#666', textAlign: 'center' },
-  cardTime: { fontSize: 12, fontWeight: '600', color: '#333', textAlign: 'center' },
-  cardRight: { flex: 1, justifyContent: 'center', gap: 4 },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: '#111' },
-  badge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#c0005a',
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-    paddingHorizontal: 6,
+  navArrow: { padding: 8 },
+  navArrowText: { fontSize: 32, color: '#c0005a', lineHeight: 36 },
+  dayTitleGroup: { flex: 1, alignItems: 'center' },
+  dayTitle: { fontSize: 17, fontWeight: '700', color: '#fff' },
+  todayBtn: {
+    marginTop: 2,
+    paddingHorizontal: 10,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#c0005a',
   },
-  requestedBadge: { backgroundColor: '#f5a623' },
-  errorText: { color: '#c0005a', fontSize: 15, marginBottom: 16, textAlign: 'center' },
+  todayBtnText: { fontSize: 11, color: '#c0005a', fontWeight: '600' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  errorText: { color: '#c0005a', fontSize: 14, marginBottom: 16, textAlign: 'center' },
   retryButton: { backgroundColor: '#c0005a', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
   retryText: { color: '#fff', fontWeight: '600' },
-  emptyText: { color: '#999', textAlign: 'center', marginTop: 40 },
+  legend: {
+    flexDirection: 'row',
+    gap: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: '#f5f5f5',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e8e8e8',
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendLabel: { fontSize: 11, color: '#888', fontWeight: '500' },
+  buttonRow: {
+    flexDirection: 'row',
+    marginHorizontal: 10,
+    marginVertical: 14,
+    gap: 8,
+    alignItems: 'center',
+  },
+  addButton: {
+    flex: 3,
+    backgroundColor: '#c0005a',
+    borderRadius: 14,
+    padding: 16,
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#c0005a',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  addButtonSession: { backgroundColor: '#c0005a' },
+  addButtonRequest: { backgroundColor: KBC.purple },
+  addButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  addEventButton: {
+    flex: 2,
+    backgroundColor: KBC.cyan,
+    borderRadius: 14,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: KBC.cyan,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+  addEventButtonLabel: { fontSize: 16, color: '#fff', fontWeight: '700', textAlign: 'center' },
 });

@@ -1,4 +1,4 @@
-const CALENDAR_ID = 'ca07f9a0c3465cbcd21dc86124545ff50f3cf84fa7e378861f3429ee9a7d47d6@group.calendar.google.com';
+const CALENDAR_ID = process.env.EXPO_PUBLIC_GOOGLE_CALENDAR_ID!;
 const BASE_URL = 'https://www.googleapis.com/calendar/v3';
 
 export type CalendarEvent = {
@@ -40,7 +40,10 @@ export async function createEvent(accessToken: string, event: Omit<CalendarEvent
     body: JSON.stringify(event),
   });
 
-  if (!res.ok) throw new Error(`Failed to create event: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Failed to create event ${res.status}: ${body}`);
+  }
   return res.json();
 }
 

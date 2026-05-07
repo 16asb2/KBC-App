@@ -9,8 +9,8 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      <ThemedText type="title" style={styles.title}>KBC Scheduler</ThemedText>
-      <ThemedText style={styles.subtitle}>Sign in to continue</ThemedText>
+      <ThemedText type="title" style={styles.title}>KBC App</ThemedText>
+      <ThemedText style={styles.subtitle}>We connect through Google</ThemedText>
       {loading ? (
         <ActivityIndicator size="large" />
       ) : (

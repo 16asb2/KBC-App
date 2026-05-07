@@ -1,11 +1,12 @@
 import { GoogleSignin, isSuccessResponse } from '@react-native-google-signin/google-signin';
-import { createContext, useContext, useEffect, useState } from 'react';
-
-const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 GoogleSignin.configure({
-  webClientId: '935469832384-02ign2e0dfo6sj1ergotr445fb6nqv2b.apps.googleusercontent.com',
-  scopes: ['https://www.googleapis.com/auth/calendar'],
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID!,
+  scopes: [
+    'https://www.googleapis.com/auth/calendar',
+    'https://www.googleapis.com/auth/drive.file',
+  ],
   offlineAccess: false,
 });
 
@@ -29,6 +30,11 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Scope is only needed once per session — track whether it's been granted
+  const scopesGranted = useRef(false);
+  // In-flight token request — deduplicate concurrent callers
+  const inflightToken = useRef<Promise<string | null> | null>(null);
 
   useEffect(() => {
     try {
@@ -67,14 +73,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function getAccessToken(): Promise<string | null> {
-    try {
-      await GoogleSignin.clearCachedAccessToken((await GoogleSignin.getTokens()).accessToken);
-      const tokens = await GoogleSignin.getTokens();
-      return tokens.accessToken;
-    } catch (e) {
-      console.warn('Error getting access token:', e);
-      return null;
-    }
+    // If a request is already in flight, piggyback on it instead of firing a second one
+    if (inflightToken.current) return inflightToken.current;
+
+    const request = (async (): Promise<string | null> => {
+      try {
+        // addScopes only needs to run once — subsequent calls cause the race warning
+        if (!scopesGranted.current) {
+          const scopeResult = await GoogleSignin.addScopes({
+            scopes: ['https://www.googleapis.com/auth/drive.file'],
+          });
+          if (!scopeResult) {
+            console.warn('Drive scope was not granted by the user.');
+            return null;
+          }
+          scopesGranted.current = true;
+          // Clear cached token so the new scope is included
+          const { accessToken } = await GoogleSignin.getTokens();
+          await GoogleSignin.clearCachedAccessToken(accessToken);
+        }
+
+        const tokens = await GoogleSignin.getTokens();
+        return tokens.accessToken;
+      } catch (e) {
+        console.warn('Error getting access token:', e);
+        return null;
+      } finally {
+        inflightToken.current = null;
+      }
+    })();
+
+    inflightToken.current = request;
+    return request;
   }
 
   return (
