@@ -3,7 +3,11 @@ const PROJECT_ID = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID!;
 const API_KEY    = process.env.EXPO_PUBLIC_FIREBASE_API_KEY!;
 const BASE       = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 
-export type MembershipStatus = 'active' | 'pending' | 'inactive';
+// 'non-member'  = never had any access (new sign-ups, manually created profiles)
+// 'inactive'    = had a membership that has since expired
+// 'pending'     = purchased access, awaiting admin confirmation
+// 'active'      = has a valid current membership
+export type MembershipStatus = 'active' | 'pending' | 'inactive' | 'non-member';
 
 export type WaiverRecord = {
   signedAt: string;    // ISO timestamp
@@ -25,6 +29,7 @@ export type UserProfile = {
   email: string;           // Google account email (locked)
   photo: string | null;
   membershipStatus: MembershipStatus;
+  isAdmin: boolean;        // dynamically managed via Firestore — except SUPER_ADMIN_EMAIL which is hardcoded
   isSupervisor: boolean;
   punchPassRemaining: number;
   memberSince: string;             // first registration date (ISO)
@@ -117,11 +122,13 @@ export async function getOrCreateProfile(
   const doc = await fsGet(`users/${uid}`);
   if (doc) return { uid, ...decodeDoc(doc) } as UserProfile;
 
+  // Brand-new user — default to non-member with no access
   const fresh: Omit<UserProfile, 'uid'> = {
     name,
     email,
     photo,
-    membershipStatus: 'inactive',
+    membershipStatus: 'non-member',
+    isAdmin: false,
     isSupervisor: false,
     punchPassRemaining: 0,
     memberSince: new Date().toISOString(),
@@ -178,7 +185,8 @@ export async function createNewMemberProfile(
     legalName,
     email: email.toLowerCase().trim(),
     photo: null,
-    membershipStatus: 'inactive',
+    membershipStatus: 'non-member',
+    isAdmin: false,
     isSupervisor: false,
     punchPassRemaining: 0,
     memberSince: now,
@@ -190,4 +198,75 @@ export async function createNewMemberProfile(
   };
   await fsPatch(`users/${uid}`, fresh);
   return { uid, ...fresh };
+}
+
+// ─── Auto-transition: membership status ─────────────────────────────────────
+
+/**
+ * Checks a user's membership fields and auto-transitions status if needed.
+ * Call on sign-in, profile screen load, and after admin membership updates.
+ * Returns updated profile (or null if no change was needed).
+ *
+ * Rules:
+ *  - If membershipExpiry is non-null and in the past → set 'inactive'
+ *  - Punch-pass-only users are NOT promoted to 'active' — punch passes grant
+ *    per-visit access only; membershipStatus stays 'inactive'/'non-member'
+ */
+export async function checkAndUpdateMembershipStatus(
+  profile: UserProfile,
+  updatedByEmail = 'system',
+): Promise<UserProfile | null> {
+  const now = new Date();
+
+  // Expired membership → inactive
+  if (
+    profile.membershipExpiry &&
+    new Date(profile.membershipExpiry) < now &&
+    (profile.membershipStatus === 'active' || profile.membershipStatus === 'pending')
+  ) {
+    const updates = { membershipStatus: 'inactive' as MembershipStatus };
+    await updateProfile(profile.uid, updates, updatedByEmail);
+    return { ...profile, ...updates };
+  }
+
+  return null; // no change needed
+}
+
+// ─── One-time migration (call manually from a dev screen or console) ─────────
+
+/**
+ * Backfills isAdmin, membershipStatus, and membershipExpiry for any existing
+ * user documents that are missing these fields.
+ * Safe to call multiple times — only writes fields that are undefined/null.
+ * Does NOT overwrite existing values.
+ */
+export async function migrateExistingUsers(): Promise<{ updated: number; skipped: number }> {
+  const docs = await fsList('users');
+  let updated = 0;
+  let skipped = 0;
+
+  for (const doc of docs) {
+    const uid    = doc.name.split('/').pop() as string;
+    const data   = decodeDoc(doc);
+    const fields: Record<string, any> = {};
+
+    if (data.isAdmin === undefined || data.isAdmin === null) {
+      fields.isAdmin = false;
+    }
+    if (data.membershipStatus === undefined || data.membershipStatus === null) {
+      fields.membershipStatus = 'active'; // assume existing users were members
+    }
+    if (data.membershipExpiry === undefined) {
+      fields.membershipExpiry = null;
+    }
+
+    if (Object.keys(fields).length > 0) {
+      await fsPatch(`users/${uid}`, fields, Object.keys(fields));
+      updated++;
+    } else {
+      skipped++;
+    }
+  }
+
+  return { updated, skipped };
 }

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 
 import { useAuth } from '@/context/auth';
-import { UserProfile, getOrCreateProfile } from '@/services/firestore';
+import { UserProfile, checkAndUpdateMembershipStatus, getOrCreateProfile } from '@/services/firestore';
 
 type ProfileContextType = {
   profile: UserProfile | null;
@@ -24,7 +24,10 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     if (!user) { setProfile(null); return; }
     setProfileLoading(true);
     try {
-      const p = await getOrCreateProfile(user.id, user.name ?? '', user.email, user.photo);
+      let p = await getOrCreateProfile(user.id, user.name ?? '', user.email, user.photo);
+      // Auto-transition membership status on every sign-in (e.g. expire outdated memberships)
+      const updated = await checkAndUpdateMembershipStatus(p, user.email);
+      if (updated) p = updated;
       setProfile(p);
     } catch (e) {
       console.warn('Failed to load profile:', e);

@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.2 — 2026-05
+
+### Added
+- **Dynamic admin management** — `isAdmin` field moved from hardcoded file to Firestore; new Admin Management screen lets admins grant/revoke admin status in-app
+- **Super-admin** — `SUPER_ADMIN_EMAIL` in `constants/admins.ts` remains hardcoded and irrevocable; all other admin status is Firestore-managed
+- **`non-member` membership status** — new 4th status value; new sign-ups default to `non-member` instead of `inactive`; non-members with no punch passes cannot sign in
+- **Membership auto-expiry** — `checkAndUpdateMembershipStatus()` runs on sign-in and admin saves; expired memberships auto-transition to `inactive`
+- **One-time migration function** — `migrateExistingUsers()` in `services/firestore.ts` backfills `isAdmin`, `membershipStatus`, and `membershipExpiry` for existing documents (call manually)
+- **Calendar mediator layer** — all Google Calendar API calls centralised in `services/calendarService.ts`; includes `listUpcomingEvents`, `createSupervisorEvent`, `joinSession`, `deleteSupervisorEvent`, `createMemberRequest`
+- **Join Session** — "Join This Session" button on supervisor-created events, visible to all authenticated users; uses `calendarService.joinSession` to append participant to event title and `extendedProperties`
+- **Session requests via Firestore** — `createMemberRequest` writes to `sessionRequests` collection; only accessible to active/inactive/pending members (not non-members)
+- **Permission enforcement** — non-members hidden from `+ Request` button; non-members blocked at sign-in with clear message; `isAdmin` check now includes Firestore flag across all screens
+- **3-state membership badge** — Active (green), Inactive/Pending (orange/grey), Non-member (dark grey) throughout member directory and profile card
+
+### Fixed
+- `isAdmin()` now accepts `profileIsAdmin` as second argument — checks both `SUPER_ADMIN_EMAIL` and Firestore `profile.isAdmin`
+- Member directory and sign-in flows handle `non-member` status explicitly
+
+### Known Issues
+- No explicit gym close mechanism — status times out after 2 hours
+- Waiver has no version tracking
+- Boulder seasons UI not built
+- Calendar access for supervisors still requires manual Google Calendar sharing (ACL API integration planned)
+
+---
+
 ## v0.1 — 2026-05
 
 ### Added

@@ -14,7 +14,7 @@ The app is internal-only — not on any public app store. Distributed as an APK 
 ---
 
 ## Current Version
-**v0.1** — May 2026
+**v0.2** — May 2026
 See [CHANGELOG.md](./CHANGELOG.md) for full history.
 
 ---
@@ -125,6 +125,98 @@ Device
         │     ├── boulders/{id}       ← community problem database
         │     ├── seasons/{id}
         │     ├── climbLogs/{id}      ← personal climb history
-        │     └── climbLocations/{id} ← user-created locations
+        │     ├── climbLocations/{id} ← user-created locations
+        │     └── sessionRequests/{id} ← member session requests
         └── (no custom backend)
 ```
+
+---
+
+## User Document Schema (v0.2)
+
+```
+users/{uid}:
+  name:               string        // Google account name (locked)
+  legalName:          string?       // admin-only editable
+  email:              string        // Google account email (locked)
+  photo:              string | null
+  membershipStatus:   'active' | 'pending' | 'inactive' | 'non-member'
+  isAdmin:            boolean       // Firestore-managed; except SUPER_ADMIN_EMAIL (hardcoded)
+  isSupervisor:       boolean
+  punchPassRemaining: number
+  memberSince:        string        // ISO — first registration
+  membershipStart:    string | null // ISO — start of current paid period
+  membershipExpiry:   string | null // ISO — end of current paid period
+  waiverLiability:    string?       // JSON WaiverRecord
+  preferredName:      string?
+  additionalEmails:   string?       // JSON string[]
+  preferredEmail:     string?
+  phone:              string?
+  emergencyContact:   string?       // JSON EmergencyContact
+  additionalComments: string?
+  pendingPunches:     number | null
+  pendingMembership:  string | null // JSON { label, price, start, expiry }
+  lastSignInAt:       string?       // ISO — enforces 24h rule
+  lastUpdatedBy:      string?
+  lastUpdatedAt:      string?
+```
+
+**Membership status transitions:**
+- New sign-up → `non-member`
+- Purchases access → `pending` (awaiting admin confirmation) or directly deducts punch pass
+- Admin confirms → `active`
+- `membershipExpiry` passes → auto-transitioned to `inactive` by `checkAndUpdateMembershipStatus()`
+- Punch-pass-only users stay `inactive` or `non-member` — punch passes are not memberships
+
+---
+
+## Permission Matrix (v0.2)
+
+| Action | Non-member | Inactive | Active/Pending | Supervisor | Admin |
+|---|:---:|:---:|:---:|:---:|:---:|
+| View schedule | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Join supervisor session | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Submit session request | ❌ | ✅ | ✅ | ✅ | ✅ |
+| Create/edit calendar events | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Sign in members at gym | ❌ | ❌ | ❌ | ✅ | ✅ |
+| View member directory | ❌ | ❌ | ❌ | ✅ (read) | ✅ (edit) |
+| Grant/revoke supervisor | ❌ | ❌ | ❌ | ❌ | ✅ |
+| Grant/revoke admin | ❌ | ❌ | ❌ | ❌ | ✅* |
+| Edit membership status | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+*Cannot apply to self or to `SUPER_ADMIN_EMAIL`
+
+---
+
+## Admin Role Architecture (v0.2)
+
+**Two-tier admin system:**
+
+1. **Super-admin** — email hardcoded as `SUPER_ADMIN_EMAIL` in `constants/admins.ts`. Irrevocable — cannot be toggled off in-app. This is the initial board account.
+
+2. **Dynamic admins** — `isAdmin: true` in their Firestore user document. Managed via the Admin Management screen (`/admin-management`). Any admin can grant/revoke other admins except themselves and the super-admin.
+
+The `isAdmin(email, profileIsAdmin?)` helper in `constants/admins.ts` checks both sources.
+
+---
+
+## Calendar Mediator Architecture (v0.2)
+
+All Google Calendar API calls go through `services/calendarService.ts`. No other file should call the Calendar API directly.
+
+```
+services/calendarService.ts
+  ├── listUpcomingEvents(token)           — all users
+  ├── createSupervisorEvent(token, ...)   — supervisors + admins only
+  ├── joinSession(token, eventId, user)   — all authenticated users
+  ├── deleteSupervisorEvent(token, ...)   — supervisors + admins only
+  └── createMemberRequest(data, user)     — members only (not non-member) → Firestore only
+```
+
+**Session participant tracking:**
+- Participants stored in `extendedProperties.private.participants` as JSON array `{uid, name, role}[]`
+- Title rebuilt from participants: `"Artur (sup) + Garry + Andy"`
+- Supervisors/admins get `(sup)` suffix; others get none
+- Joining replaces the event (delete + create) to update both title and extended properties
+
+**Note:** Calendar write access requires the signed-in user's OAuth token to have write permission on the KBC calendar. Non-supervisors attempting to join will receive a 403 if their Google account hasn't been granted access.

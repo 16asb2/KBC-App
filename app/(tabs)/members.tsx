@@ -21,7 +21,7 @@ import { isAdmin } from '@/constants/admins';
 import { WAIVER_META } from '@/constants/waivers';
 import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
-import { MembershipStatus, UserProfile, WaiverRecord, getAllProfiles, updateProfile } from '@/services/firestore';
+import { MembershipStatus, UserProfile, WaiverRecord, checkAndUpdateMembershipStatus, getAllProfiles, updateProfile } from '@/services/firestore';
 import { LogEntry, getUserLogs } from '@/services/logbook';
 
 // ─── Types & constants ───────────────────────────────────────────────────────
@@ -34,10 +34,10 @@ const DURATIONS: { label: string; months: number }[] = [
 ];
 
 const STATUS_LABELS: Record<MembershipStatus, string> = {
-  active: 'Active', pending: 'Pending', inactive: 'Inactive',
+  active: 'Active', pending: 'Pending', inactive: 'Inactive', 'non-member': 'Non-member',
 };
 const STATUS_COLORS: Record<MembershipStatus, string> = {
-  active: KBC.green, pending: KBC.orange, inactive: '#888',
+  active: KBC.green, pending: KBC.orange, inactive: '#aaa', 'non-member': '#666',
 };
 
 function accessBadgeColor(accessType: string): string {
@@ -335,7 +335,7 @@ function EditModal({
               {/* Status segmented control */}
               <Text style={styles.fieldLabel}>Membership Status</Text>
               <View style={styles.segmentRow}>
-                {(['active', 'pending', 'inactive'] as MembershipStatus[]).map(s => (
+                {(['active', 'pending', 'inactive', 'non-member'] as MembershipStatus[]).map(s => (
                   <TouchableOpacity
                     key={s}
                     style={[styles.segment, status === s && { backgroundColor: STATUS_COLORS[s] }]}
@@ -565,6 +565,8 @@ function MemberRow({ member, onPress }: { member: UserProfile; onPress: () => vo
         </Text>
         {(member.membershipStatus === 'active' || member.membershipStatus === 'pending') && member.membershipExpiry
           ? <Text style={styles.memberSub}>Until {formatDate(member.membershipExpiry)}</Text>
+          : member.membershipStatus === 'non-member'
+          ? <Text style={styles.memberSub}>No access pass</Text>
           : <Text style={styles.memberSub}>{member.email}</Text>
         }
       </View>
@@ -586,7 +588,7 @@ export default function MembersScreen() {
   const [editingProfile, setEditingProfile] = useState(false);
   const [editingMemberProfile, setEditingMemberProfile] = useState<UserProfile | null>(null);
 
-  const viewerIsAdmin      = isAdmin(user?.email);
+  const viewerIsAdmin      = isAdmin(user?.email, profile?.isAdmin);
   const viewerIsSupervisor = profile?.isSupervisor ?? false;
   const canSeeAllMembers   = viewerIsAdmin || viewerIsSupervisor;
 
@@ -625,6 +627,9 @@ export default function MembersScreen() {
 
   async function handleSave(member: UserProfile, updates: Partial<UserProfile>) {
     await updateProfile(member.uid, updates, user?.email ?? '');
+    // After any membership change, check and auto-transition status if needed
+    const freshDoc = { ...member, ...updates } as UserProfile;
+    await checkAndUpdateMembershipStatus(freshDoc, user?.email ?? 'admin');
     const fresh = await loadMembers();
     if (member.uid === profile?.uid) await reloadProfile();
     // Re-point editing to fresh data so the modal reflects the saved values
@@ -665,6 +670,11 @@ export default function MembersScreen() {
                     <Text style={styles.badgeText}>ADMIN</Text>
                   </View>
                 )}
+                {profile.isSupervisor && !viewerIsAdmin && (
+                  <View style={[styles.badge, { backgroundColor: KBC.pink }]}>
+                    <Text style={styles.badgeText}>SUPER</Text>
+                  </View>
+                )}
               </View>
               {(profile.membershipStatus === 'active' || profile.membershipStatus === 'pending') && profile.membershipStart && (
                 <Text style={styles.membershipDates}>
@@ -700,6 +710,16 @@ export default function MembersScreen() {
             <Text style={styles.editProfileBtnText}>✏️  Edit My Profile</Text>
           </TouchableOpacity>
         </View>
+      )}
+
+      {/* ── Admin tools ── */}
+      {viewerIsAdmin && (
+        <TouchableOpacity
+          style={styles.adminToolsBtn}
+          onPress={() => router.push('/admin-management' as any)}
+        >
+          <Text style={styles.adminToolsBtnText}>🔑  Admin Management</Text>
+        </TouchableOpacity>
       )}
 
       {/* ── Members list ── */}
@@ -818,6 +838,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10, alignItems: 'center',
   },
   editProfileBtnText: { color: KBC.cyan, fontSize: 14, fontWeight: '700' },
+  adminToolsBtn: {
+    backgroundColor: KBC.purple + '18', borderRadius: 12, padding: 14,
+    alignItems: 'center', borderWidth: 1, borderColor: KBC.purple + '44',
+  },
+  adminToolsBtnText: { color: KBC.purple, fontSize: 14, fontWeight: '700' },
 
   // ── Shared ──
   avatar: { backgroundColor: KBC.pink, alignItems: 'center', justifyContent: 'center' },

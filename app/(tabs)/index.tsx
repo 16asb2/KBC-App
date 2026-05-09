@@ -35,7 +35,7 @@ export default function ScheduleScreen() {
   const { profile }       = useProfile();
   const { selectedDate, setSelectedDate, goToToday, allEvents, loading, error, reload } = useSchedule();
   const isSupervisor = profile?.isSupervisor ?? false;
-  const isAdminUser  = isAdmin(user?.email);
+  const isAdminUser  = isAdmin(user?.email, profile?.isAdmin);
 
   useFocusEffect(useCallback(() => { reload(); }, []));
 
@@ -131,7 +131,7 @@ export default function ScheduleScreen() {
             <Text style={styles.addButtonText}>+ Climb Session</Text>
           </TouchableOpacity>
         ) : (
-          // Non-supervisors: two buttons — session (goes in as normal) + request
+          // Non-supervisors: session button always shown; request only for members (not non-members)
           <>
             <TouchableOpacity
               style={[styles.addButton, styles.addButtonSession]}
@@ -139,12 +139,14 @@ export default function ScheduleScreen() {
             >
               <Text style={styles.addButtonText}>+ Session</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.addButton, styles.addButtonRequest]}
-              onPress={() => router.push({ pathname: '/add-session', params: { isRequest: 'true' } } as any)}
-            >
-              <Text style={styles.addButtonText}>+ Request</Text>
-            </TouchableOpacity>
+            {profile?.membershipStatus !== 'non-member' && (
+              <TouchableOpacity
+                style={[styles.addButton, styles.addButtonRequest]}
+                onPress={() => router.push({ pathname: '/add-session', params: { isRequest: 'true' } } as any)}
+              >
+                <Text style={styles.addButtonText}>+ Request</Text>
+              </TouchableOpacity>
+            )}
           </>
         )}
 
