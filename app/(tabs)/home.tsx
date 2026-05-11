@@ -17,6 +17,8 @@ import {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import FontAwesome5 from '@expo/vector-icons/FontAwesome5';
+
 import { Toast } from '@/components/toast';
 
 import { KBC } from '@/constants/theme';
@@ -32,8 +34,8 @@ import {
   updateProfile,
 } from '@/services/firestore';
 import {
-  ACCESS_OPTIONS, AccessOption, GymStatus as FirestoreGymStatus,
-  addLogEntry, getActiveClimberCount, getGymStatus as getFirestoreGymStatus, setGymOpen,
+  ACCESS_OPTIONS, AccessOption,
+  addLogEntry, setGymOpen,
 } from '@/services/logbook';
 
 // ─── Gym status logic ────────────────────────────────────────────────────────
@@ -52,10 +54,24 @@ function formatDateTime(date: Date) {
   return `${label} at ${formatTime(date)}`;
 }
 
-type GymStatus = { open: true; until: Date } | { open: false; next: Date | null };
+function passLabel(start: string | null, expiry: string | null): string {
+  if (!start || !expiry) return 'Active Member';
+  const months = Math.round(
+    (new Date(expiry).getTime() - new Date(start).getTime()) / (30.44 * 24 * 60 * 60 * 1000),
+  );
+  if (months >= 11) return 'Annual Pass';
+  if (months >= 7)  return '8-Month Pass';
+  if (months >= 3)  return '4-Month Pass';
+  if (months >= 1)  return '1-Month Pass';
+  return 'Active Member';
+}
+
+type GymStatus =
+  | { open: true;  until: Date; supervisorName?: string }
+  | { open: false; next: Date | null };
 
 function getGymStatus(events: any[]): GymStatus {
-  const now  = new Date();
+  const now    = new Date();
   const supers = events.filter(e => e.summary?.toLowerCase().includes('super'));
   const current = supers.find(e => {
     if (!e.start?.dateTime || !e.end?.dateTime) return false;
@@ -67,7 +83,10 @@ function getGymStatus(events: any[]): GymStatus {
       const s = new Date(e.start.dateTime), end = new Date(e.end.dateTime);
       return (s <= now && end > latest) ? end : latest;
     }, new Date(current.end.dateTime));
-    return { open: true, until: openEnd };
+    // Extract first supervisor name from summary (e.g. "Artur (sup) + Garry" → "Artur")
+    const supervisorName = (current.summary as string | undefined)
+      ?.split(/[(+]/)[0]?.trim() || undefined;
+    return { open: true, until: openEnd, supervisorName };
   }
   const upcoming = supers
     .filter(e => e.start?.dateTime && new Date(e.start.dateTime) > now)
@@ -160,9 +179,9 @@ function AccessModal({
                 Please pay the supervisor on duty in cash, or e-transfer the amount to{' '}
                 <Text
                   style={styles.paymentEmail}
-                  onPress={() => Share.share({ message: 'kbc.climb@gmail.com' })}
+                  onPress={() => Share.share({ message: 'climb.kbc@gmail.com' })}
                 >
-                  kbc.climb@gmail.com
+                  climb.kbc@gmail.com
                 </Text>
               </Text>
               <TouchableOpacity style={styles.confirmBtn} onPress={handleDone}>
@@ -188,12 +207,15 @@ function NewMemberModal({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
-  const [legalName, setLegalName] = useState('');
-  const [email, setEmail]         = useState('');
-  const [ecName, setEcName]       = useState('');
-  const [ecRelation, setEcRelation] = useState('');
-  const [ecPhone, setEcPhone]     = useState('');
-  const [saving, setSaving]       = useState(false);
+  const [legalName, setLegalName]     = useState('');
+  const [preferredName, setPreferredName] = useState('');
+  const [memberPhone, setMemberPhone] = useState('');
+  const [email, setEmail]             = useState('');
+  const [ecName, setEcName]           = useState('');
+  const [ecRelation, setEcRelation]   = useState('');
+  const [ecPhone, setEcPhone]         = useState('');
+  const [saving, setSaving]           = useState(false);
+  const [createdName, setCreatedName] = useState<string | null>(null);
 
   async function handleCreate() {
     const ln = legalName.trim();
@@ -212,7 +234,16 @@ function NewMemberModal({
     try {
       const ec: EmergencyContact = { name: en, relationship: er, phone: ep };
       const newMember = await createNewMemberProfile(ln, em, ec, createdByEmail);
-      onCreated(newMember);
+      const extras: Record<string, string> = {};
+      const pn = preferredName.trim();
+      const mp = memberPhone.trim();
+      if (pn) extras.preferredName = pn;
+      if (mp && mp !== '1') extras.phone = `+${mp}`;
+      if (Object.keys(extras).length) await updateProfile(newMember.uid, extras, createdByEmail);
+      const displayName = preferredName.trim() || ln;
+      setCreatedName(displayName);
+      onCreated({ ...newMember, ...extras });
+      setTimeout(onClose, 2000);
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -234,6 +265,17 @@ function NewMemberModal({
               <Text style={styles.sheetCancel}>Cancel</Text>
             </TouchableOpacity>
           </View>
+          {createdName ? (
+            <View style={{ alignItems: 'center', justifyContent: 'center', padding: 40, gap: 16 }}>
+              <Text style={{ fontSize: 48 }}>✅</Text>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: KBC.black, textAlign: 'center' }}>
+                {createdName} added!
+              </Text>
+              <Text style={{ fontSize: 14, color: '#888', textAlign: 'center' }}>
+                Member profile created successfully.
+              </Text>
+            </View>
+          ) : (
           <ScrollView
             style={styles.sheetBody}
             contentContainerStyle={{ paddingBottom: 40 }}
@@ -249,6 +291,24 @@ function NewMemberModal({
               placeholder="e.g. Jane Smith"
               placeholderTextColor="#aaa"
               autoCapitalize="words"
+            />
+            <Text style={styles.newMemberLabel}>Preferred Name (shown in app)</Text>
+            <TextInput
+              style={styles.newMemberInput}
+              value={preferredName}
+              onChangeText={setPreferredName}
+              placeholder="e.g. Jane"
+              placeholderTextColor="#aaa"
+              autoCapitalize="words"
+            />
+            <Text style={styles.newMemberLabel}>Phone Number</Text>
+            <TextInput
+              style={styles.newMemberInput}
+              value={memberPhone}
+              onChangeText={setMemberPhone}
+              placeholder="+1 613 555 0123"
+              placeholderTextColor="#aaa"
+              keyboardType="phone-pad"
             />
             <Text style={styles.newMemberLabel}>Email Address *</Text>
             <TextInput
@@ -301,6 +361,7 @@ function NewMemberModal({
               }
             </TouchableOpacity>
           </ScrollView>
+          )}
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -493,9 +554,6 @@ export default function HomeScreen() {
   const [showPunchDonor, setShowPunchDonor]   = useState(false);
   const [toastMsg, setToastMsg]               = useState('');
   const [toastVisible, setToastVisible]       = useState(false);
-  const [activeCount, setActiveCount]         = useState<number | null>(null);
-  const [gymStatus,   setGymStatus]           = useState<FirestoreGymStatus>({ open: false });
-
   const isPrivileged = isAdmin(user?.email, profile?.isAdmin) || (profile?.isSupervisor ?? false);
 
   function showToast(msg: string) {
@@ -503,37 +561,7 @@ export default function HomeScreen() {
     setToastVisible(true);
   }
 
-  function refreshActiveCount() {
-    getActiveClimberCount().then(setActiveCount).catch(() => {});
-  }
-
-  // Fetch Firestore gym-open status (updates when supervisor signs in)
-  function refreshGymStatus() {
-    getFirestoreGymStatus().then(setGymStatus).catch(() => {});
-  }
-
-  useEffect(() => {
-    refreshGymStatus();
-    const interval = setInterval(refreshGymStatus, 60_000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Schedule-based status is only used for the "next session" time
   const scheduleStatus = useMemo(() => getGymStatus(allEvents), [allEvents]);
-
-  // Fetch active climber count whenever the gym is open (Firestore); refresh every 60s
-  useEffect(() => {
-    if (!gymStatus.open) { setActiveCount(null); return; }
-    let cancelled = false;
-    function refresh() {
-      getActiveClimberCount()
-        .then(n => { if (!cancelled) setActiveCount(n); })
-        .catch(() => {});
-    }
-    refresh();
-    const interval = setInterval(refresh, 60_000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [gymStatus.open]);
 
   const todaySpecialEvents = useMemo(() => {
     const now      = new Date();
@@ -585,37 +613,23 @@ export default function HomeScreen() {
       Alert.alert(
         'No Access Pass',
         isSelf
-          ? 'You don\'t have an active membership or punch passes. Please purchase access to sign in.'
-          : `${targetDisplayName} doesn't have an active membership or punch passes. They need to purchase access before signing in.`,
+          ? 'You don\'t have an active access pass or punch passes. Please purchase access to sign in.'
+          : `${targetDisplayName} doesn't have an active access pass or punch passes. They need to purchase access before signing in.`,
       );
       return;
     }
 
     if (membershipStatus === 'active' || membershipStatus === 'pending') {
-      const confirmed = await new Promise<boolean>(resolve =>
-        Alert.alert(
-          'Sign In',
-          isSelf
-            ? 'Sign in as an active member?'
-            : `Sign in ${targetDisplayName} as an active member?`,
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-            { text: 'Sign In',                 onPress: () => resolve(true)  },
-          ],
-        ),
-      );
-      if (!confirmed) return;
-
       setSigningIn(true);
       try {
-        const now = new Date().toISOString();
-        await addLogEntry({ timestamp: now, userId: target.uid, userName: targetDisplayName, accessType: 'Active Member' });
+        const now   = new Date().toISOString();
+        const label = passLabel(target.membershipStart, target.membershipExpiry);
+        await addLogEntry({ timestamp: now, userId: target.uid, userName: targetDisplayName, accessType: label });
         await updateProfile(target.uid, { lastSignInAt: now }, user.email);
         if (isSelf) await reloadProfile();
         showToast(`✓ ${isSelf ? 'Signed in!' : `${targetDisplayName} signed in!`} Session logged.`);
-        refreshActiveCount();
         // If a supervisor signs in, mark the gym as open
-        if (target.isSupervisor) { setGymOpen(targetDisplayName).then(refreshGymStatus).catch(() => {}); }
+        if (target.isSupervisor) { setGymOpen(targetDisplayName).catch(() => {}); }
       } catch (e: any) { Alert.alert('Error', e.message); }
       finally { setSigningIn(false); }
       return;
@@ -629,7 +643,7 @@ export default function HomeScreen() {
           [
             { text: 'Cancel',           style: 'cancel', onPress: () => resolve(null)       },
             { text: 'Use Punch Pass',                    onPress: () => resolve('punch')      },
-            { text: 'Buy Membership',                    onPress: () => resolve('membership') },
+            { text: 'Buy Access Pass',                   onPress: () => resolve('membership') },
           ],
         ),
       );
@@ -650,9 +664,8 @@ export default function HomeScreen() {
         await addLogEntry({ timestamp: now, userId: target.uid, userName: targetDisplayName, accessType: `Punch Pass (${remaining} left)` });
         if (isSelf) await reloadProfile();
         showToast(`✓ ${isSelf ? 'Signed in!' : `${targetDisplayName} signed in!`} ${remaining} punch${remaining !== 1 ? 'es' : ''} remaining.`);
-        refreshActiveCount();
         // If a supervisor signs in, mark the gym as open
-        if (target.isSupervisor) { setGymOpen(targetDisplayName).then(refreshGymStatus).catch(() => {}); }
+        if (target.isSupervisor) { setGymOpen(targetDisplayName).catch(() => {}); }
       } catch (e: any) { Alert.alert('Error', e.message); }
       finally { setSigningIn(false); }
       return;
@@ -725,7 +738,6 @@ export default function HomeScreen() {
 
       if (!isOther) await reloadProfile();
       showToast(`✓ ${targetName} signed in using ${donorName}'s punch! ${donorLeft} left on their account.`);
-      refreshActiveCount();
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -797,7 +809,6 @@ export default function HomeScreen() {
       });
 
       showToast(`✓ ${isOther ? `${targetName} signed in!` : 'Signed in!'} Session logged.`);
-      refreshActiveCount();
     } catch (e: any) { Alert.alert('Error', e.message); }
     finally { setSigningIn(false); }
   }
@@ -817,26 +828,18 @@ export default function HomeScreen() {
         <View style={styles.card}>
           {loading ? (
             <ActivityIndicator size="large" color={KBC.cyan} />
-          ) : gymStatus.open ? (
+          ) : scheduleStatus.open ? (
             <>
               <View style={[styles.badge, { backgroundColor: KBC.green }]}>
                 <Text style={styles.badgeText}>OPEN NOW</Text>
               </View>
               <Text style={styles.headline}>The gym is open!</Text>
               <Text style={styles.subtext}>
-                {gymStatus.openedBy ? `Opened by ${gymStatus.openedBy}` : 'Come climb!'}{gymStatus.closesAt ? ` · until ${formatTime(new Date(gymStatus.closesAt))}` : ''}
+                {scheduleStatus.supervisorName ? `Supervisor: ${scheduleStatus.supervisorName}` : 'Come climb!'}
+                {' · until '}{formatTime(scheduleStatus.until)}
               </Text>
-              {activeCount !== null && (
-                <View style={styles.climberCountRow}>
-                  <Text style={styles.climberCountText}>
-                    🧗 {activeCount === 0
-                      ? 'No climbers signed in yet'
-                      : `${activeCount} climber${activeCount !== 1 ? 's' : ''} currently in the gym`}
-                  </Text>
-                </View>
-              )}
             </>
-          ) : !scheduleStatus.open && scheduleStatus.next ? (
+          ) : scheduleStatus.next ? (
             <>
               <View style={[styles.badge, { backgroundColor: KBC.darkGrey }]}>
                 <Text style={styles.badgeText}>CLOSED</Text>
@@ -891,13 +894,21 @@ export default function HomeScreen() {
           }
         </TouchableOpacity>
 
+        {/* Sign-In Book */}
+        <TouchableOpacity
+          style={styles.signInBookBtn}
+          onPress={() => router.push('/(tabs)/logbook')}
+        >
+          <Text style={styles.signInBookText}>📖  Sign-In Book</Text>
+        </TouchableOpacity>
+
         {/* Add Member button — privileged only */}
         {isPrivileged && (
           <TouchableOpacity
             style={styles.addMemberBtn}
             onPress={() => setShowNewMember(true)}
           >
-            <Text style={styles.addMemberBtnText}>＋  Add New Member</Text>
+            <Text style={styles.addMemberBtnText}>Add New Member</Text>
           </TouchableOpacity>
         )}
 
@@ -910,37 +921,31 @@ export default function HomeScreen() {
               style={[styles.socialBtn, { backgroundColor: '#5865F2' }]}
               onPress={() => Linking.openURL('https://discord.gg/h8PaBftpBu')}
             >
-              <Text style={styles.socialText}>💬 Discord</Text>
+              <FontAwesome5 name="discord" size={20} color="#fff" />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.socialBtn, { backgroundColor: '#1877F2' }]}
               onPress={() => Linking.openURL('https://www.facebook.com/kingstonboulderingcoop')}
             >
-              <Text style={styles.socialText}>📘 Facebook</Text>
+              <FontAwesome5 name="facebook" size={20} color="#fff" />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.socialBtn, { backgroundColor: '#E1306C' }]}
               onPress={() => Linking.openURL('https://www.instagram.com/kingstonboulderingcoop/')}
             >
-              <Text style={styles.socialText}>📸 Instagram</Text>
+              <FontAwesome5 name="instagram" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity
             style={[styles.socialBtn, styles.emailBtn]}
-            onPress={() => Linking.openURL('mailto:kbc.climb@gmail.com')}
+            onPress={() => Linking.openURL('mailto:climb.kbc@gmail.com')}
           >
-            <Text style={styles.socialText}>✉️  Email the Board — kbc.climb@gmail.com</Text>
+            <FontAwesome5 name="envelope" size={14} color="#fff" />
+            <Text style={styles.socialText}>climb.kbc@gmail.com</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Sign-In Book */}
-        <TouchableOpacity
-          style={styles.signInBookBtn}
-          onPress={() => router.push('/(tabs)/logbook')}
-        >
-          <Text style={styles.signInBookText}>📖  Sign-In Book</Text>
-        </TouchableOpacity>
 
       </ScrollView>
 
@@ -1005,12 +1010,6 @@ const styles = StyleSheet.create({
   headline: { fontSize: 24, fontWeight: '800', color: KBC.white, textAlign: 'center' },
   subtext:  { fontSize: 15, color: '#aaa', textAlign: 'center', lineHeight: 22 },
   highlight: { color: KBC.cyan, fontWeight: '700' },
-  climberCountRow: {
-    backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 10,
-    paddingHorizontal: 14, paddingVertical: 8, marginTop: 4,
-  },
-  climberCountText: { color: KBC.lime, fontSize: 14, fontWeight: '700', textAlign: 'center' },
-
   specialEventsCard: {
     backgroundColor: '#1c1c1e', borderRadius: 16, padding: 18, gap: 10,
     borderLeftWidth: 4, borderLeftColor: KBC.cyan,
@@ -1022,9 +1021,9 @@ const styles = StyleSheet.create({
   specialEventTime: { fontSize: 12, color: '#aaa', marginTop: 1 },
 
   signInBtn: {
-    backgroundColor: KBC.pink, borderRadius: 14, padding: 18,
+    backgroundColor: KBC.purple, borderRadius: 14, padding: 18,
     alignItems: 'center',
-    shadowColor: KBC.pink, shadowOpacity: 0.35, shadowRadius: 10, elevation: 4,
+    shadowColor: KBC.purple, shadowOpacity: 0.35, shadowRadius: 10, elevation: 4,
   },
   signInBtnText: { color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: 0.3, textAlign: 'center' },
 
@@ -1038,15 +1037,14 @@ const styles = StyleSheet.create({
   connectSection: { marginTop: 24, gap: 10 },
   connectHeading: { fontSize: 12, fontWeight: '800', color: '#aaa', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 },
   socialRow: { flexDirection: 'row', gap: 10 },
-  socialBtn: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  emailBtn: { backgroundColor: KBC.darkGrey },
+  socialBtn: { width: 52, height: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  emailBtn: { backgroundColor: KBC.darkGrey, width: undefined, height: undefined, paddingVertical: 14, paddingHorizontal: 16, flexDirection: 'row', gap: 8 },
   socialText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
   signInBookBtn: {
-    marginTop: 16, borderWidth: 1.5, borderColor: KBC.green,
-    borderRadius: 14, padding: 16, alignItems: 'center',
+    marginTop: 4, backgroundColor: KBC.purple, borderRadius: 14, padding: 18, alignItems: 'center',
   },
-  signInBookText: { color: KBC.green, fontSize: 15, fontWeight: '700' },
+  signInBookText: { color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: 0.3, textAlign: 'center' },
 
   // Access modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
@@ -1101,6 +1099,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f8f8', borderRadius: 10, padding: 13,
     fontSize: 15, color: KBC.black, borderWidth: 1, borderColor: '#e8e8e8',
   },
+
 
   // OtherClimberModal
   memberSearch: {

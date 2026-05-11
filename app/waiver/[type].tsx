@@ -49,7 +49,7 @@ export default function WaiverScreen() {
   const saveUid     = isForOther ? targetUid! : (user?.id ?? '');
   const memberName  = isForOther
     ? decodeURIComponent(targetName ?? 'Member')
-    : (user?.name ?? user?.email ?? 'Unknown');
+    : (profile?.legalName || user?.name || user?.email || 'Unknown');
 
   const [scrolledToEnd, setScrolledToEnd] = useState(false);
   const [isMinor, setIsMinor]             = useState(false);
@@ -75,10 +75,16 @@ export default function WaiverScreen() {
     }
   }
 
+  const nameMatches = signedBy.trim().toLowerCase() === memberName.toLowerCase();
+
   async function handleSign() {
     const name = signedBy.trim();
     if (!name) {
       Alert.alert('Name required', `Please enter the ${isForOther ? "member's" : "your"} full legal name.`);
+      return;
+    }
+    if (!nameMatches) {
+      Alert.alert('Name mismatch', `The name entered must exactly match the member's legal name: "${memberName}".`);
       return;
     }
     if (isMinor && !guardianName.trim()) {
@@ -267,9 +273,9 @@ export default function WaiverScreen() {
                 )}
 
                 <TouchableOpacity
-                  style={[styles.signBtn, saving && { opacity: 0.6 }]}
+                  style={[styles.signBtn, (!nameMatches || saving) && { opacity: 0.4 }]}
                   onPress={handleSign}
-                  disabled={saving}
+                  disabled={saving || !nameMatches}
                 >
                   {saving
                     ? <ActivityIndicator color="#fff" />

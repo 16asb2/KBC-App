@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.4 — 2026-05-11
+
+### Added
+- **Members Tab — Access Pass Status**: Replaced generic 4-state membership control with named pass-type buttons (Annual pass / 8-month pass / 4-month pass / 1-month pass / Inactive); end date auto-calculated from start date + duration; admins save directly as active, supervisors save as pending awaiting admin confirmation
+- **Members Tab — Pending pass card**: Cancel ✕ and Confirm ✓ buttons side by side (admin only) to reject or activate a supervisor-submitted pending pass
+- **Members Tab — Remove Member**: Admins can permanently delete a member and all their sign-in log entries via a destructive confirmation dialog
+- **Sign-In Book — Delete entries**: Admins can delete individual sign-in entries; if the deleted entry is within the 24 h window and was the member's most recent sign-in, the 24 h re-entry block is automatically cleared
+- **Sign-In Book — Purchase privacy**: Access pass purchase notes are hidden from non-supervisor users
+- **Sign-in workflow — Direct sign-in**: Members with an active or pending pass are signed in immediately with no confirmation dialog; log entry records the actual pass name (e.g. "Annual Pass") instead of "Active Member"
+- **Add New Member — Preferred Name & Phone**: New optional fields in the create form; preferred name is used as the display name throughout the app
+- **Add New Member — Success confirmation**: After creation the form shows a ✅ confirmation screen for 2 seconds before closing
+- **Add New Member — Waiver name validation**: Waiver signing requires the typed name to exactly match the member's legal name before the sign button enables
+- **Home page — Sign-In Book button**: Repositioned directly below Session Sign-In; both buttons are now the same size and colour (KBC purple)
+
+### Changed
+- **Access pass terminology**: All "membership" references in the buy-access flow replaced with "access pass"; option labels updated (e.g. "Month Membership" → "1-month pass", "Student Annual" → "Student annual pass"); per-month price shown inline for multi-month options
+- **New member default status**: Manually created member profiles now default to `inactive` instead of `non-member`
+- **Gym open/closed status**: Driven entirely from supervisor calendar slots; Firestore `gymStatus` polling removed
+- **Home page social buttons**: Discord, Facebook, Instagram replaced with FontAwesome5 brand icons; icon-only square buttons; email button retains icon + address text; email corrected to climb.kbc@gmail.com
+- **Home page**: Active climber count removed
+- **Members Tab — Supervisor checkbox**: Label simplified to "Supervisor" (removed conditional text)
+
+### Fixed
+- `canAmend` check in Sign-In Book now correctly recognises Firestore-managed admins (was only matching super-admin)
+
+---
+
 ## v0.3 — 2026-05-10
 
 ### Added

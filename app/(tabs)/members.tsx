@@ -21,17 +21,18 @@ import { isAdmin } from '@/constants/admins';
 import { WAIVER_META } from '@/constants/waivers';
 import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
-import { MembershipStatus, UserProfile, WaiverRecord, checkAndUpdateMembershipStatus, getAllProfiles, updateProfile } from '@/services/firestore';
-import { LogEntry, getUserLogs } from '@/services/logbook';
+import { MembershipStatus, UserProfile, WaiverRecord, checkAndUpdateMembershipStatus, deleteProfile, getAllProfiles, updateProfile } from '@/services/firestore';
+import { LogEntry, deleteLogEntry, getUserLogs } from '@/services/logbook';
 
 // ─── Types & constants ───────────────────────────────────────────────────────
 
-const DURATIONS: { label: string; months: number }[] = [
-  { label: '1M',  months: 1  },
-  { label: '4M',  months: 4  },
-  { label: '8M',  months: 8  },
-  { label: '12M', months: 12 },
-];
+const PASS_OPTIONS = [
+  { id: 'annual', label: 'Annual pass',  months: 12 },
+  { id: '8month', label: '8-month pass', months: 8  },
+  { id: '4month', label: '4-month pass', months: 4  },
+  { id: '1month', label: '1-month pass', months: 1  },
+] as const;
+type PassId = typeof PASS_OPTIONS[number]['id'] | 'inactive';
 
 const STATUS_LABELS: Record<MembershipStatus, string> = {
   active: 'Active', pending: 'Pending', inactive: 'Inactive', 'non-member': 'Non-member',
@@ -39,6 +40,19 @@ const STATUS_LABELS: Record<MembershipStatus, string> = {
 const STATUS_COLORS: Record<MembershipStatus, string> = {
   active: KBC.green, pending: KBC.orange, inactive: '#aaa', 'non-member': '#666',
 };
+
+/** Derives the closest PassId from a start/expiry date pair. */
+function getPassId(start: string | null, expiry: string | null): PassId {
+  if (!start || !expiry) return 'inactive';
+  const months = Math.round(
+    (new Date(expiry).getTime() - new Date(start).getTime()) / (30.44 * 24 * 60 * 60 * 1000),
+  );
+  if (months >= 11) return 'annual';
+  if (months >= 7)  return '8month';
+  if (months >= 3)  return '4month';
+  if (months >= 1)  return '1month';
+  return 'inactive';
+}
 
 function accessBadgeColor(accessType: string): string {
   const t = accessType.toLowerCase();
@@ -55,17 +69,10 @@ function addMonths(date: Date, months: number): Date {
   return d;
 }
 
-/** Returns the +NM label (e.g. "+1M") matching the membership period, or a rough estimate. */
-function getMembershipDurationLabel(start: string | null, expiry: string | null): string | null {
-  if (!start || !expiry) return null;
-  const s = new Date(start);
-  const e = new Date(expiry);
-  for (const { label, months } of DURATIONS) {
-    const expected = addMonths(s, months);
-    if (Math.abs(expected.getTime() - e.getTime()) < 2 * 24 * 60 * 60 * 1000) return `+${label}`;
-  }
-  const months = Math.round((e.getTime() - s.getTime()) / (30.44 * 24 * 60 * 60 * 1000));
-  return `+${months}M`;
+/** Derives the human-readable pass label from start/expiry dates (e.g. "Annual pass"). */
+function getPassLabel(start: string | null, expiry: string | null): string {
+  const id = getPassId(start, expiry);
+  return PASS_OPTIONS.find(p => p.id === id)?.label ?? 'Access pass';
 }
 
 // ─── Small components ────────────────────────────────────────────────────────
@@ -125,34 +132,41 @@ function CollapsibleSection({
 
 type EditModalProps = {
   member: UserProfile;
-  canEditMembership: boolean;   // admin only — controls edit panel visibility
+  canEditMembership: boolean;   // admin or supervisor — controls edit panel visibility
+  canDirectActivate: boolean;   // admin only — saves directly as active (supervisor → pending)
   canEditSupervisor: boolean;   // admin only — supervisor checkbox in edit panel
+  canDelete: boolean;           // admin only — remove member entirely
   onSave: (updates: Partial<UserProfile>) => Promise<void>;
   onEditFullProfile: () => void;
+  onDelete: () => void;
   onClose: () => void;
 };
 
 function EditModal({
   member,
   canEditMembership,
+  canDirectActivate,
   canEditSupervisor,
+  canDelete,
   onSave,
   onEditFullProfile,
+  onDelete,
   onClose,
 }: EditModalProps) {
   const insets = useSafeAreaInsets();
 
   // ── Edit panel state ──
   const [showMembershipEdit, setShowMembershipEdit] = useState(false);
-  const [status, setStatus]             = useState<MembershipStatus>(member.membershipStatus);
+  const [selectedPass, setSelectedPass] = useState<PassId>(() => {
+    if (member.membershipStatus === 'inactive' || member.membershipStatus === 'non-member')
+      return 'inactive';
+    return getPassId(member.membershipStart, member.membershipExpiry);
+  });
   const [isSupervisor, setIsSupervisor] = useState(member.isSupervisor);
   const [punches, setPunches]           = useState(member.punchPassRemaining);
-  const [duration, setDuration]         = useState<number | null>(null);
   const [startDate, setStartDate]       = useState(
     member.membershipStart ? new Date(member.membershipStart) : new Date(),
   );
-  // For Pending: whether to record a start date/duration (false = punch-pass-only pending)
-  const [hasDates, setHasDates]         = useState(!!member.membershipStart);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving]             = useState(false);
 
@@ -174,30 +188,40 @@ function EditModal({
   })();
   const pendingPunches = member.pendingPunches ?? 0;
 
-  const displayName    = member.preferredName || member.name;
-  const durationLabel  = getMembershipDurationLabel(member.membershipStart, member.membershipExpiry);
-  const membershipLine = member.membershipStart
-    ? `${formatDate(member.membershipStart)}${durationLabel ? '  ' + durationLabel : ''}`
-    : null;
-
-  const previewExpiry = duration
-    ? addMonths(startDate, duration)
-    : member.membershipExpiry ? new Date(member.membershipExpiry) : null;
+  const displayName  = member.preferredName || member.name;
+  const passOption   = PASS_OPTIONS.find(p => p.id === selectedPass) ?? null;
+  const endDate      = passOption ? addMonths(startDate, passOption.months) : null;
 
   async function handleSaveMembership() {
     setSaving(true);
     try {
       const updates: Partial<UserProfile> = {};
       if (canEditMembership) {
-        updates.membershipStatus = status;
-        const wantDates = status === 'active' || (status === 'pending' && hasDates);
-        if (wantDates && duration) {
-          updates.membershipStart  = startDate.toISOString();
-          updates.membershipExpiry = addMonths(startDate, duration).toISOString();
-        } else if (!wantDates) {
-          // Pending punch-pass-only: clear any existing dates
-          updates.membershipStart  = null;
-          updates.membershipExpiry = null;
+        if (selectedPass === 'inactive') {
+          updates.membershipStatus  = 'inactive';
+          updates.membershipStart   = null;
+          updates.membershipExpiry  = null;
+          updates.pendingMembership = null;
+        } else {
+          const pass   = PASS_OPTIONS.find(p => p.id === selectedPass)!;
+          const expiry = addMonths(startDate, pass.months);
+          if (canDirectActivate) {
+            updates.membershipStatus  = 'active';
+            updates.membershipStart   = startDate.toISOString();
+            updates.membershipExpiry  = expiry.toISOString();
+            updates.pendingMembership = null;
+          } else {
+            // Supervisor → pending, admin must confirm
+            updates.membershipStatus  = 'pending';
+            updates.membershipStart   = startDate.toISOString();
+            updates.membershipExpiry  = expiry.toISOString();
+            updates.pendingMembership = JSON.stringify({
+              label: pass.label,
+              price: '',
+              start: startDate.toISOString(),
+              expiry: expiry.toISOString(),
+            });
+          }
         }
         updates.punchPassRemaining = punches;
       }
@@ -249,18 +273,44 @@ function EditModal({
 
         <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
 
-          {/* ── Membership line ── */}
+          {/* ── Access Pass Status line ── */}
           <View style={styles.membershipDisplayRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.membershipDisplayLabel}>Membership</Text>
-              {/* Status always shown */}
-              <Text style={[styles.membershipStatusText, { color: STATUS_COLORS[member.membershipStatus] }]}>
-                {STATUS_LABELS[member.membershipStatus]}
-              </Text>
-              {/* Date + duration only for Active / Pending */}
-              {(member.membershipStatus === 'active' || member.membershipStatus === 'pending') && membershipLine && (
-                <Text style={styles.membershipDisplayValue}>{membershipLine}</Text>
-              )}
+              <Text style={styles.membershipDisplayLabel}>Access Pass Status</Text>
+              {(() => {
+                // Pending (self-purchased or supervisor-assigned)
+                if (pendingMembership) {
+                  return (
+                    <>
+                      <Text style={[styles.membershipStatusText, { color: KBC.orange }]}>
+                        {pendingMembership.label} (pending)
+                      </Text>
+                      {pendingMembership.start && pendingMembership.expiry && (
+                        <Text style={styles.membershipDisplayValue}>
+                          {formatDate(pendingMembership.start)} → {formatDate(pendingMembership.expiry)}
+                        </Text>
+                      )}
+                    </>
+                  );
+                }
+                if (member.membershipStatus === 'active' && member.membershipStart) {
+                  return (
+                    <>
+                      <Text style={[styles.membershipStatusText, { color: KBC.green }]}>
+                        {getPassLabel(member.membershipStart, member.membershipExpiry)}
+                      </Text>
+                      <Text style={styles.membershipDisplayValue}>
+                        {formatDate(member.membershipStart)} → {formatDate(member.membershipExpiry)}
+                      </Text>
+                    </>
+                  );
+                }
+                return (
+                  <Text style={[styles.membershipStatusText, { color: STATUS_COLORS[member.membershipStatus] }]}>
+                    Inactive
+                  </Text>
+                );
+              })()}
             </View>
             {canEditMembership && (
               <TouchableOpacity
@@ -279,23 +329,28 @@ function EditModal({
             <View style={styles.pendingRow}>
               <Text style={styles.pendingIcon}>🟡</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.pendingLabel}>Membership pending confirmation</Text>
-                <Text style={styles.pendingDetail}>
-                  {pendingMembership.label}  {pendingMembership.price}
-                </Text>
+                <Text style={styles.pendingLabel}>{pendingMembership.label} (pending)</Text>
                 {pendingMembership.start && pendingMembership.expiry && (
                   <Text style={styles.pendingDetail}>
                     {formatDate(pendingMembership.start)} → {formatDate(pendingMembership.expiry)}
                   </Text>
                 )}
               </View>
-              {canEditMembership && (
-                <TouchableOpacity
-                  style={styles.pendingConfirmBtn}
-                  onPress={() => onSave({ membershipStatus: 'active', pendingMembership: null })}
-                >
-                  <Text style={styles.pendingConfirmBtnText}>Confirm ✓</Text>
-                </TouchableOpacity>
+              {canEditMembership && canDirectActivate && (
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <TouchableOpacity
+                    style={styles.pendingCancelBtn}
+                    onPress={() => onSave({ membershipStatus: 'inactive', pendingMembership: null, membershipStart: null, membershipExpiry: null })}
+                  >
+                    <Text style={styles.pendingCancelBtnText}>✕</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.pendingConfirmBtn}
+                    onPress={() => onSave({ membershipStatus: 'active', pendingMembership: null })}
+                  >
+                    <Text style={styles.pendingConfirmBtnText}>Confirm ✓</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           )}
@@ -332,72 +387,43 @@ function EditModal({
           {showMembershipEdit && canEditMembership && (
             <View style={styles.editPanel}>
 
-              {/* Status segmented control */}
-              <Text style={styles.fieldLabel}>Membership Status</Text>
-              <View style={styles.segmentRow}>
-                {(['active', 'pending', 'inactive', 'non-member'] as MembershipStatus[]).map(s => (
+              {/* Pass type selection */}
+              <Text style={styles.fieldLabel}>Access Pass Status</Text>
+              <View style={styles.passRow}>
+                {PASS_OPTIONS.map(p => (
                   <TouchableOpacity
-                    key={s}
-                    style={[styles.segment, status === s && { backgroundColor: STATUS_COLORS[s] }]}
-                    onPress={() => { setStatus(s); if (s !== 'active' && s !== 'pending') setDuration(null); }}
+                    key={p.id}
+                    style={[styles.passBtn, selectedPass === p.id && styles.passBtnActive]}
+                    onPress={() => setSelectedPass(p.id)}
                   >
-                    <Text style={[styles.segmentText, status === s && styles.segmentTextActive]}>
-                      {STATUS_LABELS[s]}
+                    <Text style={[styles.passBtnText, selectedPass === p.id && styles.passBtnTextActive]}>
+                      {p.label}
                     </Text>
                   </TouchableOpacity>
                 ))}
+                <TouchableOpacity
+                  style={[styles.passBtn, selectedPass === 'inactive' && styles.passBtnInactive]}
+                  onPress={() => setSelectedPass('inactive')}
+                >
+                  <Text style={[styles.passBtnText, selectedPass === 'inactive' && styles.passBtnTextInactive]}>
+                    Inactive
+                  </Text>
+                </TouchableOpacity>
               </View>
 
-              {/* Date + duration for Active or Pending */}
-              {(status === 'active' || status === 'pending') && (
+              {/* Date fields — only when a pass (not Inactive) is selected */}
+              {selectedPass !== 'inactive' && (
                 <>
-                  {/* Pending: checkbox to toggle whether dates apply */}
-                  {status === 'pending' && (
-                    <TouchableOpacity
-                      style={[styles.toggleRow, { marginTop: 8 }]}
-                      onPress={() => { setHasDates(v => !v); setDuration(null); }}
-                    >
-                      <View style={[styles.checkbox, hasDates && styles.checkboxChecked]}>
-                        {hasDates && <Text style={styles.checkmark}>✓</Text>}
-                      </View>
-                      <Text style={styles.toggleLabel}>Set membership start date & duration</Text>
-                    </TouchableOpacity>
-                  )}
+                  <Text style={styles.fieldLabel}>Start Date</Text>
+                  <TouchableOpacity style={styles.dateField} onPress={() => setShowDatePicker(true)}>
+                    <Text style={styles.dateFieldText}>{formatDate(startDate.toISOString())}</Text>
+                    <Text style={styles.dateFieldEdit}>Change</Text>
+                  </TouchableOpacity>
 
-                  {/* Date + duration fields — always for active, only when hasDates for pending */}
-                  {(status === 'active' || hasDates) && (
-                    <>
-                      <Text style={styles.fieldLabel}>Start Date</Text>
-                      <TouchableOpacity style={styles.dateField} onPress={() => setShowDatePicker(true)}>
-                        <Text style={styles.dateFieldText}>{formatDate(startDate.toISOString())}</Text>
-                        <Text style={styles.dateFieldEdit}>Change</Text>
-                      </TouchableOpacity>
-
-                      <Text style={styles.fieldLabel}>Duration</Text>
-                      <View style={styles.durationRow}>
-                        {DURATIONS.map(d => (
-                          <TouchableOpacity
-                            key={d.months}
-                            style={[styles.durationBtn, duration === d.months && styles.durationBtnActive]}
-                            onPress={() => setDuration(d.months)}
-                          >
-                            <Text style={[styles.durationBtnText, duration === d.months && styles.durationBtnTextActive]}>
-                              {d.label}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-
-                      {previewExpiry && (
-                        <View style={styles.datePreview}>
-                          <Text style={styles.datePreviewLabel}>
-                            {duration ? 'Expires on' : 'Current expiry'}
-                          </Text>
-                          <Text style={styles.datePreviewValue}>{formatDate(previewExpiry.toISOString())}</Text>
-                        </View>
-                      )}
-                    </>
-                  )}
+                  <Text style={styles.fieldLabel}>End Date</Text>
+                  <View style={[styles.dateField, { backgroundColor: '#f0f0f0' }]}>
+                    <Text style={styles.dateFieldText}>{endDate ? formatDate(endDate.toISOString()) : '—'}</Text>
+                  </View>
                 </>
               )}
 
@@ -415,17 +441,12 @@ function EditModal({
 
               {/* Supervisor checkbox (admin only) */}
               {canEditSupervisor && (
-                <>
-                  <Text style={styles.fieldLabel}>Supervisor</Text>
-                  <TouchableOpacity style={styles.toggleRow} onPress={() => setIsSupervisor(v => !v)}>
-                    <View style={[styles.checkbox, isSupervisor && styles.checkboxChecked]}>
-                      {isSupervisor && <Text style={styles.checkmark}>✓</Text>}
-                    </View>
-                    <Text style={styles.toggleLabel}>
-                      {isSupervisor ? 'Supervisor — can open the gym' : 'Regular member'}
-                    </Text>
-                  </TouchableOpacity>
-                </>
+                <TouchableOpacity style={[styles.toggleRow, { marginTop: 12 }]} onPress={() => setIsSupervisor(v => !v)}>
+                  <View style={[styles.checkbox, isSupervisor && styles.checkboxChecked]}>
+                    {isSupervisor && <Text style={styles.checkmark}>✓</Text>}
+                  </View>
+                  <Text style={styles.toggleLabel}>Supervisor</Text>
+                </TouchableOpacity>
               )}
 
               {/* Panel save / cancel */}
@@ -535,6 +556,12 @@ function EditModal({
             </TouchableOpacity>
           </View>
 
+          {canDelete && (
+            <TouchableOpacity style={styles.deleteMemberBtn} onPress={onDelete}>
+              <Text style={styles.deleteMemberBtnText}>Remove Member</Text>
+            </TouchableOpacity>
+          )}
+
           <View style={{ height: 16 }} />
         </ScrollView>
       </View>
@@ -625,6 +652,33 @@ export default function MembersScreen() {
     }
   }
 
+  async function handleDeleteMember(member: UserProfile) {
+    const displayName = member.preferredName || member.name;
+    Alert.alert(
+      'Remove Member',
+      `Permanently delete ${displayName} and all their data? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove', style: 'destructive',
+          onPress: async () => {
+            try {
+              // Delete all log entries for this member
+              const logs = await getUserLogs(member.uid);
+              await Promise.all(logs.map(l => deleteLogEntry(l.id)));
+              // Delete the profile document
+              await deleteProfile(member.uid);
+              setEditing(null);
+              await loadMembers();
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          },
+        },
+      ],
+    );
+  }
+
   async function handleSave(member: UserProfile, updates: Partial<UserProfile>) {
     await updateProfile(member.uid, updates, user?.email ?? '');
     // After any membership change, check and auto-transition status if needed
@@ -678,10 +732,8 @@ export default function MembersScreen() {
               </View>
               {(profile.membershipStatus === 'active' || profile.membershipStatus === 'pending') && profile.membershipStart && (
                 <Text style={styles.membershipDates}>
-                  {formatDate(profile.membershipStart)}
-                  {getMembershipDurationLabel(profile.membershipStart, profile.membershipExpiry)
-                    ? '  ' + getMembershipDurationLabel(profile.membershipStart, profile.membershipExpiry)
-                    : ''}
+                  {getPassLabel(profile.membershipStart, profile.membershipExpiry)}
+                  {'  '}{formatDate(profile.membershipStart)} → {formatDate(profile.membershipExpiry)}
                 </Text>
               )}
               {profile.punchPassRemaining > 0 && (
@@ -758,8 +810,10 @@ export default function MembersScreen() {
       {editing && (
         <EditModal
           member={editing}
-          canEditMembership={viewerIsAdmin}
+          canEditMembership={viewerIsAdmin || viewerIsSupervisor}
+          canDirectActivate={viewerIsAdmin}
           canEditSupervisor={viewerIsAdmin}
+          canDelete={viewerIsAdmin}
           onSave={(updates) => handleSave(editing, updates)}
           onEditFullProfile={() => {
             // Remember who we were editing so we can restore the modal on close
@@ -767,6 +821,7 @@ export default function MembersScreen() {
             setEditingMemberProfile(editing);
             setEditing(null);
           }}
+          onDelete={() => handleDeleteMember(editing)}
           onClose={() => setEditing(null)}
         />
       )}
@@ -910,24 +965,18 @@ const styles = StyleSheet.create({
     marginBottom: 12, borderWidth: 1, borderColor: '#e4e4ee',
   },
   fieldLabel: { fontSize: 11, fontWeight: '700', color: '#999', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 12, marginBottom: 8 },
-  segmentRow: { flexDirection: 'row', backgroundColor: '#e8e8e8', borderRadius: 10, padding: 3, gap: 3 },
-  segment:    { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
-  segmentText: { fontSize: 12, fontWeight: '600', color: '#666' },
-  segmentTextActive: { color: '#fff' },
+
+  passRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  passBtn: { paddingVertical: 9, paddingHorizontal: 14, borderRadius: 10, backgroundColor: '#eee', borderWidth: 2, borderColor: 'transparent' },
+  passBtnActive: { backgroundColor: '#e8f5e9', borderColor: KBC.green },
+  passBtnInactive: { backgroundColor: '#f0f0f0', borderColor: '#aaa' },
+  passBtnText: { fontSize: 13, fontWeight: '700', color: '#666' },
+  passBtnTextActive: { color: KBC.green },
+  passBtnTextInactive: { color: '#888' },
 
   dateField: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderRadius: 10, padding: 14, borderWidth: 1, borderColor: '#e8e8e8' },
   dateFieldText: { fontSize: 15, color: KBC.black, fontWeight: '600' },
   dateFieldEdit: { fontSize: 13, color: KBC.pink, fontWeight: '600' },
-
-  durationRow: { flexDirection: 'row', gap: 8 },
-  durationBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: '#eee', borderWidth: 2, borderColor: 'transparent' },
-  durationBtnActive: { backgroundColor: '#e8f5e9', borderColor: KBC.green },
-  durationBtnText: { fontSize: 15, fontWeight: '700', color: '#666' },
-  durationBtnTextActive: { color: KBC.green },
-
-  datePreview: { marginTop: 10, backgroundColor: '#fff', borderRadius: 10, padding: 12, alignItems: 'center' },
-  datePreviewLabel: { fontSize: 11, color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 },
-  datePreviewValue: { fontSize: 16, fontWeight: '700', color: KBC.black, marginTop: 2 },
 
   counterRow: { flexDirection: 'row', alignItems: 'center', gap: 20, justifyContent: 'center', paddingVertical: 4 },
   counterBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#e0e0e0', alignItems: 'center', justifyContent: 'center' },
@@ -978,6 +1027,11 @@ const styles = StyleSheet.create({
   pendingIcon:  { fontSize: 18 },
   pendingLabel: { fontSize: 13, fontWeight: '700', color: '#7a5c00' },
   pendingDetail: { fontSize: 12, color: '#a07800', marginTop: 2 },
+  pendingCancelBtn: {
+    backgroundColor: '#e0e0e0', borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 8,
+  },
+  pendingCancelBtnText: { color: '#555', fontSize: 12, fontWeight: '800' },
   pendingConfirmBtn: {
     backgroundColor: KBC.green, borderRadius: 8,
     paddingHorizontal: 12, paddingVertical: 8,
@@ -996,4 +1050,10 @@ const styles = StyleSheet.create({
   historyNavBtnTitle:  { fontSize: 14, fontWeight: '700', color: KBC.black },
   historyNavBtnCount:  { fontSize: 13, fontWeight: '700', color: KBC.cyan, backgroundColor: KBC.cyan + '18', paddingHorizontal: 9, paddingVertical: 3, borderRadius: 10 },
   historyNavBtnChevron: { fontSize: 20, color: '#ccc', fontWeight: '300' },
+
+  deleteMemberBtn: {
+    marginTop: 8, marginHorizontal: 16, borderRadius: 12, padding: 14,
+    alignItems: 'center', borderWidth: 1, borderColor: '#fca5a5', backgroundColor: '#fff5f5',
+  },
+  deleteMemberBtnText: { fontSize: 14, fontWeight: '700', color: '#dc2626' },
 });

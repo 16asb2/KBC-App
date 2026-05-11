@@ -82,11 +82,11 @@ export type AccessOption = {
 export const ACCESS_OPTIONS: AccessOption[] = [
   { id: 'dropin',      label: 'Drop-In',                price: '$20'  },
   { id: 'punch10',     label: '10× Punch Passes',        price: '$160', punches: 10 },
-  { id: 'mem1m',       label: 'Month Membership',         price: '$55',  months: 1  },
-  { id: 'mem4m',       label: '4× Months Membership',     price: '$200', detail: '$50/month',     months: 4  },
-  { id: 'mem8m',       label: '8× Months Membership',     price: '$350', detail: '$44/month',     months: 8  },
-  { id: 'mem12m',      label: 'Annual Pass',               price: '$450', detail: '$37.50/month',  months: 12 },
-  { id: 'student12m',  label: 'Student Annual',            price: '$350', detail: '$44/month',     months: 12 },
+  { id: 'mem1m',       label: '1-month pass',            price: '$55',           months: 1  },
+  { id: 'mem4m',       label: '4-months pass',           price: '$200 ($50/m)',   months: 4  },
+  { id: 'mem8m',       label: '8-months pass',           price: '$350 ($44/m)',   months: 8  },
+  { id: 'mem12m',      label: 'Annual Pass',             price: '$450 ($38/m)',   months: 12 },
+  { id: 'student12m',  label: 'Student annual pass',     price: '$350 ($44/m)',   months: 12 },
 ];
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -181,6 +181,11 @@ export async function updateLogEntry(
 ): Promise<void> {
   const data = { ...updates, amendedBy: byEmail, amendedAt: new Date().toISOString() };
   await fsPatch(`logs/${id}`, data, Object.keys(data));
+}
+
+export async function deleteLogEntry(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/logs/${id}?key=${API_KEY}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 404) throw new Error(`Firestore DELETE ${res.status}`);
 }
 
 // ─── Gym Open Status ─────────────────────────────────────────────────────────

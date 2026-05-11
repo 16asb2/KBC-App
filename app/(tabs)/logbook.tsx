@@ -20,7 +20,8 @@ import { KBC } from '@/constants/theme';
 import { isAdmin } from '@/constants/admins';
 import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
-import { LogEntry, getRecentLogs, getArchiveLogs, updateLogEntry } from '@/services/logbook';
+import { LogEntry, getRecentLogs, getArchiveLogs, updateLogEntry, deleteLogEntry } from '@/services/logbook';
+import { updateProfile } from '@/services/firestore';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -120,11 +121,13 @@ function AmendModal({
 // ─── Log Row ─────────────────────────────────────────────────────────────────
 
 function LogRow({
-  entry, canAmend, onAmend, onViewProfile,
+  entry, canAmend, canDelete, onAmend, onDelete, onViewProfile,
 }: {
   entry: LogEntry;
   canAmend: boolean;
+  canDelete: boolean;
   onAmend: () => void;
+  onDelete: () => void;
   onViewProfile?: () => void;
 }) {
   const color = accessColor(entry.accessType);
@@ -146,9 +149,16 @@ function LogRow({
         ) : null}
       </View>
       {canAmend && (
-        <TouchableOpacity style={styles.amendBtn} onPress={onAmend}>
-          <Text style={styles.amendBtnText}>Edit</Text>
-        </TouchableOpacity>
+        <View style={styles.rowActions}>
+          <TouchableOpacity style={styles.amendBtn} onPress={onAmend}>
+            <Text style={styles.amendBtnText}>Edit</Text>
+          </TouchableOpacity>
+          {canDelete && (
+            <TouchableOpacity style={styles.deleteBtn} onPress={onDelete}>
+              <Text style={styles.deleteBtnText}>🗑</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       )}
     </View>
   );
@@ -165,7 +175,8 @@ export default function LogBookScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [amending, setAmending]   = useState<LogEntry | null>(null);
 
-  const canAmend    = isAdmin(user?.email) || (profile?.isSupervisor ?? false);
+  const canAmend    = isAdmin(user?.email, profile?.isAdmin) || (profile?.isSupervisor ?? false);
+  const canDelete   = isAdmin(user?.email, profile?.isAdmin);
   const canSeePurchases = canAmend; // admins + supervisors only
 
   async function loadLogs(isArchive = archive) {
@@ -198,6 +209,40 @@ export default function LogBookScreen() {
   async function handleAmend(entry: LogEntry, accessType: string, notes: string) {
     await updateLogEntry(entry.id, { accessType, notes: notes || undefined }, user?.email ?? '');
     await loadLogs();
+  }
+
+  function handleDelete(entry: LogEntry) {
+    Alert.alert(
+      'Delete Sign-In',
+      `Remove ${entry.userName}'s sign-in from ${new Date(entry.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteLogEntry(entry.id);
+              const remaining = logs.filter(l => l.id !== entry.id);
+              setLogs(remaining);
+
+              // If the entry is within the 24h window, check whether it was the
+              // user's most recent sign-in. If so, clear the sign-in block.
+              const isRecent = Date.now() - new Date(entry.timestamp).getTime() < 24 * 60 * 60 * 1000;
+              if (isRecent && entry.userId) {
+                const hasNewerEntry = remaining.some(
+                  l => l.userId === entry.userId && l.timestamp > entry.timestamp,
+                );
+                if (!hasNewerEntry) {
+                  await updateProfile(entry.userId, { lastSignInAt: undefined }, user?.email ?? '');
+                }
+              }
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          },
+        },
+      ],
+    );
   }
 
   return (
@@ -251,7 +296,9 @@ export default function LogBookScreen() {
                   key={entry.id}
                   entry={entry}
                   canAmend={canAmend}
+                  canDelete={canDelete}
                   onAmend={() => setAmending(entry)}
+                  onDelete={() => handleDelete(entry)}
                   onViewProfile={canAmend && entry.userId
                     ? () => router.push({ pathname: '/(tabs)/members', params: { openUid: entry.userId } } as any)
                     : undefined
@@ -321,8 +368,11 @@ const styles = StyleSheet.create({
   rowNotes: { fontSize: 12, color: '#888' },
   amendedTag: { fontSize: 11, color: '#bbb', fontStyle: 'italic' },
 
+  rowActions: { alignItems: 'flex-end', gap: 6 },
   amendBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#f0f0f0', alignSelf: 'flex-start' },
   amendBtnText: { fontSize: 12, fontWeight: '700', color: '#666' },
+  deleteBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#fee2e2', alignSelf: 'flex-start' },
+  deleteBtnText: { fontSize: 12 },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
   emptyText: { textAlign: 'center', color: '#aaa', fontSize: 14, paddingTop: 60 },

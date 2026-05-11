@@ -185,7 +185,7 @@ export async function createNewMemberProfile(
     legalName,
     email: email.toLowerCase().trim(),
     photo: null,
-    membershipStatus: 'non-member',
+    membershipStatus: 'inactive',
     isAdmin: false,
     isSupervisor: false,
     punchPassRemaining: 0,
@@ -198,6 +198,11 @@ export async function createNewMemberProfile(
   };
   await fsPatch(`users/${uid}`, fresh);
   return { uid, ...fresh };
+}
+
+export async function deleteProfile(uid: string): Promise<void> {
+  const res = await fetch(`${BASE}/users/${uid}?key=${API_KEY}`, { method: 'DELETE' });
+  if (!res.ok && res.status !== 404) throw new Error(`Firestore DELETE ${res.status}`);
 }
 
 // ─── Auto-transition: membership status ─────────────────────────────────────
