@@ -2618,28 +2618,24 @@ export default function BouldersScreen() {
           </TouchableOpacity>
         )}
 
-        {mode === 'personal' && (
-          <>
-            <TouchableOpacity
-              style={[styles.seasonBtn]}
-              onPress={() => setShowLocations(true)}
-            >
-              <Text style={styles.seasonBtnText} numberOfLines={1}>
-                {personalLocalFilter === 'all'
-                  ? 'All Locations'
-                  : (myLocations.find(l => l.id === personalLocalFilter)?.name ?? personalLocalFilter)}
-              </Text>
-              <Text style={styles.seasonArrow}>▾</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.filterBtn, { borderColor: '#666' }]}
-              onPress={() => setShowLocations(true)}
-            >
-              <Text style={[styles.filterBtnText, { color: '#aaa' }]}>Manage</Text>
-            </TouchableOpacity>
-          </>
-        )}
       </View>
+
+      {/* Personal location filter bar */}
+      {mode === 'personal' && (
+        <View style={styles.personalBar}>
+          <TouchableOpacity style={styles.personalLocationBtn} onPress={() => setShowLocations(true)}>
+            <Text style={styles.personalLocationText} numberOfLines={1}>
+              {personalLocalFilter === 'all'
+                ? 'All Locations'
+                : (myLocations.find(l => l.id === personalLocalFilter)?.name ?? personalLocalFilter)}
+            </Text>
+            <Text style={styles.seasonArrow}>▾</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.personalManageBtn} onPress={() => setShowLocations(true)}>
+            <Text style={styles.personalManageText}>Manage Locations</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Sort bar — KBC only */}
       {mode === 'kbc' && (
@@ -2892,6 +2888,23 @@ const styles = StyleSheet.create({
   filterBtnActive:     { borderColor: KBC.lime, backgroundColor: KBC.lime + '22' },
   filterBtnText:       { color: '#888', fontSize: 14, fontWeight: '600' },
   filterBtnTextActive: { color: KBC.lime },
+
+  // Personal location bar
+  personalBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#1c1c1c', paddingHorizontal: 14, paddingVertical: 8,
+    borderBottomWidth: 1, borderBottomColor: '#333',
+  },
+  personalLocationBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#2a2a2a', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, gap: 6,
+  },
+  personalLocationText: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '700' },
+  personalManageBtn: {
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1, borderColor: '#555', backgroundColor: '#2a2a2a',
+  },
+  personalManageText: { color: '#aaa', fontSize: 13, fontWeight: '600' },
 
   // Sort bar
   sortBar: { backgroundColor: '#f5f5f5', borderBottomWidth: 1, borderBottomColor: '#e0e0e0', maxHeight: 48 },

@@ -3,10 +3,6 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 GoogleSignin.configure({
   webClientId: process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID!,
-  scopes: [
-    'https://www.googleapis.com/auth/calendar',
-    'https://www.googleapis.com/auth/drive.file',
-  ],
   offlineAccess: false,
 });
 
@@ -55,21 +51,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function signIn() {
-    await GoogleSignin.hasPlayServices();
-    const response = await GoogleSignin.signIn();
-    if (isSuccessResponse(response)) {
-      setUser({
-        id: response.data.user.id,
-        name: response.data.user.name,
-        email: response.data.user.email,
-        photo: response.data.user.photo,
-      });
+    try {
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+      if (isSuccessResponse(response)) {
+        setUser({
+          id: response.data.user.id,
+          name: response.data.user.name,
+          email: response.data.user.email,
+          photo: response.data.user.photo,
+        });
+      } else {
+        console.warn('Sign-in response was not a success:', response);
+      }
+    } catch (e) {
+      console.warn('Sign-in error:', e);
     }
   }
 
   async function signOut() {
-    await GoogleSignin.signOut();
-    setUser(null);
+    try {
+      await GoogleSignin.signOut();
+    } catch (e) {
+      console.warn('GoogleSignin.signOut error (ignored):', e);
+    } finally {
+      setUser(null);
+    }
   }
 
   async function getAccessToken(): Promise<string | null> {
