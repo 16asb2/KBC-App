@@ -1,3 +1,5 @@
+import { generateId } from '@/utils/id';
+
 const PROJECT_ID = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID!;
 const API_KEY    = process.env.EXPO_PUBLIC_FIREBASE_API_KEY!;
 const BASE       = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
@@ -42,22 +44,21 @@ export type BoulderSeason = {
 };
 
 export type Boulder = {
-  id: string;
-  seasonId: string;
-  number: number;
-  name: string;
-  setter: string;
+  id:          string;
+  internalId:  string;   // stable cross-db reference; used in climbLogs.problemInternalId
+  local:       string;   // always 'KBC'
+  area:        string;   // always 'Boulders'
+  permissions: { view: 'members'; edit: 'admin' };
+  seasonId:    string;
+  number:      number;
+  name:        string;
+  setter:      string;
   setterEmail: string;
-  createdAt: string;
-  updatedAt: string;
-  locations: string[];
-  gradeVotes: Record<string, number>;    // uid → 0.0–4.0
-  qualityVotes: Record<string, number>;  // uid → 1–3 stars
-  photo: string;
-  badgeVotes: Record<string, string[]>;  // badge → uid[]
-  ascentCount: number;
-  attemptCount: number;
-  removed: boolean;
+  createdAt:   string;
+  updatedAt:   string;
+  locations:   string[];  // wall sections (Cave Right, etc.)
+  photo:       string;
+  removed:     boolean;
 };
 
 export type BoulderComment = {
@@ -184,24 +185,22 @@ export async function createSeason(name: string): Promise<BoulderSeason> {
 function docToBoulder(doc: any): Boulder {
   const id = doc.name.split('/').pop() as string;
   const d  = decodeDoc(doc);
-  const isObj = (v: any) => v && typeof v === 'object' && !Array.isArray(v);
   return {
     id,
-    seasonId:     d.seasonId     ?? '',
-    number:       d.number       ?? 0,
-    name:         d.name         ?? '',
-    setter:       d.setter       ?? '',
-    setterEmail:  d.setterEmail  ?? '',
-    createdAt:    d.createdAt    ?? '',
-    updatedAt:    d.updatedAt    ?? '',
-    locations:    Array.isArray(d.locations) ? d.locations : [],
-    gradeVotes:   isObj(d.gradeVotes)   ? d.gradeVotes   : {},
-    qualityVotes: isObj(d.qualityVotes) ? d.qualityVotes : {},
-    photo:        d.photo        ?? '',
-    badgeVotes:   isObj(d.badgeVotes)   ? d.badgeVotes   : {},
-    ascentCount:  typeof d.ascentCount  === 'number' ? d.ascentCount  : 0,
-    attemptCount: typeof d.attemptCount === 'number' ? d.attemptCount : 0,
-    removed:      d.removed      ?? false,
+    internalId:  d.internalId  ?? id,   // fall back to doc ID for old documents
+    local:       d.local       ?? 'KBC',
+    area:        d.area        ?? 'Boulders',
+    permissions: d.permissions ?? { view: 'members', edit: 'admin' },
+    seasonId:    d.seasonId    ?? '',
+    number:      d.number      ?? 0,
+    name:        d.name        ?? '',
+    setter:      d.setter      ?? '',
+    setterEmail: d.setterEmail ?? '',
+    createdAt:   d.createdAt   ?? '',
+    updatedAt:   d.updatedAt   ?? '',
+    locations:   Array.isArray(d.locations) ? d.locations : [],
+    photo:       d.photo       ?? '',
+    removed:     d.removed     ?? false,
   };
 }
 
@@ -219,8 +218,15 @@ export async function getNextBoulderNumber(seasonId: string): Promise<number> {
   return nums.length ? Math.max(...nums) + 1 : 1;
 }
 
-export async function createBoulder(data: Omit<Boulder, 'id'>): Promise<Boulder> {
-  const doc = await fsPost('boulders', data);
+export async function createBoulder(data: Omit<Boulder, 'id' | 'internalId' | 'local' | 'area' | 'permissions'>): Promise<Boulder> {
+  const full = {
+    ...data,
+    internalId:  generateId(),
+    local:       'KBC',
+    area:        'Boulders',
+    permissions: { view: 'members', edit: 'admin' },
+  };
+  const doc = await fsPost('boulders', full);
   return docToBoulder(doc);
 }
 
@@ -234,54 +240,6 @@ export async function removeBoulder(id: string): Promise<void> {
     { removed: true, updatedAt: new Date().toISOString() },
     ['removed', 'updatedAt'],
   );
-}
-
-// ─── Logs (ascents / attempts) ────────────────────────────────────────────────
-
-export type BoulderLog = {
-  id: string;
-  boulderId: string;
-  uid: string;
-  name: string;
-  type: 'ascent' | 'attempt';
-  date: string;                   // ISO — when the climb happened
-  proposedGrade: number | null;   // 0.0–4.0, null = no opinion
-  quality: number;                // 0 = no vote, 1–3 stars
-  effort: string;                 // '' | 'Easy' | 'Medium' | 'Hard' | 'Impossible'
-  project: boolean;
-  publicComment: string;
-  privateComment: string;
-  createdAt: string;
-};
-
-function docToLog(doc: any): BoulderLog {
-  const id    = doc.name.split('/').pop() as string;
-  const d     = decodeDoc(doc);
-  const parts = (doc.name as string).split('/');
-  const boulderId = parts[parts.length - 3] ?? '';
-  return {
-    id,
-    boulderId,
-    uid:           d.uid           ?? '',
-    name:          d.name          ?? '',
-    type:          d.type          ?? 'attempt',
-    date:          d.date          ?? d.createdAt ?? '',
-    proposedGrade: typeof d.proposedGrade === 'number' ? d.proposedGrade : null,
-    quality:       typeof d.quality === 'number' ? d.quality : 0,
-    effort:        d.effort        ?? '',
-    project:       d.project       ?? false,
-    publicComment: d.publicComment ?? '',
-    privateComment:d.privateComment ?? '',
-    createdAt:     d.createdAt     ?? '',
-  };
-}
-
-export async function addBoulderLog(
-  boulderId: string,
-  entry: Omit<BoulderLog, 'id' | 'boulderId'>,
-): Promise<BoulderLog> {
-  const doc = await fsPost(`boulders/${boulderId}/logs`, { ...entry, boulderId });
-  return docToLog(doc);
 }
 
 // ─── Comments ─────────────────────────────────────────────────────────────────
@@ -315,4 +273,26 @@ export async function addComment(
 
 export async function deleteComment(boulderId: string, commentId: string): Promise<void> {
   await fsDelete(`boulders/${boulderId}/comments/${commentId}`);
+}
+
+// ─── One-time migration ───────────────────────────────────────────────────────
+
+/**
+ * Backfills internalId, local, area, permissions on existing boulder documents.
+ * Call once manually after deploying the schema change. Safe to re-run.
+ */
+export async function migrateBouldersAddFields(): Promise<void> {
+  const docs = await fsList('boulders');
+  const mask = ['internalId', 'local', 'area', 'permissions'];
+  await Promise.all(docs.map(async (doc: any) => {
+    const d  = decodeDoc(doc);
+    const id = (doc.name as string).split('/').pop() as string;
+    if (d.internalId) return; // already migrated
+    await fsPatch(`boulders/${id}`, {
+      internalId:  generateId(),
+      local:       'KBC',
+      area:        'Boulders',
+      permissions: { view: 'members', edit: 'admin' },
+    }, mask);
+  }));
 }

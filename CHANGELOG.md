@@ -1,5 +1,44 @@
 # Changelog
 
+## v0.3 — 2026-05-10
+
+### Added
+- **Climbs tab** (renamed from Boulders) — KBC / Personal mode toggle in the top bar
+- **Log-as-history architecture** — all aggregate data (grade votes, quality votes, badge votes, send/attempt counts) moved out of boulder documents into `climbLogs`; aggregates computed client-side via `computeAggregates()` from `utils/climbAggregates.ts`; boulder documents are now static entities
+- **`problemInternalId`** — stable cross-collection reference field on every `climbLogs` entry, linking logs to KBC boulders or personal problems
+- **`gradeVote: number | null`** — numeric 0–4 stored in each log entry, enables grade averaging without string lookups
+- **Personal status pill** on each KBC climb card — ✓ Sent (green) or △ Tried (amber) based on the current user's most recent log entry
+- **Setter's log on create** — when a KBC boulder is created with a grade or badges selected, a `climbLogs` entry is written for the setter so their picks count as the first community vote
+- **Badge selection in log form** — users can tag badges when logging a KBC boulder (previously badges were only settable on create)
+- **Badge display** — top 5 badges in a single compact row (no wrap, tighter spacing)
+- **Personal mode** — list of user-owned personal problems loaded from new `personalProblems` Firestore collection
+- **LocationsModal** — create, edit, and delete personal climb locations (name, indoors/outdoors toggle, areas/sectors list, optional address and GPS coordinates)
+- **Location filter** in Personal mode top bar — dropdown to filter problems by location; Manage button opens LocationsModal
+- **NewProblemModal** — full create/edit modal for personal problems with: location picker from saved locations, area picker from location sectors, scrollable grade chip list by grade system; tap any personal problem card to edit it
+- **PersonalLogModal** — log sessions against personal problems, writes `climbLogs` entry with correct `problemInternalId`
+- **`services/personalProblems.ts`** — Firestore REST CRUD service for `personalProblems` collection
+- **`utils/id.ts`** — `generateId()` helper (timestamp + random base-36)
+- **`utils/climbAggregates.ts`** — `computeAggregates()` and `getPersonalStatus()` utilities
+- **`scripts/reset-db.js`** — Node 18 dev-only script to wipe all Firestore collections (requires "YES" confirmation; does not touch Auth users)
+- **Two Firebase projects** — `kbc-app-dev` for local development (`.env`), `kbc-scheduler-929e3` for production (EAS Secrets); dev resets no longer affect production data
+- **`migrateBouldersAddFields()`** — one-time helper in `services/boulders.ts` to backfill `internalId`, `local`, `area`, `permissions` on existing boulder documents
+
+### Changed
+- KBC boulder logging no longer PATCHes the boulder document — only writes to `climbLogs`
+- `climblog.tsx` free-form log entries now carry `gradeVote: null` and `problemInternalId: ''` for schema consistency
+
+### Fixed
+- Removed stale Known Issue: "Boulder seasons UI not built" — seasons are live
+- Removed stale Known Issue: "Boulder seasons collection exists but season transition UI is not built"
+
+### Known Issues
+- No explicit gym close mechanism — status times out after 2 hours
+- Waiver has no version tracking
+- Calendar access for supervisors still requires manual Google Calendar sharing
+- Existing `climbLogs` entries pre-v0.3 have no `problemInternalId` — they appear as free-form entries in the Log Book tab but do not contribute to Climbs tab aggregates
+
+---
+
 ## v0.2 — 2026-05
 
 ### Added

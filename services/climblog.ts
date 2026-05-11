@@ -114,14 +114,16 @@ export type PersonalClimb = {
   id: string;
   uid: string;
   locationId: string;
-  boulderId: string;          // KBC only; '' otherwise
+  boulderId: string;            // KBC only; '' otherwise (legacy; prefer problemInternalId)
   sectorId: string;
-  timestamp: string;          // ISO — when the climb happened
+  timestamp: string;            // ISO — when the climb happened
   name: string;
   establishedGrade: string;
-  personalGrade: string;
-  quality: number;            // 0 = no vote, 1–3
-  effort: string;             // '' | 'Easy' | 'Medium' | 'Hard' | 'Impossible'
+  personalGrade: string;        // grade label text (e.g. 'Purple', 'V5')
+  gradeVote: number | null;     // numeric 0–4 (KBC) or null; used for aggregate avg
+  problemInternalId: string;    // links to Boulder.internalId or PersonalProblem.internalId; '' for free-form
+  quality: number;              // 0 = no vote, 1–3
+  effort: string;               // '' | 'Easy' | 'Medium' | 'Hard' | 'Impossible'
   type: 'ascent' | 'attempt';
   project: boolean;
   badges: string[];
@@ -191,21 +193,23 @@ function docToClimb(doc: any): PersonalClimb {
   const d  = decodeDoc(doc);
   return {
     id,
-    uid:              d.uid              ?? '',
-    locationId:       d.locationId       ?? '',
-    boulderId:        d.boulderId        ?? '',
-    sectorId:         d.sectorId         ?? '',
-    timestamp:        d.timestamp        ?? d.createdAt ?? '',
-    name:             d.name             ?? '',
-    establishedGrade: d.establishedGrade ?? '',
-    personalGrade:    d.personalGrade    ?? '',
-    quality:          typeof d.quality === 'number' ? d.quality : 0,
-    effort:           d.effort           ?? '',
-    type:             d.type             ?? 'attempt',
-    project:          d.project          ?? false,
-    badges:           Array.isArray(d.badges) ? d.badges : [],
-    comment:          d.comment          ?? '',
-    createdAt:        d.createdAt        ?? '',
+    uid:               d.uid               ?? '',
+    locationId:        d.locationId        ?? '',
+    boulderId:         d.boulderId         ?? '',
+    sectorId:          d.sectorId          ?? '',
+    timestamp:         d.timestamp         ?? d.createdAt ?? '',
+    name:              d.name              ?? '',
+    establishedGrade:  d.establishedGrade  ?? '',
+    personalGrade:     d.personalGrade     ?? '',
+    gradeVote:         typeof d.gradeVote === 'number' ? d.gradeVote : null,
+    problemInternalId: d.problemInternalId ?? '',
+    quality:           typeof d.quality === 'number' ? d.quality : 0,
+    effort:            d.effort            ?? '',
+    type:              d.type              ?? 'attempt',
+    project:           d.project           ?? false,
+    badges:            Array.isArray(d.badges) ? d.badges : [],
+    comment:           d.comment           ?? '',
+    createdAt:         d.createdAt         ?? '',
   };
 }
 
@@ -294,4 +298,22 @@ export async function updateClimb(id: string, updates: Partial<Omit<PersonalClim
 
 export async function deleteClimb(id: string): Promise<void> {
   await fsDelete(`climbLogs/${id}`);
+}
+
+/** Fetches all KBC climb logs across all users — used to compute aggregate stats for ClimbCards. */
+export async function getKBCLogs(): Promise<PersonalClimb[]> {
+  const docs = await fsQuery({
+    from: [{ collectionId: 'climbLogs' }],
+    where: {
+      fieldFilter: {
+        field: { fieldPath: 'locationId' },
+        op: 'EQUAL',
+        value: { stringValue: 'kbc' },
+      },
+    },
+    limit: 2000,
+  });
+  return docs
+    .map(r => docToClimb(r.document))
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 }

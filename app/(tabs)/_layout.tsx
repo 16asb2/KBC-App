@@ -115,7 +115,7 @@ function TabsLayout() {
         <Tabs.Screen
           name="boulders"
           options={{
-            title: 'Boulders',
+            title: 'Climbs',
             tabBarActiveTintColor: KBC.lime,
             tabBarIcon: ({ color }) => <IconSymbol size={24} name="figure.climbing" color={color} />,
           }}
