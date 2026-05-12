@@ -1,4 +1,6 @@
 // Firestore via REST API — avoids Firebase SDK incompatibility with New Architecture
+import { getFirebaseToken } from '@/services/authBridge';
+
 const PROJECT_ID = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID!;
 const API_KEY    = process.env.EXPO_PUBLIC_FIREBASE_API_KEY!;
 const BASE       = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
@@ -85,8 +87,14 @@ function decodeDoc(doc: any): Record<string, any> {
 
 // ─── Low-level helpers ───────────────────────────────────────────────────────
 
+async function firebaseAuthHeader(): Promise<Record<string, string>> {
+  const token = await getFirebaseToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function fsGet(path: string) {
-  const res = await fetch(`${BASE}/${path}?key=${API_KEY}`);
+  const authH = await firebaseAuthHeader();
+  const res = await fetch(`${BASE}/${path}?key=${API_KEY}`, { headers: authH });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Firestore GET ${res.status}`);
   return res.json();
@@ -95,9 +103,10 @@ async function fsGet(path: string) {
 async function fsPatch(path: string, data: Record<string, any>, mask?: string[]) {
   let url = `${BASE}/${path}?key=${API_KEY}`;
   if (mask) url += mask.map(f => `&updateMask.fieldPaths=${encodeURIComponent(f)}`).join('');
+  const authH = await firebaseAuthHeader();
   const res = await fetch(url, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authH },
     body: JSON.stringify(encodeDoc(data)),
   });
   if (!res.ok) throw new Error(`Firestore PATCH ${res.status}`);
@@ -105,7 +114,8 @@ async function fsPatch(path: string, data: Record<string, any>, mask?: string[])
 }
 
 async function fsList(col: string): Promise<any[]> {
-  const res = await fetch(`${BASE}/${col}?key=${API_KEY}&pageSize=500`);
+  const authH = await firebaseAuthHeader();
+  const res = await fetch(`${BASE}/${col}?key=${API_KEY}&pageSize=500`, { headers: authH });
   if (!res.ok) throw new Error(`Firestore LIST ${res.status}`);
   const json = await res.json();
   return json.documents ?? [];
@@ -201,7 +211,8 @@ export async function createNewMemberProfile(
 }
 
 export async function deleteProfile(uid: string): Promise<void> {
-  const res = await fetch(`${BASE}/users/${uid}?key=${API_KEY}`, { method: 'DELETE' });
+  const authH = await firebaseAuthHeader();
+  const res = await fetch(`${BASE}/users/${uid}?key=${API_KEY}`, { method: 'DELETE', headers: authH });
   if (!res.ok && res.status !== 404) throw new Error(`Firestore DELETE ${res.status}`);
 }
 

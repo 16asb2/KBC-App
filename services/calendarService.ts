@@ -7,6 +7,7 @@
 // works because the KBC calendar is shared as read-only with all Google users.
 
 import { getAdminCalendarToken } from '@/services/adminToken';
+import { getFirebaseToken } from '@/services/authBridge';
 
 const CALENDAR_ID = process.env.EXPO_PUBLIC_GOOGLE_CALENDAR_ID!;
 const BASE_URL    = 'https://www.googleapis.com/calendar/v3';
@@ -71,9 +72,12 @@ function encodeDoc(data: Record<string, any>) {
 
 async function fsPatch(path: string, data: Record<string, any>) {
   const url = `${FS_BASE}/${path}?key=${API_KEY}`;
+  const fbToken = await getFirebaseToken();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (fbToken) headers.Authorization = `Bearer ${fbToken}`;
   const res = await fetch(url, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(encodeDoc(data)),
   });
   if (!res.ok) throw new Error(`Firestore PATCH ${res.status}`);
