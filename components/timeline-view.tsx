@@ -14,12 +14,16 @@ function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-/** Matches both legacy "(super)" and current "(sup)" event title formats. */
+/** Matches both current "(super)" and legacy "(sup)" event title formats. */
 function isSupervisorSlot(e: CalendarEvent) {
   const s = e.summary?.toLowerCase() ?? '';
   return s.includes('(sup)') || s.includes('(super)');
 }
 function isRequested(e: CalendarEvent) { return e.summary?.toLowerCase().includes('(requested)') ?? false; }
+
+function isAllDay(e: CalendarEvent) {
+  return !!e.start?.date && !e.start?.dateTime;
+}
 
 function getEventMinutes(dateTime: string) {
   const d = new Date(dateTime);
@@ -41,19 +45,19 @@ type PositionedEvent = CalendarEvent & { top: number; height: number; column: nu
 function layoutEvents(events: CalendarEvent[]): PositionedEvent[] {
   const sorted = [...events]
     .filter(e => e.start?.dateTime && e.end?.dateTime)
-    .sort((a, b) => getEventMinutes(a.start.dateTime) - getEventMinutes(b.start.dateTime));
+    .sort((a, b) => getEventMinutes(a.start.dateTime!) - getEventMinutes(b.start.dateTime!));
 
   const positioned: PositionedEvent[] = [];
   const groups: PositionedEvent[][] = [];
 
   for (const event of sorted) {
-    const startMin = getEventMinutes(event.start.dateTime);
-    const endMin = getEventMinutes(event.end.dateTime);
+    const startMin = getEventMinutes(event.start.dateTime!);
+    const endMin = getEventMinutes(event.end.dateTime!);
     const top = minutesToY(startMin);
     const height = Math.max(((endMin - startMin) / 60) * HOUR_HEIGHT, 28);
     let placed = false;
     for (const group of groups) {
-      const lastEnd = getEventMinutes(group[group.length - 1].end.dateTime);
+      const lastEnd = getEventMinutes(group[group.length - 1].end.dateTime!);
       if (startMin < lastEnd) {
         const col = group.length;
         const pe: PositionedEvent = { ...event, top, height, column: col, numColumns: col + 1 };
@@ -71,6 +75,12 @@ function layoutEvents(events: CalendarEvent[]): PositionedEvent[] {
     }
   }
   return positioned;
+}
+
+function allDayColor(event: CalendarEvent) {
+  if (event.summary?.toLowerCase().includes('(requested)')) return KBC.purple;
+  if (event.summary?.toLowerCase().includes('(sup)') || event.summary?.toLowerCase().includes('(super)')) return KBC.pink;
+  return KBC.cyan;
 }
 
 type Props = {
@@ -96,26 +106,46 @@ export function TimelineView({ events, onEventPress, onTimePress, selectedDate, 
   const nowY = minutesToY(nowMinutes);
   const nowInRange = nowY >= 0 && nowY <= TOTAL_HOURS * HOUR_HEIGHT;
 
+  const allDayEvents = events.filter(isAllDay);
+  const timedEvents  = events.filter(e => !isAllDay(e));
+  const positioned   = layoutEvents(timedEvents);
+
   useEffect(() => {
     if (!scrollToFirstEvent) return;
     // Scroll to current time when viewing today; otherwise scroll to first event
     if (isToday && nowInRange) {
       const y = Math.max(0, nowY - HOUR_HEIGHT * 1.5);
       setTimeout(() => scrollRef.current?.scrollTo({ y, animated: true }), 100);
-    } else if (events.length > 0) {
-      const sorted = [...events].sort((a, b) =>
-        new Date(a.start.dateTime).getTime() - new Date(b.start.dateTime).getTime()
+    } else if (timedEvents.length > 0) {
+      const sorted = [...timedEvents].sort((a, b) =>
+        new Date(a.start.dateTime!).getTime() - new Date(b.start.dateTime!).getTime()
       );
-      const firstMin = getEventMinutes(sorted[0].start.dateTime);
+      const firstMin = getEventMinutes(sorted[0].start.dateTime!);
       const y = Math.max(0, minutesToY(firstMin) - HOUR_HEIGHT);
       setTimeout(() => scrollRef.current?.scrollTo({ y, animated: true }), 100);
     }
   }, [events, scrollToFirstEvent, isToday]);
-
-  const positioned = layoutEvents(events);
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => START_HOUR + i);
 
   return (
+    <View style={styles.outerContainer}>
+    {allDayEvents.length > 0 && (
+      <View style={styles.allDayBanner}>
+        <Text style={styles.allDayLabel} numberOfLines={1}>All day</Text>
+        <View style={styles.allDayPills}>
+          {allDayEvents.map(e => (
+            <TouchableOpacity
+              key={e.id}
+              style={[styles.allDayPill, { backgroundColor: allDayColor(e) }]}
+              onPress={() => onEventPress?.(e)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.allDayPillText} numberOfLines={1}>{e.summary}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    )}
     <ScrollView ref={scrollRef} style={styles.scroll} showsVerticalScrollIndicator={false}>
       <View style={styles.container}>
         {/* Time labels */}
@@ -169,9 +199,9 @@ export function TimelineView({ events, onEventPress, onTimePress, selectedDate, 
               >
                 <Text style={styles.eventTitle} numberOfLines={2}>{event.summary}</Text>
                 <Text style={styles.eventTime} numberOfLines={1}>
-                  {new Date(event.start.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {new Date(event.start.dateTime!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   {' – '}
-                  {new Date(event.end.dateTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  {new Date(event.end.dateTime!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Text>
               </TouchableOpacity>
             );
@@ -179,10 +209,17 @@ export function TimelineView({ events, onEventPress, onTimePress, selectedDate, 
         </Pressable>
       </View>
     </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  outerContainer: { flex: 1 },
+  allDayBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 12, backgroundColor: '#f0f0f0', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
+  allDayLabel: { fontSize: 11, fontWeight: '600', color: '#999', width: TIME_COL_WIDTH - 4 },
+  allDayPills: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  allDayPill: { borderRadius: 6, paddingHorizontal: 12, paddingVertical: 8 },
+  allDayPillText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   scroll: { flex: 1, backgroundColor: '#f7f7f7' },
   container: { flexDirection: 'row' },
   timeCol: { width: TIME_COL_WIDTH, backgroundColor: '#f7f7f7' },

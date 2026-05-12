@@ -1,52 +1,60 @@
-# Welcome to your Expo app 👋
+# KBC App 🧗
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+The official app for the **Kingston Bouldering Cooperative** — a member-managed climbing gym in Kingston, ON. This app supports gym operations and gives local climbers useful tools to stay connected with the community.
 
-## Get started
+> **Status:** MVP — actively in development
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## Tech Stack
 
-2. Start the app
+- **Framework:** [Expo](https://expo.dev) (React Native)
+- **Backend:** Firebase (Firestore, Cloud Functions)
+- **Auth:** Google Sign-In via Firebase Authentication
 
-   ```bash
-   npx expo start
-   ```
+---
 
-In the output, you'll find options to open the app in a
+## Getting Started
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### Prerequisites
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- [Node.js](https://nodejs.org/) (LTS recommended)
+- [Expo CLI](https://docs.expo.dev/get-started/installation/)
+- Access to the KBC Firebase project (ask a team member)
 
-## Get a fresh project
-
-When you're ready, run:
+### Install dependencies
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### Start the development server
 
-## Learn more
+```bash
+npx expo start
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+From there you can open the app in:
+- [Expo Go](https://expo.dev/go) on your phone
+- An [iOS Simulator](https://docs.expo.dev/workflow/ios-simulator/)
+- An [Android Emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+---
 
-## Join the community
+## Project Structure
 
-Join our community of developers creating universal apps.
+This project uses [file-based routing](https://docs.expo.dev/router/introduction) via Expo Router. All screens live inside the `app/` directory.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+---
 
+## Contributing
 
+This is an internal project for the KBC team. If you're picking up a new feature or fixing a bug, branch off `main` and open a PR when ready.
+
+---
+
+## Resources
+
+- [Expo Docs](https://docs.expo.dev/)
+- [Firebase Docs](https://firebase.google.com/docs)
+- [Kingston Bouldering Cooperative](https://kingstonbouldering.com)

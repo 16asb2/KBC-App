@@ -18,9 +18,10 @@ import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
 import {
   joinSession,
+  leaveSession,
   updateSupervisorEvent,
   deleteSupervisorEvent,
-  createSupervisorEvent,
+  fulfillSessionRequest,
 } from '@/services/calendarService';
 
 function formatDate(date: Date) {
@@ -28,6 +29,11 @@ function formatDate(date: Date) {
 }
 function formatTime(date: Date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+// Parse a YYYY-MM-DD date string in local time (avoids UTC midnight timezone shift).
+function parseLocalDate(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
 }
 
 type PickerField = 'date' | 'start' | 'end' | null;
@@ -43,9 +49,22 @@ export default function EditSessionScreen() {
   const isAdminUser      = isAdmin(user?.email, profile?.isAdmin);
   const isSupervisorUser = (profile?.isSupervisor ?? false) || isAdminUser;
 
-  // ── Request detection ────────────────────────────────────────────────────────
-  const isRequestEvent = summary?.toLowerCase().includes('(requested)') ?? false;
-  const isSuperEvent   = summary?.toLowerCase().includes('(sup)') || summary?.toLowerCase().includes('(super)');
+  // ── Event type detection ─────────────────────────────────────────────────────
+  const isRequestEvent  = summary?.toLowerCase().includes('(requested)') ?? false;
+  const isSuperEvent    = summary?.toLowerCase().includes('(sup)') || summary?.toLowerCase().includes('(super)');
+  const isSpecialEvent  = !isSuperEvent && !isRequestEvent;
+  const isAllDayEvent   = !!start && !start.includes('T');
+
+  // Past event: start is before now (all-day: before today midnight local).
+  const isPastEvent = (() => {
+    if (!start) return false;
+    if (isAllDayEvent) {
+      const [y, m, d] = start.split('-').map(Number);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      return new Date(y, m - 1, d) < today;
+    }
+    return new Date(start) < new Date();
+  })();
   const requesterName  = isRequestEvent ? (summary?.replace(/\s*\(requested\)/i, '').trim() ?? '') : '';
   const requesterEmail = (() => {
     const m = description?.match(/^requested_by:(.+)$/);
@@ -54,8 +73,10 @@ export default function EditSessionScreen() {
   const isCreator = !!user?.email && requesterEmail !== '' && requesterEmail === user.email;
 
   // ── Join session state ───────────────────────────────────────────────────────
-  const [joining, setJoining]   = useState(false);
-  const [joinedId, setJoinedId] = useState<string | null>(null);
+  const [joining, setJoining]       = useState(false);
+  const [joinedId, setJoinedId]     = useState<string | null>(null);
+  const [leaving, setLeaving]       = useState(false);
+  const [leftSession, setLeftSession] = useState(false);
 
   // Detect if current user is already in the title (heuristic)
   const userName        = profile?.preferredName || user?.name || '';
@@ -83,7 +104,7 @@ export default function EditSessionScreen() {
   const [saving, setSaving]             = useState(false);
   const [deleting, setDeleting]         = useState(false);
 
-  const eventTitle = isSupervisor ? `${title} (sup)` : title;
+  const eventTitle = isSupervisor ? `${title} (super)` : title;
 
   function buildDateTime(datePart: Date, timePart: Date) {
     const result = new Date(datePart);
@@ -113,14 +134,31 @@ export default function EditSessionScreen() {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error('Not authenticated');
-      // Read uses user token, write uses admin token (inside joinSession)
       const newId = await joinSession(id, calUser(), token);
       setJoinedId(newId);
+      setLeftSession(false);
       Alert.alert('Joined!', 'You\'ve been added to this session.');
     } catch (e: any) {
       Alert.alert('Could not join', e.message);
     } finally {
       setJoining(false);
+    }
+  }
+
+  async function handleLeave() {
+    if (!user || !profile) return;
+    setLeaving(true);
+    try {
+      const token = await getAccessToken();
+      if (!token) throw new Error('Not authenticated');
+      await leaveSession(id, calUser(), token);
+      setJoinedId(null);
+      setLeftSession(true);
+      Alert.alert('Cancelled', 'You\'ve been removed from this session.');
+    } catch (e: any) {
+      Alert.alert('Could not cancel', e.message);
+    } finally {
+      setLeaving(false);
     }
   }
 
@@ -185,15 +223,11 @@ export default function EditSessionScreen() {
 
     setSaving(true);
     try {
-      // Delete the request event, then create a supervisor session
-      await deleteSupervisorEvent(id, calUser());
-      await createSupervisorEvent(
-        {
-          start:        newStart.toISOString(),
-          end:          newEnd.toISOString(),
-          timeZone:     'America/Toronto',
-          nameOverride: `${title} + ${requesterName}`,
-        },
+      await fulfillSessionRequest(
+        id,
+        newStart.toISOString(),
+        newEnd.toISOString(),
+        requesterName,
         calUser(),
       );
       router.back();
@@ -204,13 +238,30 @@ export default function EditSessionScreen() {
   // ── Join Session banner (shown on supervisor events to ALL users) ─────────────
   function JoinBanner() {
     if (!isSuperEvent || isRequestEvent) return null;
-    if (alreadyInTitle || joinedId) {
+    if (isPastEvent) return null;
+
+    // Organizer: supervisor whose name was already in the title before any explicit join.
+    // They manage the event via the edit form — no join/cancel button for them.
+    const isOrganizer = isSupervisorUser && alreadyInTitle && joinedId === null && !leftSession;
+    if (isOrganizer) return null;
+
+    const isInSession = (alreadyInTitle && !leftSession) || (joinedId !== null && !leftSession);
+
+    if (isInSession) {
       return (
-        <View style={styles.joinedBanner}>
-          <Text style={styles.joinedBannerText}>✓  You&apos;re in this session</Text>
-        </View>
+        <TouchableOpacity
+          style={[styles.leaveBtn, leaving && styles.buttonDisabled]}
+          onPress={handleLeave}
+          disabled={leaving}
+        >
+          {leaving
+            ? <ActivityIndicator color="#fff" />
+            : <Text style={styles.leaveBtnText}>✕  Cancel Session</Text>
+          }
+        </TouchableOpacity>
       );
     }
+
     return (
       <TouchableOpacity
         style={[styles.joinBtn, joining && styles.buttonDisabled]}
@@ -263,18 +314,22 @@ export default function EditSessionScreen() {
           </Text>
         </View>
         <Text style={styles.requestInfoText}>
-          Awaiting supervisor confirmation. You&apos;ll be able to climb once a supervisor fulfills this request.
+          {isPastEvent
+            ? 'This session request has passed.'
+            : 'Awaiting supervisor confirmation. You\'ll be able to climb once a supervisor fulfills this request.'}
         </Text>
-        <TouchableOpacity
-          style={[styles.cancelRequestBtn, deleting && styles.buttonDisabled]}
-          onPress={handleCancelRequest}
-          disabled={deleting}
-        >
-          {deleting
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.saveButtonText}>Cancel Request</Text>
-          }
-        </TouchableOpacity>
+        {!isPastEvent && (
+          <TouchableOpacity
+            style={[styles.cancelRequestBtn, deleting && styles.buttonDisabled]}
+            onPress={handleCancelRequest}
+            disabled={deleting}
+          >
+            {deleting
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.saveButtonText}>Cancel Request</Text>
+            }
+          </TouchableOpacity>
+        )}
       </ScrollView>
     );
   }
@@ -322,33 +377,39 @@ export default function EditSessionScreen() {
 
           <View style={[styles.previewBox, { borderLeftColor: KBC.green }]}>
             <Text style={styles.previewLabel}>Fulfilled session preview</Text>
-            <Text style={styles.previewTitle}>{title} + {requesterName} (sup)</Text>
+            <Text style={styles.previewTitle}>{title} + {requesterName} (super)</Text>
             <Text style={styles.previewTime}>
               {formatDate(date)}  ·  {formatTime(startTime)} – {formatTime(endTime)}
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={[styles.fulfillBtn, saving && styles.buttonDisabled]}
-            onPress={handleFulfill}
-            disabled={saving || deleting}
-          >
-            {saving
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.saveButtonText}>✓  Fulfill Request</Text>
-            }
-          </TouchableOpacity>
+          {isPastEvent ? (
+            <Text style={styles.requestInfoText}>This request has passed and can no longer be fulfilled.</Text>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={[styles.fulfillBtn, saving && styles.buttonDisabled]}
+                onPress={handleFulfill}
+                disabled={saving || deleting}
+              >
+                {saving
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.saveButtonText}>✓  Fulfill Request</Text>
+                }
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.deleteButton, deleting && styles.buttonDisabled]}
-            onPress={handleDelete}
-            disabled={saving || deleting}
-          >
-            {deleting
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.saveButtonText}>Delete Request</Text>
-            }
-          </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.deleteButton, deleting && styles.buttonDisabled]}
+                onPress={handleDelete}
+                disabled={saving || deleting}
+              >
+                {deleting
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.saveButtonText}>Delete Request</Text>
+                }
+              </TouchableOpacity>
+            </>
+          )}
 
           <DatePickerModal visible={activePicker === 'date'} value={date} onChange={setDate} onClose={() => setActivePicker(null)} />
           <TimePickerModal visible={activePicker === 'start'} value={startTime} onChange={setStartTime} onClose={() => setActivePicker(null)} />
@@ -358,26 +419,64 @@ export default function EditSessionScreen() {
     );
   }
 
+  // ── Special event view (competitions, workshops, etc.) ──────────────────────
+  if (isSpecialEvent) {
+    const dateDisplay = (() => {
+      if (isAllDayEvent) {
+        const s = parseLocalDate(start);
+        // Google Calendar end.date is exclusive — subtract 1 day for display
+        const endParts = end.split('-').map(Number);
+        const e = new Date(endParts[0], endParts[1] - 1, endParts[2] - 1);
+        const sStr = formatDate(s);
+        return s.getTime() === e.getTime() ? `${sStr} · All Day` : `${sStr} – ${formatDate(e)} · All Day`;
+      }
+      return `${formatDate(startDate)} · ${formatTime(startDate)} – ${formatTime(endDate)}`;
+    })();
+
+    return (
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <Stack.Screen options={{ title: 'Event Details' }} />
+        <View style={[styles.sessionInfoCard, { borderLeftColor: KBC.cyan }]}>
+          <Text style={styles.sessionInfoTitle}>{summary}</Text>
+          <Text style={styles.sessionInfoTime}>{dateDisplay}</Text>
+        </View>
+        {isAdminUser && !isPastEvent && (
+          <TouchableOpacity
+            style={[styles.deleteButton, deleting && styles.buttonDisabled]}
+            onPress={handleDelete}
+            disabled={deleting}
+          >
+            {deleting
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.saveButtonText}>Delete Event</Text>
+            }
+          </TouchableOpacity>
+        )}
+      </ScrollView>
+    );
+  }
+
   // ── Regular session view / edit ───────────────────────────────────────────────
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Stack.Screen options={{ title: isSupervisorUser ? 'Edit Session' : 'Session Details' }} />
+      <Stack.Screen options={{ title: isSupervisorUser && !isPastEvent ? 'Edit Session' : 'Session Details' }} />
 
       {/* Join Session banner — shown to ALL users at top */}
       <JoinBanner />
 
-      {/* Session info card for non-supervisors (read-only) */}
-      {!isSupervisorUser && (
+      {/* Session info card — non-supervisors always, supervisors when past */}
+      {(!isSupervisorUser || isPastEvent) && (
         <View style={styles.sessionInfoCard}>
           <Text style={styles.sessionInfoTitle}>{summary}</Text>
           <Text style={styles.sessionInfoTime}>
             {formatDate(startDate)}  ·  {formatTime(startDate)} – {formatTime(endDate)}
           </Text>
+          {isPastEvent && <Text style={styles.pastBadge}>Past event</Text>}
         </View>
       )}
 
-      {/* Edit form — supervisors/admins only */}
-      {isSupervisorUser && (
+      {/* Edit form — supervisors/admins only, future events only */}
+      {isSupervisorUser && !isPastEvent && (
         <>
           <Text style={styles.sectionLabel}>Name</Text>
           <TextInput
@@ -480,11 +579,12 @@ const styles = StyleSheet.create({
     shadowColor: KBC.cyan, shadowOpacity: 0.3, shadowRadius: 8, elevation: 3,
   },
   joinBtnText: { color: '#fff', fontSize: 16, fontWeight: '800' },
-  joinedBanner: {
-    backgroundColor: KBC.green + '22', borderRadius: 12, padding: 14,
-    alignItems: 'center', marginBottom: 8, borderWidth: 1, borderColor: KBC.green + '55',
+  leaveBtn: {
+    backgroundColor: KBC.darkGrey, borderRadius: 12, padding: 16,
+    alignItems: 'center', marginBottom: 8,
+    borderWidth: 1, borderColor: '#666',
   },
-  joinedBannerText: { color: KBC.green, fontSize: 15, fontWeight: '700' },
+  leaveBtnText: { color: '#ccc', fontSize: 16, fontWeight: '700' },
 
   // Session info card (non-supervisors)
   sessionInfoCard: {
@@ -493,6 +593,7 @@ const styles = StyleSheet.create({
   },
   sessionInfoTitle: { fontSize: 20, fontWeight: '800', color: KBC.white },
   sessionInfoTime:  { fontSize: 14, color: '#aaa' },
+  pastBadge: { fontSize: 11, color: '#666', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4 },
 
   // Request card
   requestCard: {

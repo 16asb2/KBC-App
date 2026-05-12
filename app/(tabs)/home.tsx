@@ -41,7 +41,11 @@ import {
 // ─── Gym status logic ────────────────────────────────────────────────────────
 
 function formatTime(d: Date) {
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const h    = d.getHours();
+  const m    = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
 function formatDateTime(date: Date) {
@@ -70,7 +74,7 @@ type GymStatus =
   | { open: true;  until: Date; supervisorName?: string }
   | { open: false; next: Date | null };
 
-/** Matches both legacy "(super)" and current "(sup)" event title formats. */
+/** Matches both current "(super)" and legacy "(sup)" event title formats. */
 function isSupervisorEvent(summary: string | undefined): boolean {
   if (!summary) return false;
   const s = summary.toLowerCase();
@@ -79,7 +83,13 @@ function isSupervisorEvent(summary: string | undefined): boolean {
 
 function getGymStatus(events: any[]): GymStatus {
   const now    = new Date();
-  const supers = events.filter(e => isSupervisorEvent(e.summary));
+  // Match by title OR by extendedProperties (app-created events always have both)
+  function isSupEvent(e: any): boolean {
+    if (isSupervisorEvent(e.summary)) return true;
+    const role = e.extendedProperties?.private?.createdByRole;
+    return role === 'supervisor' || role === 'admin';
+  }
+  const supers  = events.filter(isSupEvent);
   const current = supers.find(e => {
     if (!e.start?.dateTime || !e.end?.dateTime) return false;
     return new Date(e.start.dateTime) <= now && now < new Date(e.end.dateTime);
@@ -571,17 +581,33 @@ export default function HomeScreen() {
   const scheduleStatus = useMemo(() => getGymStatus(allEvents), [allEvents]);
 
   const todaySpecialEvents = useMemo(() => {
-    const now      = new Date();
+    const now        = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayEnd   = new Date(todayStart); todayEnd.setDate(todayStart.getDate() + 1);
     return allEvents.filter(e => {
-      if (!e.start?.dateTime || !e.end?.dateTime) return false;
       const isSpecial = !isSupervisorEvent(e.summary) && !e.summary?.toLowerCase().includes('(requested)');
-      // Include any special event that overlaps today (started before tomorrow AND ends after today started)
-      return isSpecial
-        && new Date(e.start.dateTime) < todayEnd
-        && new Date(e.end.dateTime)   > todayStart;
-    }).sort((a, b) => new Date(a.start.dateTime).getTime() - new Date(b.start.dateTime).getTime());
+      if (!isSpecial) return false;
+      if (e.start?.dateTime && e.end?.dateTime) {
+        return new Date(e.start.dateTime) < todayEnd && new Date(e.end.dateTime) > todayStart;
+      }
+      if (e.start?.date && e.end?.date) {
+        const [sy, sm, sd] = e.start.date.split('-').map(Number);
+        const [ey, em, ed] = e.end.date.split('-').map(Number);
+        const eStart = new Date(sy, sm - 1, sd);
+        const eEnd   = new Date(ey, em - 1, ed); // exclusive
+        return todayStart >= eStart && todayStart < eEnd;
+      }
+      return false;
+    }).sort((a, b) => {
+      // All-day events first; timed events sorted by start time
+      const aAllDay = !a.start?.dateTime;
+      const bAllDay = !b.start?.dateTime;
+      if (aAllDay !== bAllDay) return aAllDay ? -1 : 1;
+      if (!aAllDay && !bAllDay) {
+        return new Date(a.start.dateTime!).getTime() - new Date(b.start.dateTime!).getTime();
+      }
+      return 0;
+    });
   }, [allEvents]);
 
   // Prefer the user's chosen display name for log entries
@@ -879,8 +905,10 @@ export default function HomeScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.specialEventName}>{e.summary}</Text>
                   <Text style={styles.specialEventTime}>
-                    {formatTime(new Date(e.start.dateTime))}
-                    {e.end?.dateTime ? ` – ${formatTime(new Date(e.end.dateTime))}` : ''}
+                    {e.start?.dateTime
+                      ? `${formatTime(new Date(e.start.dateTime!))}${e.end?.dateTime ? ` – ${formatTime(new Date(e.end.dateTime))}` : ''}`
+                      : 'All day'
+                    }
                   </Text>
                 </View>
               </View>

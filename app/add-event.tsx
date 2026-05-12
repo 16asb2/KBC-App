@@ -32,6 +32,13 @@ function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
+function toDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 type PickerField = 'startDate' | 'startTime' | 'endDate' | 'endTime' | null;
 
 export default function AddEventScreen() {
@@ -50,8 +57,13 @@ export default function AddEventScreen() {
   const [start, setStart]   = useState(defaultStart);
   const [end, setEnd]       = useState(defaultEnd);
   const [title, setTitle]   = useState('');
+  const [allDay, setAllDay] = useState(false);
   const [activePicker, setActivePicker] = useState<PickerField>(null);
   const [saving, setSaving] = useState(false);
+
+  function handleAllDayToggle(value: boolean) {
+    setAllDay(value);
+  }
 
   // Merge a new date part into an existing datetime
   function applyDate(current: Date, newDate: Date): Date {
@@ -104,7 +116,14 @@ export default function AddEventScreen() {
       Alert.alert('Title required', 'Please enter a title for the event.');
       return;
     }
-    if (end <= start) {
+    if (allDay) {
+      const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const endDay   = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+      if (endDay < startDay) {
+        Alert.alert('Invalid date', 'End date must be on or after start date.');
+        return;
+      }
+    } else if (end <= start) {
       Alert.alert('Invalid time', 'End must be after start.');
       return;
     }
@@ -117,12 +136,25 @@ export default function AddEventScreen() {
 
     setSaving(true);
     try {
+      let eventStart: string;
+      let eventEnd: string;
+      if (allDay) {
+        eventStart = toDateString(start);
+        // end.date in Google Calendar is exclusive — add 1 day
+        const exclusiveEnd = new Date(end);
+        exclusiveEnd.setDate(exclusiveEnd.getDate() + 1);
+        eventEnd = toDateString(exclusiveEnd);
+      } else {
+        eventStart = start.toISOString();
+        eventEnd   = end.toISOString();
+      }
       await createSpecialEvent(
         {
           summary:  title.trim(),
-          start:    start.toISOString(),
-          end:      end.toISOString(),
+          start:    eventStart,
+          end:      eventEnd,
           timeZone: 'America/Toronto',
+          allDay,
         },
         {
           uid:              user.id,
@@ -161,24 +193,36 @@ export default function AddEventScreen() {
           {/* Start */}
           <Text style={styles.sectionLabel}>Start</Text>
           <View style={styles.dateTimeRow}>
-            <TouchableOpacity style={[styles.field, styles.dateCell]} onPress={() => setActivePicker('startDate')}>
+            <TouchableOpacity style={[styles.field, allDay ? styles.fullCell : styles.dateCell]} onPress={() => setActivePicker('startDate')}>
               <Text style={styles.fieldValue}>{formatDate(start)}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.field, styles.timeCell]} onPress={() => setActivePicker('startTime')}>
-              <Text style={styles.fieldValue}>{formatTime(start)}</Text>
-            </TouchableOpacity>
+            {!allDay && (
+              <TouchableOpacity style={[styles.field, styles.timeCell]} onPress={() => setActivePicker('startTime')}>
+                <Text style={styles.fieldValue}>{formatTime(start)}</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* End */}
           <Text style={styles.sectionLabel}>End</Text>
           <View style={styles.dateTimeRow}>
-            <TouchableOpacity style={[styles.field, styles.dateCell]} onPress={() => setActivePicker('endDate')}>
+            <TouchableOpacity style={[styles.field, allDay ? styles.fullCell : styles.dateCell]} onPress={() => setActivePicker('endDate')}>
               <Text style={styles.fieldValue}>{formatDate(end)}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.field, styles.timeCell]} onPress={() => setActivePicker('endTime')}>
-              <Text style={styles.fieldValue}>{formatTime(end)}</Text>
-            </TouchableOpacity>
+            {!allDay && (
+              <TouchableOpacity style={[styles.field, styles.timeCell]} onPress={() => setActivePicker('endTime')}>
+                <Text style={styles.fieldValue}>{formatTime(end)}</Text>
+              </TouchableOpacity>
+            )}
           </View>
+
+          {/* All day checkbox */}
+          <TouchableOpacity style={styles.allDayRow} onPress={() => handleAllDayToggle(!allDay)} activeOpacity={0.7}>
+            <View style={[styles.checkbox, allDay && styles.checkboxChecked]}>
+              {allDay && <Text style={styles.checkboxMark}>✓</Text>}
+            </View>
+            <Text style={styles.allDayLabel}>All day (s)</Text>
+          </TouchableOpacity>
 
           {multiDay && (
             <View style={styles.multiDayBadge}>
@@ -190,9 +234,12 @@ export default function AddEventScreen() {
             <Text style={styles.previewLabel}>Event preview</Text>
             <Text style={styles.previewTitle}>{title.trim() || '—'}</Text>
             <Text style={styles.previewTime}>
-              {formatDate(start)}  {formatTime(start)}
-              {' → '}
-              {multiDay ? `${formatDate(end)}  ` : ''}{formatTime(end)}
+              {allDay
+                ? multiDay
+                  ? `${formatDate(start)} → ${formatDate(end)}`
+                  : `${formatDate(start)} · All Day`
+                : `${formatDate(start)}  ${formatTime(start)} → ${multiDay ? `${formatDate(end)}  ` : ''}${formatTime(end)}`
+              }
             </Text>
           </View>
 
@@ -246,9 +293,16 @@ const styles = StyleSheet.create({
   screenTitle: { fontSize: 28, fontWeight: '800', color: KBC.black, marginBottom: 8, marginTop: 4 },
   sectionLabel: { fontSize: 11, fontWeight: '700', color: '#999', textTransform: 'uppercase', marginTop: 16, letterSpacing: 0.5 },
 
+  allDayRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  checkbox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: '#ccc', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  checkboxChecked: { borderColor: KBC.cyan, backgroundColor: KBC.cyan },
+  checkboxMark: { color: '#fff', fontSize: 13, fontWeight: '800', lineHeight: 16 },
+  allDayLabel: { fontSize: 15, color: KBC.black },
+
   dateTimeRow: { flexDirection: 'row', gap: 8 },
   dateCell: { flex: 3 },
   timeCell: { flex: 2 },
+  fullCell: { flex: 1 },
 
   field: {
     backgroundColor: '#fff', borderRadius: 10, padding: 14,
