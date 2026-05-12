@@ -63,11 +63,6 @@ export default function AddEventScreen() {
 
   function handleAllDayToggle(value: boolean) {
     setAllDay(value);
-    if (value) {
-      // Reset end to same day as start when switching to all-day
-      const sameDay = new Date(start);
-      setEnd(sameDay);
-    }
   }
 
   // Merge a new date part into an existing datetime
