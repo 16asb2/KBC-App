@@ -74,7 +74,7 @@ type GymStatus =
   | { open: true;  until: Date; supervisorName?: string }
   | { open: false; next: Date | null };
 
-/** Matches both legacy "(super)" and current "(sup)" event title formats. */
+/** Matches both current "(super)" and legacy "(sup)" event title formats. */
 function isSupervisorEvent(summary: string | undefined): boolean {
   if (!summary) return false;
   const s = summary.toLowerCase();

@@ -28,7 +28,7 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error('Not authenticated');
-      const data = await listUpcomingEvents(token, 60);
+      const data = await listUpcomingEvents(token, 60, 14);
       setAllEvents(data);
     } catch (e: any) {
       setError(e.message);

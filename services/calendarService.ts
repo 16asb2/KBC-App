@@ -103,12 +103,12 @@ function parseParticipants(event: CalendarEvent): CalendarParticipant[] {
 
 /**
  * Rebuild the event title from the participants list.
- * Format: "Artur (sup) + Garry + Andy"
- * Supervisors and admins get "(sup)" suffix; others get no label.
+ * Format: "Artur (super) + Garry + Andy"
+ * Supervisors and admins get "(super)" suffix; others get no label.
  */
 function buildTitle(participants: CalendarParticipant[]): string {
   return participants
-    .map(p => (p.role === 'supervisor' || p.role === 'admin') ? `${p.name} (sup)` : p.name)
+    .map(p => (p.role === 'supervisor' || p.role === 'admin') ? `${p.name} (super)` : p.name)
     .join(' + ');
 }
 
@@ -121,8 +121,9 @@ function buildTitle(participants: CalendarParticipant[]): string {
 export async function listUpcomingEvents(
   accessToken: string,
   days = 14,
+  pastDays = 0,
 ): Promise<CalendarEvent[]> {
-  const timeMin = new Date().toISOString();
+  const timeMin = new Date(Date.now() - pastDays * 24 * 60 * 60 * 1000).toISOString();
   const timeMax = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
   const url = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events`
     + `?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime`;
@@ -285,6 +286,66 @@ export async function joinSession(
 }
 
 /**
+ * Leave an existing supervisor session.
+ * Removes the user from the participants list and rebuilds the title.
+ * Uses the admin account for the calendar write.
+ * Throws if the user is the only participant (would leave an empty session).
+ */
+export async function leaveSession(
+  existingEventId: string,
+  leavingUser: CalendarUser,
+  userAccessToken: string,
+): Promise<string> {
+  const fetchUrl = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${existingEventId}`;
+  const fetchRes = await fetch(fetchUrl, { headers: authHeaders(userAccessToken) });
+  if (!fetchRes.ok) throw new Error(`Failed to fetch event ${fetchRes.status}`);
+  const existing: CalendarEvent = await fetchRes.json();
+
+  const participants = parseParticipants(existing);
+
+  if (participants.length === 0) {
+    throw new Error('Cannot leave this session — participant data is unavailable.');
+  }
+
+  const updatedParticipants = participants.filter(p => p.uid !== leavingUser.uid);
+
+  if (updatedParticipants.length === participants.length) {
+    // User wasn't tracked — nothing to do
+    return existingEventId;
+  }
+
+  if (updatedParticipants.length === 0) {
+    throw new Error('You cannot leave a session with no other participants.');
+  }
+
+  const updatedTitle = buildTitle(updatedParticipants);
+
+  const adminToken = await getAdminCalendarToken();
+  const patchRes = await fetch(
+    `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${existingEventId}`,
+    {
+      method: 'PATCH',
+      headers: authHeaders(adminToken),
+      body: JSON.stringify({
+        summary: updatedTitle,
+        extendedProperties: {
+          private: {
+            ...(existing.extendedProperties?.private ?? {}),
+            participants: JSON.stringify(updatedParticipants),
+          },
+        },
+      }),
+    },
+  );
+  if (!patchRes.ok) {
+    const text = await patchRes.text();
+    throw new Error(`Failed to update event ${patchRes.status}: ${text}`);
+  }
+
+  return existingEventId;
+}
+
+/**
  * Update an existing supervisor session (time, title, supervisor flag).
  * Uses the admin account.
  * Requires: requestingUser.isSupervisor || requestingUser.isAdmin
@@ -312,7 +373,7 @@ export async function updateSupervisorEvent(
   if (patch.nameOverride !== undefined || patch.isSupervisor !== undefined) {
     const name   = patch.nameOverride ?? requestingUser.name;
     const isSup  = patch.isSupervisor ?? (requestingUser.isSupervisor || requestingUser.isAdmin);
-    body.summary = isSup ? `${name} (sup)` : name;
+    body.summary = isSup ? `${name} (super)` : name;
   }
 
   const adminToken = await getAdminCalendarToken();

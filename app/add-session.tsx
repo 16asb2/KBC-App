@@ -62,7 +62,7 @@ export default function AddSessionScreen() {
   const previewTitle = requestMode
     ? `${nameOverride} (requested)`
     : isSupervisor && addAsSup
-      ? `${nameOverride} (sup)`
+      ? `${nameOverride} (super)`
       : nameOverride;
 
   function buildDateTime(datePart: Date, timePart: Date) {

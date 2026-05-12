@@ -1,13 +1,15 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 
+import { CalendarPicker } from '@/components/calendar-picker';
 import { TimelineView } from '@/components/timeline-view';
 import { KBC } from '@/constants/theme';
 import { isAdmin } from '@/constants/admins';
@@ -32,21 +34,27 @@ function isAllDayOnDay(event: CalendarEvent, day: Date): boolean {
   return d >= startDate && d < endDate;
 }
 
-function formatHeader(date: Date) {
+function formatHeaderDate(date: Date): string {
+  return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+}
+
+function formatHeaderLabel(date: Date): string | null {
   const today = new Date();
-  if (isSameDay(date, today)) return 'Today';
+  if (isSameDay(date, today)) return '(Today)';
   const tomorrow = new Date(today);
   tomorrow.setDate(today.getDate() + 1);
-  if (isSameDay(date, tomorrow)) return 'Tomorrow';
-  return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
+  if (isSameDay(date, tomorrow)) return '(Tomorrow)';
+  return null;
 }
 
 export default function ScheduleScreen() {
   const { user, signOut } = useAuth();
   const { profile }       = useProfile();
-  const { selectedDate, setSelectedDate, goToToday, allEvents, loading, error, reload } = useSchedule();
+  const { selectedDate, setSelectedDate, allEvents, loading, error, reload } = useSchedule();
   const isSupervisor = profile?.isSupervisor ?? false;
   const isAdminUser  = isAdmin(user?.email, profile?.isAdmin);
+
+  const [calPickerVisible, setCalPickerVisible] = useState(false);
 
   useFocusEffect(useCallback(() => { reload(); }, []));
 
@@ -55,8 +63,6 @@ export default function ScheduleScreen() {
     next.setDate(selectedDate.getDate() + offset);
     setSelectedDate(next);
   }
-
-  const isToday = isSameDay(selectedDate, new Date());
 
   const dayEvents = allEvents.filter(e => {
     if (e.start?.dateTime) return isSameDay(new Date(e.start.dateTime), selectedDate);
@@ -71,14 +77,15 @@ export default function ScheduleScreen() {
         <TouchableOpacity style={styles.navArrow} onPress={() => changeDay(-1)}>
           <Text style={styles.navArrowText}>‹</Text>
         </TouchableOpacity>
-        <View style={styles.dayTitleGroup}>
-          <Text style={styles.dayTitle}>{formatHeader(selectedDate)}</Text>
-          {!isToday && (
-            <TouchableOpacity style={styles.todayBtn} onPress={goToToday}>
-              <Text style={styles.todayBtnText}>Today</Text>
-            </TouchableOpacity>
+        <TouchableOpacity style={styles.dayTitleGroup} onPress={() => setCalPickerVisible(true)} activeOpacity={0.7}>
+          <View style={styles.dayTitleRow}>
+            <Text style={styles.dayTitle}>{formatHeaderDate(selectedDate)}</Text>
+            <Text style={styles.calIcon}>📅</Text>
+          </View>
+          {formatHeaderLabel(selectedDate) && (
+            <Text style={styles.dayLabel}>{formatHeaderLabel(selectedDate)}</Text>
           )}
-        </View>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.navArrow} onPress={() => changeDay(1)}>
           <Text style={styles.navArrowText}>›</Text>
         </TouchableOpacity>
@@ -121,12 +128,14 @@ export default function ScheduleScreen() {
           selectedDate={selectedDate}
           scrollToFirstEvent
           onEventPress={event => {
-            if (!event.start?.dateTime) return; // all-day events not editable from this view
+            const start = event.start?.dateTime ?? event.start?.date;
+            const end   = event.end?.dateTime   ?? event.end?.date;
+            if (!start || !end) return;
             router.push({ pathname: '/edit-session', params: {
               id: event.id,
-              summary: event.summary,
-              start: event.start.dateTime,
-              end: event.end.dateTime,
+              summary: event.summary ?? '',
+              start,
+              end,
               description: event.description ?? '',
             }});
           }}
@@ -175,6 +184,32 @@ export default function ScheduleScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Calendar picker modal */}
+      <Modal
+        visible={calPickerVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCalPickerVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setCalPickerVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.modalCard}>
+            <View style={styles.modalHandle} />
+            <CalendarPicker
+              selectedDate={selectedDate}
+              allEvents={allEvents}
+              onDayPress={day => {
+                setSelectedDate(day);
+                setCalPickerVisible(false);
+              }}
+            />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -193,16 +228,25 @@ const styles = StyleSheet.create({
   navArrow: { padding: 8 },
   navArrowText: { fontSize: 32, color: '#c0005a', lineHeight: 36 },
   dayTitleGroup: { flex: 1, alignItems: 'center' },
+  dayTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dayTitle: { fontSize: 17, fontWeight: '700', color: '#fff' },
-  todayBtn: {
-    marginTop: 2,
-    paddingHorizontal: 10,
-    paddingVertical: 2,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#c0005a',
+  dayLabel: { fontSize: 11, color: '#aaa', fontWeight: '500', marginTop: 1 },
+  calIcon: { fontSize: 15, opacity: 0.8 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'flex-end',
   },
-  todayBtnText: { fontSize: 11, color: '#c0005a', fontWeight: '600' },
+  modalCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingBottom: 28,
+  },
+  modalHandle: {
+    width: 40, height: 4, borderRadius: 2, backgroundColor: '#ddd',
+    alignSelf: 'center', marginTop: 12, marginBottom: 4,
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   errorText: { color: '#c0005a', fontSize: 14, marginBottom: 16, textAlign: 'center' },
   retryButton: { backgroundColor: '#c0005a', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 },
