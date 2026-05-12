@@ -4,7 +4,14 @@
       "Bash(git checkout *)",
       "Bash(git pull *)",
       "Bash(npx tsc *)",
-      "Bash(npm --version)"
+      "Bash(npm --version)",
+      "Bash(wrangler login *)",
+      "Bash(wrangler whoami *)",
+      "Bash(eas build *)",
+      "Bash(npx firebase-tools *)",
+      "Bash(wrangler deploy *)",
+      "Bash(git -C \"d:/Dev/KBC-App\" status)",
+      "Bash(git -C \"d:/Dev/KBC-App\" log --oneline -8)"
     ]
   }
 }
