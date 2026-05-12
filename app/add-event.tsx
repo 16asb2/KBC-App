@@ -226,7 +226,7 @@ export default function AddEventScreen() {
             <View style={[styles.checkbox, allDay && styles.checkboxChecked]}>
               {allDay && <Text style={styles.checkboxMark}>✓</Text>}
             </View>
-            <Text style={styles.allDayLabel}>All day</Text>
+            <Text style={styles.allDayLabel}>All day (s)</Text>
           </TouchableOpacity>
 
           {multiDay && (
