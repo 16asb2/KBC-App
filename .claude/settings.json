@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"d:/Dev/KBC-App\" show e0c516a --stat)",
+      "Bash(git -C \"d:/Dev/KBC-App\" diff HEAD --stat)",
+      "Bash(git -C \"d:/Dev/KBC-App\" diff HEAD -- context/auth.tsx firestore.rules firebase.json tsconfig.json)",
+      "Bash(Test-Path \"d:\\\\Dev\\\\KBC-App\\\\CHANGELOG.md\")",
+      "Bash(git -C \"d:/Dev/KBC-App\" add CHANGELOG.md context/auth.tsx firebase.json firestore.rules tsconfig.json worker/src/ worker/wrangler.toml worker/tsconfig.json services/authBridge.ts services/adminToken.ts services/boulders.ts services/calendarService.ts services/climblog.ts services/firestore.ts services/logbook.ts constants/admins.ts .github/workflows/ci.yml)",
+      "Bash(git -C \"d:/Dev/KBC-App\" add context/auth.tsx PRODUCTION.md EAS_UPGRADES.md)"
+    ]
+  }
+}

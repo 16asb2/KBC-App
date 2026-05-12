@@ -30,29 +30,16 @@ the share sheet instead of copying to clipboard.
 
 ---
 
-## 3. Firestore Security Rules
-**Current:** Firestore is in test mode — open read/write to anyone with
-the API key.
-**Upgrade to:** Lock down rules to authenticated users only before
-shipping to real climbers. Basic rules:
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && request.auth.uid == userId;
-    }
-    match /logbook/{entry} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
-    }
-  }
-}
-```
-Note: since we use REST API with an API key (not Firebase Auth SDK),
-this may also require switching to Firebase Auth token exchange.
-Coordinate with the EAS build setup.
+## 3. Firestore Security Rules ⚠️ In Progress
+**Current:** Temporarily open (`allow read, write: if true`) while Firebase Auth
+token exchange is verified in production.
+**Done:** Full per-collection strict rules written (members, logs, gym status,
+boulders, climb logs, climb locations, session requests) — see `firestore.rules`
+and `feat/security-hardening` branch. Firebase Auth token exchange integrated into
+all service files via `services/authBridge.ts`.
+**Remaining:** Verify that production builds include `Authorization: Bearer <firebase-id-token>`
+on Firestore requests, then redeploy the strict rules.
+See **PRODUCTION.md → Step 9** for the verification checklist.
 
 ---
 

@@ -43,6 +43,69 @@
 
 ---
 
+## [Unreleased] — feat/security-hardening
+
+### Security
+
+- **Admin OAuth credentials moved off-device**: Created a Cloudflare Worker (`worker/`) as a
+  server-side proxy for the KBC admin Google Calendar token. The `GOOGLE_ADMIN_CLIENT_ID`,
+  `GOOGLE_ADMIN_CLIENT_SECRET`, and `GOOGLE_ADMIN_REFRESH_TOKEN` are now stored as Cloudflare
+  secrets and never included in the app bundle. The app calls the Worker via
+  `EXPO_PUBLIC_CLOUD_FUNCTIONS_BASE_URL`; the legacy on-device refresh path remains as a fallback
+  for local dev only and should be removed after the admin refresh token is rotated.
+
+- **Worker caller verification**: The Worker validates callers using Google's OAuth tokeninfo
+  endpoint (`https://oauth2.googleapis.com/tokeninfo`), confirming the request comes from a
+  signed-in Google user before issuing the admin token.
+
+- **Secret scanning in CI**: Added `gitleaks/gitleaks-action@v2` to `.github/workflows/ci.yml`.
+  Runs on every push and pull request; blocks merge if secrets are detected in history.
+
+- **SUPER_ADMIN_EMAIL moved to env var**: `constants/admins.ts` now reads the super-admin email
+  from `EXPO_PUBLIC_SUPER_ADMIN_EMAIL` instead of a hardcoded personal address. Set in `.env`
+  locally and as an EAS environment variable for cloud builds.
+
+### Added
+
+- `worker/` — Cloudflare Worker project (`wrangler.toml`, `src/index.ts`, `tsconfig.json`).
+  Deployed at `https://kbc-admin-token.kbcclimb.workers.dev`.
+
+- `services/authBridge.ts` — Module-level token registry so non-React service files can call
+  `getFirebaseToken()` and `getAdminCalendarToken()` without React context.
+
+- Firebase Auth integration: `context/auth.tsx` now exchanges the Google ID token for a Firebase
+  ID token on sign-in and session restore (`accounts:signInWithIdp`), with automatic refresh via
+  `securetoken.googleapis.com`. All Firestore service files send the Firebase ID token as an
+  `Authorization: Bearer` header when available.
+
+- `firestore.rules` — Full per-collection security rules written (members, logs, gym status,
+  boulders, climb logs, climb locations, session requests). **Temporarily set to open
+  `allow read, write: if true`** pending end-to-end verification of the Firebase Auth token
+  exchange in production. Strict rules are preserved in git history and ready to re-enable.
+
+- `firebase.json` — Firestore rules deployment config for `firebase-tools`.
+
+### Changed
+
+- `context/auth.tsx`: `getAdminCalendarToken()` now sends the Google OAuth access token (not the
+  Firebase ID token) to the Worker. Unblocks calendar event creation while the Firebase Auth
+  token exchange is still being stabilised.
+
+- `services/adminToken.ts`: Now a thin re-export of `getAdminCalendarToken` from `authBridge.ts`
+  (was a standalone refresh-token handler with credentials in the bundle).
+
+- `tsconfig.json`: Added `"worker"` to `exclude` so the app type-checker ignores the Worker's
+  Cloudflare-typed source.
+
+### Pending
+
+- Rotate the old `GOOGLE_ADMIN_REFRESH_TOKEN` in Google Cloud Console, then remove the
+  `EXPO_PUBLIC_GOOGLE_ADMIN_*` legacy vars from `.env`.
+- Re-enable strict Firestore security rules once Firebase Auth token exchange is confirmed
+  working in production.
+
+---
+
 ## v0.4 — 2026-05-11
 
 ### Added
