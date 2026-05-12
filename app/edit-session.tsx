@@ -207,7 +207,7 @@ export default function EditSessionScreen() {
     if (alreadyInTitle || joinedId) {
       return (
         <View style={styles.joinedBanner}>
-          <Text style={styles.joinedBannerText}>✓  You're in this session</Text>
+          <Text style={styles.joinedBannerText}>✓  You&apos;re in this session</Text>
         </View>
       );
     }
@@ -263,7 +263,7 @@ export default function EditSessionScreen() {
           </Text>
         </View>
         <Text style={styles.requestInfoText}>
-          Awaiting supervisor confirmation. You'll be able to climb once a supervisor fulfills this request.
+          Awaiting supervisor confirmation. You&apos;ll be able to climb once a supervisor fulfills this request.
         </Text>
         <TouchableOpacity
           style={[styles.cancelRequestBtn, deleting && styles.buttonDisabled]}

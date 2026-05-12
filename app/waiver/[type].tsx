@@ -223,7 +223,7 @@ export default function WaiverScreen() {
 
                 {isMinor ? (
                   <>
-                    <Text style={styles.fieldLabel}>Minor's full legal name</Text>
+                    <Text style={styles.fieldLabel}>Minor&apos;s full legal name</Text>
                     <TextInput
                       style={styles.input}
                       value={signedBy}
@@ -234,7 +234,7 @@ export default function WaiverScreen() {
                       returnKeyType="next"
                       onFocus={scrollToEnd}
                     />
-                    <Text style={styles.fieldLabel}>Guardian's full legal name</Text>
+                    <Text style={styles.fieldLabel}>Guardian&apos;s full legal name</Text>
                     <TextInput
                       style={styles.input}
                       value={guardianName}

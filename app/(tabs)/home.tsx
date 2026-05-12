@@ -157,8 +157,8 @@ function AccessModal({
                   <View style={styles.optionDivider} />
                   <TouchableOpacity style={styles.optionRow} onPress={onOtherPunch}>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.optionLabel}>Use Another Member's Punch</Text>
-                      <Text style={styles.optionDetail}>Deduct a punch from a different member's account</Text>
+                      <Text style={styles.optionLabel}>Use Another Member&apos;s Punch</Text>
+                      <Text style={styles.optionDetail}>Deduct a punch from a different member&apos;s account</Text>
                     </View>
                     <Text style={styles.optionPrice}>🎟</Text>
                   </TouchableOpacity>
@@ -192,7 +192,7 @@ function AccessModal({
                 </Text>
               </Text>
               <TouchableOpacity style={styles.confirmBtn} onPress={handleDone}>
-                <Text style={styles.confirmBtnText}>I've paid and confirmed with the supervisor</Text>
+                <Text style={styles.confirmBtnText}>I&apos;ve paid and confirmed with the supervisor</Text>
               </TouchableOpacity>
             </View>
           </>
@@ -872,7 +872,7 @@ export default function HomeScreen() {
         {/* Special events today */}
         {todaySpecialEvents.length > 0 && (
           <View style={styles.specialEventsCard}>
-            <Text style={styles.specialEventsHeading}>📅  Today's Events</Text>
+            <Text style={styles.specialEventsHeading}>📅  Today&apos;s Events</Text>
             {todaySpecialEvents.map(e => (
               <View key={e.id} style={styles.specialEventRow}>
                 <View style={styles.specialEventDot} />
