@@ -272,11 +272,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (CLOUD_FN_BASE) {
-          const fbToken = await getFirebaseToken();
-          if (!fbToken) throw new Error('Not authenticated — cannot fetch admin calendar token.');
+          const accessToken = await getAccessToken();
+          if (!accessToken) throw new Error('Not authenticated — cannot fetch admin calendar token.');
           const res = await fetch(`${CLOUD_FN_BASE}/getAdminCalendarToken`, {
             method: 'POST',
-            headers: { Authorization: `Bearer ${fbToken}` },
+            headers: { Authorization: `Bearer ${accessToken}` },
           });
           if (!res.ok) {
             const body = await res.text();
