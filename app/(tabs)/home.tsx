@@ -866,7 +866,7 @@ export default function HomeScreen() {
         {/* Special events today */}
         {todaySpecialEvents.length > 0 && (
           <View style={styles.specialEventsCard}>
-            <Text style={styles.specialEventsHeading}>📅  Today's Events</Text>
+            <Text style={styles.specialEventsHeading}>📅  Today&apos;s Events</Text>
             {todaySpecialEvents.map(e => (
               <View key={e.id} style={styles.specialEventRow}>
                 <View style={styles.specialEventDot} />
