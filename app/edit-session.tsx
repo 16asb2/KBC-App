@@ -21,7 +21,7 @@ import {
   leaveSession,
   updateSupervisorEvent,
   deleteSupervisorEvent,
-  createSupervisorEvent,
+  fulfillSessionRequest,
 } from '@/services/calendarService';
 
 function formatDate(date: Date) {
@@ -223,15 +223,11 @@ export default function EditSessionScreen() {
 
     setSaving(true);
     try {
-      // Delete the request event, then create a supervisor session
-      await deleteSupervisorEvent(id, calUser());
-      await createSupervisorEvent(
-        {
-          start:        newStart.toISOString(),
-          end:          newEnd.toISOString(),
-          timeZone:     'America/Toronto',
-          nameOverride: `${title} + ${requesterName}`,
-        },
+      await fulfillSessionRequest(
+        id,
+        newStart.toISOString(),
+        newEnd.toISOString(),
+        requesterName,
         calUser(),
       );
       router.back();

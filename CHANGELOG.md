@@ -1,5 +1,48 @@
 # Changelog
 
+## [Unreleased] — feat/special-event-improvements
+
+### Schedule tab
+
+- **Date header is now a calendar picker trigger** — tapping the date opens a slide-up `CalendarPicker` modal instead of showing a separate "Today" button; closing the modal keeps the selected day in view.
+- **All-day events appear in the timeline** — a sticky banner strip at the top of the timeline shows all-day events for the selected day; previously only `dateTime` events were shown.
+- **Event press works for all-day events** — tapping an all-day pill or a future-list row now correctly opens `edit-session` (previously only timed events were handled).
+- **Non-supervisors** — the bottom bar now shows only the "Request a climb session" button (purple); supervisors continue to see "+ Climb Session".
+- **"+ Special Event" button** extended to supervisors — was previously admin-only.
+- **Calendar fetch window** extended from 14 days to 60 days so the calendar tab and upcoming list are populated further ahead.
+
+### Calendar tab
+
+- **Replaced the hand-rolled calendar grid** with the new shared `CalendarPicker` component (same component used in the Schedule tab modal).
+- **Upcoming events list** added below the calendar — all events from today onward displayed in chronological order, grouped by date with a "Today / Tomorrow / full date" header.
+- **Rows are tappable** — each event row navigates to the `edit-session` detail/edit screen with the same params as tapping in the timeline; works for both timed and all-day events.
+- **Color coding** in the list rows matches the schedule legend: pink for supervisor sessions, purple for member requests, cyan for special events.
+
+### New component: `CalendarPicker`
+
+- Shared month-grid calendar with event-dot indicators (pink / purple / cyan per event type).
+- Handles month navigation, "today" highlight, and multi-dot indicator per day.
+- Used by both the Calendar tab and the Schedule tab's date-picker modal.
+
+### Special events (`add-event`)
+
+- **All-day toggle** — checking "All day" switches to date-only inputs; the event is stored without a time component and shown in the all-day banner on the timeline.
+- **Supervisor access** — supervisors can now add special events from the Schedule tab (was admin-only).
+- **End-date preservation** — toggling the all-day checkbox no longer resets the end date.
+
+### Session request / supervisor slot reconciliation (`calendarService`)
+
+- **`createSessionRequest`** — before creating, fetches existing supervisor slots and computes the non-overlapping intervals. Only those intervals are created as request events. Throws a clear error if the entire requested time is already covered by a supervisor session. If supervisor slots split the request, multiple shorter request events are created automatically.
+- **`createSupervisorEvent`** — after creation, reconciles all requests that overlap with the new slot: fully-contained requests are deleted; partially-overlapping requests are trimmed to the uncovered portion; requests that span the entire slot are split into two.
+- **`fulfillSessionRequest`** (new export) — replaces the inline delete-and-create logic in `edit-session`. If the fulfilling supervisor has an existing slot exactly adjacent (end-to-start or start-to-end) to the request, the two are **merged**: the existing slot's time is extended and the requester's name is added to the participants list. Otherwise a new supervisor session is created as before. Either way, any remaining overlapping requests are reconciled after fulfillment.
+
+### Bug fixes
+
+- **Home screen `formatTime`** — replaced `toLocaleTimeString` with a manual `h:mm AM/PM` formatter to fix a React Native rendering inconsistency.
+- **Home screen** — special events and the "next session" card now correctly handle all-day events (no longer skipped).
+
+---
+
 ## v0.4 — 2026-05-11
 
 ### Added
