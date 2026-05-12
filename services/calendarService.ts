@@ -1,10 +1,12 @@
-// NOTE: All Google Calendar access is mediated through the admin account.
-// No individual user Google accounts should have direct edit access to the KBC calendar.
-// If any were previously granted, revoke them manually in Google Calendar settings.
+// Architecture: all Google Calendar WRITE operations (create, update, delete) use the
+// KBC super-admin account token obtained via services/adminToken.ts.
+// No individual user OAuth token is required for writes — this means no per-user
+// calendar sharing is needed and all event changes appear under the admin account.
+//
+// READ operations (listUpcomingEvents) still use the signed-in user's token, which
+// works because the KBC calendar is shared as read-only with all Google users.
 
-// Architecture note: all functions accept an accessToken from the signed-in user.
-// For write operations (create, update, delete) the token must belong to a user
-// who has write access to the KBC calendar (supervisors / admins).
+import { getAdminCalendarToken } from '@/services/adminToken';
 
 const CALENDAR_ID = process.env.EXPO_PUBLIC_GOOGLE_CALENDAR_ID!;
 const BASE_URL    = 'https://www.googleapis.com/calendar/v3';
@@ -12,12 +14,11 @@ const BASE_URL    = 'https://www.googleapis.com/calendar/v3';
 const PROJECT_ID = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID!;
 const API_KEY    = process.env.EXPO_PUBLIC_FIREBASE_API_KEY!;
 const FS_BASE    = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
-const QUERY_URL  = `${FS_BASE}:runQuery?key=${API_KEY}`;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type CalendarParticipant = {
-  uid: string;
+  uid:  string;
   name: string;
   role: string; // 'supervisor' | 'admin' | 'member' | 'non-member'
 };
@@ -31,7 +32,7 @@ export type CalendarEvent = {
   colorId?: string;
   extendedProperties?: {
     private?: Record<string, string>;
-    shared?: Record<string, string>;
+    shared?:  Record<string, string>;
   };
 };
 
@@ -42,15 +43,15 @@ export type SessionRequestData = {
 };
 
 export type CalendarUser = {
-  uid: string;
-  name: string;
-  email: string;
-  isSupervisor: boolean;
-  isAdmin: boolean;
+  uid:              string;
+  name:             string;
+  email:            string;
+  isSupervisor:     boolean;
+  isAdmin:          boolean;
   membershipStatus: string;
 };
 
-// ─── Firestore helpers (for sessionRequests collection) ──────────────────────
+// ─── Firestore helpers ────────────────────────────────────────────────────────
 
 type FVal = Record<string, any>;
 
@@ -79,16 +80,16 @@ async function fsPatch(path: string, data: Record<string, any>) {
   return res.json();
 }
 
-// ─── Calendar auth headers ────────────────────────────────────────────────────
+// ─── Auth headers ─────────────────────────────────────────────────────────────
 
-function authHeaders(accessToken: string) {
+function authHeaders(token: string) {
   return {
-    Authorization:  `Bearer ${accessToken}`,
+    Authorization:  `Bearer ${token}`,
     'Content-Type': 'application/json',
   };
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Parse participants JSON from extendedProperties, defaulting to empty array. */
 function parseParticipants(event: CalendarEvent): CalendarParticipant[] {
@@ -107,11 +108,7 @@ function parseParticipants(event: CalendarEvent): CalendarParticipant[] {
  */
 function buildTitle(participants: CalendarParticipant[]): string {
   return participants
-    .map(p =>
-      p.role === 'supervisor' || p.role === 'admin'
-        ? `${p.name} (sup)`
-        : p.name,
-    )
+    .map(p => (p.role === 'supervisor' || p.role === 'admin') ? `${p.name} (sup)` : p.name)
     .join(' + ');
 }
 
@@ -119,7 +116,7 @@ function buildTitle(participants: CalendarParticipant[]): string {
 
 /**
  * List upcoming calendar events.
- * No permission check — all users can view.
+ * Uses the signed-in user's access token — no admin token needed for reads.
  */
 export async function listUpcomingEvents(
   accessToken: string,
@@ -128,7 +125,7 @@ export async function listUpcomingEvents(
   const timeMin = new Date().toISOString();
   const timeMax = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
   const url = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events`
-    + `?timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&orderBy=startTime`;
+    + `?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime`;
 
   const res = await fetch(url, { headers: authHeaders(accessToken) });
   if (!res.ok) {
@@ -140,12 +137,12 @@ export async function listUpcomingEvents(
 }
 
 /**
- * Create a supervisor-tagged session on the calendar.
+ * Create a supervisor-tagged session on the KBC calendar.
+ * Uses the admin account — no user token required.
  * Requires: creatorUser.isSupervisor || creatorUser.isAdmin
  */
 export async function createSupervisorEvent(
-  accessToken: string,
-  eventData: { start: string; end: string; description?: string; timeZone?: string },
+  eventData: { start: string; end: string; description?: string; timeZone?: string; nameOverride?: string },
   creatorUser: CalendarUser,
 ): Promise<CalendarEvent> {
   if (!creatorUser.isSupervisor && !creatorUser.isAdmin) {
@@ -154,7 +151,7 @@ export async function createSupervisorEvent(
 
   const participant: CalendarParticipant = {
     uid:  creatorUser.uid,
-    name: creatorUser.name,
+    name: eventData.nameOverride ?? creatorUser.name,
     role: creatorUser.isAdmin ? 'admin' : 'supervisor',
   };
   const title = buildTitle([participant]);
@@ -174,10 +171,11 @@ export async function createSupervisorEvent(
     },
   };
 
+  const adminToken = await getAdminCalendarToken();
   const url = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events`;
   const res = await fetch(url, {
     method: 'POST',
-    headers: authHeaders(accessToken),
+    headers: authHeaders(adminToken),
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -188,28 +186,60 @@ export async function createSupervisorEvent(
 }
 
 /**
+ * Create a member-requested session on the KBC calendar.
+ * Uses the admin account — visible as a request pending supervisor fulfillment.
+ * Requires: requesterUser.membershipStatus !== 'non-member'
+ */
+export async function createSessionRequest(
+  eventData: { start: string; end: string; timeZone?: string; nameOverride?: string },
+  requesterUser: CalendarUser,
+): Promise<CalendarEvent> {
+  if (requesterUser.membershipStatus === 'non-member') {
+    throw new Error('Non-members cannot submit session requests.');
+  }
+
+  const displayName = eventData.nameOverride ?? requesterUser.name;
+  const tz          = eventData.timeZone ?? 'America/Toronto';
+
+  const body: Omit<CalendarEvent, 'id'> = {
+    summary:     `${displayName} (requested)`,
+    description: `requested_by:${requesterUser.email}`,
+    start: { dateTime: eventData.start, timeZone: tz },
+    end:   { dateTime: eventData.end,   timeZone: tz },
+  };
+
+  const adminToken = await getAdminCalendarToken();
+  const url = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(adminToken),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to create session request ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+/**
  * Join an existing supervisor session.
- * Callable by ANY authenticated user — adds them to the participants list,
- * rebuilds the title, then replaces the event (delete + create).
- *
- * Returns the new event ID.
- *
- * Note: write access to the KBC calendar is required. If the joiningUser does
- * not have write access via their token, this will throw a 403. In that case
- * the join should be recorded in Firestore only via createMemberRequest.
+ * Callable by ANY authenticated user — appends them to the participants list
+ * and rebuilds the event title via PATCH (preserves event ID).
+ * Uses the admin account for the calendar write.
  */
 export async function joinSession(
-  accessToken: string,
   existingEventId: string,
   joiningUser: CalendarUser,
+  userAccessToken: string,
 ): Promise<string> {
-  // 1. Fetch existing event
+  // Fetch existing event using the user's own token (read)
   const fetchUrl = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${existingEventId}`;
-  const fetchRes = await fetch(fetchUrl, { headers: authHeaders(accessToken) });
+  const fetchRes = await fetch(fetchUrl, { headers: authHeaders(userAccessToken) });
   if (!fetchRes.ok) throw new Error(`Failed to fetch event ${fetchRes.status}`);
   const existing: CalendarEvent = await fetchRes.json();
 
-  // 2. Parse and update participants
+  // Parse and update participants
   const participants = parseParticipants(existing);
 
   // Idempotent — don't add twice
@@ -220,72 +250,138 @@ export async function joinSession(
   const newParticipant: CalendarParticipant = {
     uid:  joiningUser.uid,
     name: joiningUser.name,
-    role: joiningUser.isAdmin ? 'admin'
-        : joiningUser.isSupervisor ? 'supervisor'
-        : joiningUser.membershipStatus === 'active' || joiningUser.membershipStatus === 'inactive' || joiningUser.membershipStatus === 'pending' ? 'member'
+    role: joiningUser.isAdmin        ? 'admin'
+        : joiningUser.isSupervisor   ? 'supervisor'
+        : joiningUser.membershipStatus !== 'non-member' ? 'member'
         : 'non-member',
   };
   const updatedParticipants = [...participants, newParticipant];
-  const updatedTitle = buildTitle(updatedParticipants);
+  const updatedTitle        = buildTitle(updatedParticipants);
 
-  // 3. Delete old event
-  const deleteUrl = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${existingEventId}`;
-  const deleteRes = await fetch(deleteUrl, {
-    method: 'DELETE',
-    headers: authHeaders(accessToken),
-  });
-  if (!deleteRes.ok && deleteRes.status !== 204) {
-    throw new Error(`Failed to delete old event ${deleteRes.status}`);
-  }
-
-  // 4. Create new event with updated title + participants
-  const tz = existing.start.timeZone ?? 'America/Toronto';
-  const newBody = {
-    summary:     updatedTitle,
-    description: existing.description,
-    start: { dateTime: existing.start.dateTime, timeZone: tz },
-    end:   { dateTime: existing.end.dateTime,   timeZone: tz },
-    extendedProperties: {
-      private: {
-        ...(existing.extendedProperties?.private ?? {}),
-        participants: JSON.stringify(updatedParticipants),
-      },
+  // PATCH the existing event (preserves event ID — no delete+create)
+  const adminToken = await getAdminCalendarToken();
+  const patchRes = await fetch(
+    `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${existingEventId}`,
+    {
+      method: 'PATCH',
+      headers: authHeaders(adminToken),
+      body: JSON.stringify({
+        summary: updatedTitle,
+        extendedProperties: {
+          private: {
+            ...(existing.extendedProperties?.private ?? {}),
+            participants: JSON.stringify(updatedParticipants),
+          },
+        },
+      }),
     },
-  };
-  const createUrl = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events`;
-  const createRes = await fetch(createUrl, {
-    method: 'POST',
-    headers: authHeaders(accessToken),
-    body: JSON.stringify(newBody),
-  });
-  if (!createRes.ok) {
-    const text = await createRes.text();
-    throw new Error(`Failed to create updated event ${createRes.status}: ${text}`);
+  );
+  if (!patchRes.ok) {
+    const text = await patchRes.text();
+    throw new Error(`Failed to update event ${patchRes.status}: ${text}`);
   }
-  const created: CalendarEvent = await createRes.json();
-  return created.id;
+
+  return existingEventId;
+}
+
+/**
+ * Update an existing supervisor session (time, title, supervisor flag).
+ * Uses the admin account.
+ * Requires: requestingUser.isSupervisor || requestingUser.isAdmin
+ */
+export async function updateSupervisorEvent(
+  eventId: string,
+  patch: {
+    start?:        string;
+    end?:          string;
+    timeZone?:     string;
+    nameOverride?: string;
+    isSupervisor?: boolean;
+  },
+  requestingUser: CalendarUser,
+): Promise<CalendarEvent> {
+  if (!requestingUser.isSupervisor && !requestingUser.isAdmin) {
+    throw new Error('Only supervisors and admins can edit supervisor events.');
+  }
+
+  const body: Record<string, any> = {};
+
+  if (patch.start)  body.start = { dateTime: patch.start, timeZone: patch.timeZone ?? 'America/Toronto' };
+  if (patch.end)    body.end   = { dateTime: patch.end,   timeZone: patch.timeZone ?? 'America/Toronto' };
+
+  if (patch.nameOverride !== undefined || patch.isSupervisor !== undefined) {
+    const name   = patch.nameOverride ?? requestingUser.name;
+    const isSup  = patch.isSupervisor ?? (requestingUser.isSupervisor || requestingUser.isAdmin);
+    body.summary = isSup ? `${name} (sup)` : name;
+  }
+
+  const adminToken = await getAdminCalendarToken();
+  const url = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${eventId}`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: authHeaders(adminToken),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to update event ${res.status}: ${text}`);
+  }
+  return res.json();
 }
 
 /**
  * Delete a supervisor session.
+ * Uses the admin account.
  * Requires: requestingUser.isSupervisor || requestingUser.isAdmin
  */
 export async function deleteSupervisorEvent(
-  accessToken: string,
   eventId: string,
   requestingUser: CalendarUser,
 ): Promise<void> {
   if (!requestingUser.isSupervisor && !requestingUser.isAdmin) {
     throw new Error('Only supervisors and admins can delete supervisor events.');
   }
+  const adminToken = await getAdminCalendarToken();
   const url = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events/${eventId}`;
-  const res = await fetch(url, { method: 'DELETE', headers: authHeaders(accessToken) });
+  const res = await fetch(url, { method: 'DELETE', headers: authHeaders(adminToken) });
   if (!res.ok && res.status !== 204) throw new Error(`Failed to delete event: ${res.status}`);
 }
 
 /**
- * Submit a session request — writes to Firestore `sessionRequests` collection.
- * Does NOT write to Google Calendar.
+ * Create a special (non-session) event — competitions, workshops, etc.
+ * Free-form title; no participant tracking. Uses the admin account.
+ * Requires: requestingUser.isSupervisor || requestingUser.isAdmin
+ */
+export async function createSpecialEvent(
+  eventData: { summary: string; start: string; end: string; timeZone?: string },
+  requestingUser: CalendarUser,
+): Promise<CalendarEvent> {
+  if (!requestingUser.isSupervisor && !requestingUser.isAdmin) {
+    throw new Error('Only supervisors and admins can create special events.');
+  }
+  const tz = eventData.timeZone ?? 'America/Toronto';
+  const body = {
+    summary: eventData.summary,
+    start: { dateTime: eventData.start, timeZone: tz },
+    end:   { dateTime: eventData.end,   timeZone: tz },
+  };
+  const adminToken = await getAdminCalendarToken();
+  const url = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: authHeaders(adminToken),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to create special event ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+/**
+ * Submit a session request to Firestore (does NOT write to Google Calendar).
+ * Use createSessionRequest() to also put it on the calendar.
  * Requires: requesterUser.membershipStatus !== 'non-member'
  */
 export async function createMemberRequest(

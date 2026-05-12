@@ -13,9 +13,10 @@ import {
 
 import { DatePickerModal, TimePickerModal } from '@/components/time-picker-modal';
 import { KBC } from '@/constants/theme';
+import { isAdmin } from '@/constants/admins';
 import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
-import { createEvent } from '@/services/calendar';
+import { createSupervisorEvent, createSessionRequest } from '@/services/calendarService';
 
 function formatDate(date: Date) {
   return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
@@ -28,11 +29,12 @@ function formatTime(date: Date) {
 type PickerField = 'date' | 'start' | 'end' | null;
 
 export default function AddSessionScreen() {
-  const { user, getAccessToken } = useAuth();
+  const { user } = useAuth();
   const { profile } = useProfile();
   const { presetStart, isRequest } = useLocalSearchParams<{ presetStart?: string; isRequest?: string }>();
   const requestMode  = isRequest === 'true';
-  const isSupervisor = profile?.isSupervisor ?? false;
+  const isAdminUser  = isAdmin(user?.email, profile?.isAdmin);
+  const isSupervisor = (profile?.isSupervisor ?? false) || isAdminUser;
 
   const now = new Date();
   const defaultStart = presetStart ? new Date(presetStart) : (() => {
@@ -44,26 +46,24 @@ export default function AddSessionScreen() {
   const defaultEnd = new Date(defaultStart);
   defaultEnd.setHours(defaultStart.getHours() + 2);
 
-  const [date, setDate]           = useState(presetStart ? new Date(presetStart) : now);
-  const [startTime, setStartTime] = useState(defaultStart);
-  const [endTime, setEndTime]     = useState(defaultEnd);
+  const [date, setDate]                 = useState(presetStart ? new Date(presetStart) : now);
+  const [startTime, setStartTime]       = useState(defaultStart);
+  const [endTime, setEndTime]           = useState(defaultEnd);
   const [activePicker, setActivePicker] = useState<PickerField>(null);
-  const [saving, setSaving]       = useState(false);
-  // Supervisor checkbox: shown only when a supervisor is adding (not in request mode)
-  const [addAsSup, setAddAsSup]   = useState(true);
+  const [saving, setSaving]             = useState(false);
+  // Supervisors can add either as supervisor slot or plain session
+  const [addAsSup, setAddAsSup]         = useState(true);
 
-  const userName = profile?.preferredName || user?.name || 'Unknown';
-  const [title, setTitle] = useState(userName);
+  // Name shown in the event title — defaults to the user's display name
+  const defaultName = profile?.preferredName || user?.name || 'Unknown';
+  const [nameOverride, setNameOverride] = useState(defaultName);
 
-  // Title logic:
-  //  • request mode → "(requested)"
-  //  • supervisor adding as sup → "(super)"
-  //  • anyone adding as regular session → no suffix
-  const eventTitle = requestMode
-    ? `${title} (requested)`
+  // Preview title — mirrors what calendarService will build
+  const previewTitle = requestMode
+    ? `${nameOverride} (requested)`
     : isSupervisor && addAsSup
-      ? `${title} (super)`
-      : title;
+      ? `${nameOverride} (sup)`
+      : nameOverride;
 
   function buildDateTime(datePart: Date, timePart: Date) {
     const result = new Date(datePart);
@@ -76,6 +76,8 @@ export default function AddSessionScreen() {
   }
 
   async function handleSave() {
+    if (!user || !profile) return;
+
     const start = buildDateTime(date, startTime);
     const end   = buildDateTime(date, endTime);
 
@@ -86,15 +88,36 @@ export default function AddSessionScreen() {
 
     setSaving(true);
     try {
-      const token = await getAccessToken();
-      if (!token) throw new Error('Not authenticated');
+      const calUser = {
+        uid:              user.id,
+        name:             nameOverride || defaultName,
+        email:            user.email,
+        isSupervisor:     profile.isSupervisor,
+        isAdmin:          isAdminUser,
+        membershipStatus: profile.membershipStatus,
+      };
 
-      await createEvent(token, {
-        summary: eventTitle,
-        description: requestMode ? `requested_by:${user?.email ?? ''}` : undefined,
-        start: { dateTime: start.toISOString(), timeZone: 'America/Toronto' },
-        end:   { dateTime: end.toISOString(),   timeZone: 'America/Toronto' },
-      });
+      if (requestMode) {
+        await createSessionRequest(
+          {
+            start:        start.toISOString(),
+            end:          end.toISOString(),
+            timeZone:     'America/Toronto',
+            nameOverride: nameOverride || defaultName,
+          },
+          calUser,
+        );
+      } else {
+        await createSupervisorEvent(
+          {
+            start:        start.toISOString(),
+            end:          end.toISOString(),
+            timeZone:     'America/Toronto',
+            nameOverride: addAsSup ? (nameOverride || defaultName) : undefined,
+          },
+          { ...calUser, isSupervisor: addAsSup || calUser.isSupervisor, isAdmin: addAsSup ? calUser.isAdmin : false },
+        );
+      }
 
       router.back();
     } catch (e: any) {
@@ -108,16 +131,17 @@ export default function AddSessionScreen() {
     <>
       <Stack.Screen options={{ title: requestMode ? 'Request a Climb Session' : 'Add Climb Session' }} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+
         <Text style={styles.sectionLabel}>Name</Text>
         <TextInput
           style={[styles.field, styles.fieldValue]}
-          value={title}
-          onChangeText={setTitle}
+          value={nameOverride}
+          onChangeText={setNameOverride}
           placeholder="Your name"
           placeholderTextColor="#aaa"
         />
 
-        {/* Supervisor checkbox — only for supervisors adding a normal session */}
+        {/* Supervisor checkbox — only for supervisors adding a normal (non-request) session */}
         {isSupervisor && !requestMode && (
           <TouchableOpacity style={styles.checkRow} onPress={() => setAddAsSup(v => !v)}>
             <View style={[styles.checkbox, addAsSup && styles.checkboxOn]}>
@@ -145,12 +169,11 @@ export default function AddSessionScreen() {
           <Text style={styles.fieldValue}>{formatTime(endTime)}</Text>
         </TouchableOpacity>
 
-
         <View style={[styles.previewBox, requestMode && styles.previewBoxRequest]}>
           <Text style={styles.previewLabel}>
             {requestMode ? 'Request preview' : 'Event title preview'}
           </Text>
-          <Text style={styles.previewTitle}>{eventTitle}</Text>
+          <Text style={styles.previewTitle}>{previewTitle}</Text>
           <Text style={styles.previewTime}>
             {formatDate(date)}  ·  {formatTime(startTime)} – {formatTime(endTime)}
           </Text>
@@ -208,7 +231,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderRadius: 10, padding: 14,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
   },
-  fieldValue: { fontSize: 16, color: KBC.black },
+  fieldValue: { fontSize: 16, color: '#111' },
 
   previewBox: {
     backgroundColor: KBC.black, borderRadius: 12, padding: 16, marginTop: 24, gap: 4,
@@ -239,6 +262,6 @@ const styles = StyleSheet.create({
   },
   checkboxOn: { backgroundColor: KBC.pink, borderColor: KBC.pink },
   checkmark: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  checkLabel: { fontSize: 15, fontWeight: '700', color: KBC.black },
+  checkLabel: { fontSize: 15, fontWeight: '700', color: '#111' },
   checkSub: { fontSize: 12, color: '#999', marginTop: 2 },
 });

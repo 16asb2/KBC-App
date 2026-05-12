@@ -16,8 +16,12 @@ import { KBC } from '@/constants/theme';
 import { isAdmin } from '@/constants/admins';
 import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
-import { createEvent, deleteEvent, updateEvent } from '@/services/calendar';
-import { joinSession } from '@/services/calendarService';
+import {
+  joinSession,
+  updateSupervisorEvent,
+  deleteSupervisorEvent,
+  createSupervisorEvent,
+} from '@/services/calendarService';
 
 function formatDate(date: Date) {
   return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
@@ -40,42 +44,46 @@ export default function EditSessionScreen() {
   const isSupervisorUser = (profile?.isSupervisor ?? false) || isAdminUser;
 
   // ── Request detection ────────────────────────────────────────────────────────
-  const isRequestEvent  = summary?.toLowerCase().includes('(requested)') ?? false;
-  const isSuperEvent    = summary?.toLowerCase().includes('(sup)') || summary?.toLowerCase().includes('(super)') ? true : false;
-  const requesterName   = isRequestEvent ? (summary?.replace(/\s*\(requested\)/i, '').trim() ?? '') : '';
-  const requesterEmail  = (() => {
+  const isRequestEvent = summary?.toLowerCase().includes('(requested)') ?? false;
+  const isSuperEvent   = summary?.toLowerCase().includes('(sup)') || summary?.toLowerCase().includes('(super)');
+  const requesterName  = isRequestEvent ? (summary?.replace(/\s*\(requested\)/i, '').trim() ?? '') : '';
+  const requesterEmail = (() => {
     const m = description?.match(/^requested_by:(.+)$/);
     return m ? m[1].trim() : '';
   })();
-  const isCreator       = !!user?.email && requesterEmail !== '' && requesterEmail === user.email;
+  const isCreator = !!user?.email && requesterEmail !== '' && requesterEmail === user.email;
 
   // ── Join session state ───────────────────────────────────────────────────────
   const [joining, setJoining]   = useState(false);
-  const [joinedId, setJoinedId] = useState<string | null>(null); // new event ID after join
+  const [joinedId, setJoinedId] = useState<string | null>(null);
 
-  // Detect if current user is already in the title (heuristic — extendedProperties not passed)
-  const userName    = profile?.preferredName || user?.name || '';
-  const alreadyInTitle = !!userName && summary?.toLowerCase().includes(userName.toLowerCase());
+  // Detect if current user is already in the title (heuristic)
+  const userName        = profile?.preferredName || user?.name || '';
+  const alreadyInTitle  = !!userName && summary?.toLowerCase().includes(userName.toLowerCase());
 
   // ── Edit form state ──────────────────────────────────────────────────────────
-  const isSuperInit = summary?.toLowerCase().includes('super') ?? false;
-  const baseName    = summary?.replace(/\s*\(super\)/i, '').replace(/\s*\(requested\)/i, '').trim() ?? '';
+  const isSuperInit = summary?.toLowerCase().includes('sup') ?? false;
+  const baseName    = summary
+    ?.replace(/\s*\(sup\)/i, '')
+    .replace(/\s*\(super\)/i, '')
+    .replace(/\s*\(requested\)/i, '')
+    .trim() ?? '';
 
   const startDate = new Date(start);
   const endDate   = new Date(end);
 
-  const [title, setTitle]           = useState(
-    isRequestEvent && isSupervisorUser ? (user?.name ?? '') : baseName,
+  const [title, setTitle]               = useState(
+    isRequestEvent && isSupervisorUser ? (profile?.preferredName || (user?.name ?? '')) : baseName,
   );
-  const [date, setDate]             = useState(startDate);
-  const [startTime, setStartTime]   = useState(startDate);
-  const [endTime, setEndTime]       = useState(endDate);
+  const [date, setDate]                 = useState(startDate);
+  const [startTime, setStartTime]       = useState(startDate);
+  const [endTime, setEndTime]           = useState(endDate);
   const [isSupervisor, setIsSupervisor] = useState(isSuperInit);
   const [activePicker, setActivePicker] = useState<PickerField>(null);
-  const [saving, setSaving]         = useState(false);
-  const [deleting, setDeleting]     = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [deleting, setDeleting]         = useState(false);
 
-  const eventTitle = isSupervisor ? `${title} (super)` : title;
+  const eventTitle = isSupervisor ? `${title} (sup)` : title;
 
   function buildDateTime(datePart: Date, timePart: Date) {
     const result = new Date(datePart);
@@ -86,6 +94,17 @@ export default function EditSessionScreen() {
     return result;
   }
 
+  function calUser() {
+    return {
+      uid:              user!.id,
+      name:             profile?.preferredName || user?.name || user?.email || '',
+      email:            user!.email,
+      isSupervisor:     profile?.isSupervisor ?? false,
+      isAdmin:          isAdminUser,
+      membershipStatus: profile?.membershipStatus ?? 'non-member',
+    };
+  }
+
   // ── Join session ─────────────────────────────────────────────────────────────
 
   async function handleJoin() {
@@ -94,17 +113,8 @@ export default function EditSessionScreen() {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error('Not authenticated');
-
-      const calUser = {
-        uid:              user.id,
-        name:             profile.preferredName || user.name || user.email,
-        email:            user.email,
-        isSupervisor:     profile.isSupervisor,
-        isAdmin:          isAdminUser,
-        membershipStatus: profile.membershipStatus,
-      };
-
-      const newId = await joinSession(token, id, calUser);
+      // Read uses user token, write uses admin token (inside joinSession)
+      const newId = await joinSession(id, calUser(), token);
       setJoinedId(newId);
       Alert.alert('Joined!', 'You\'ve been added to this session.');
     } catch (e: any) {
@@ -123,13 +133,17 @@ export default function EditSessionScreen() {
 
     setSaving(true);
     try {
-      const token = await getAccessToken();
-      if (!token) throw new Error('Not authenticated');
-      await updateEvent(token, id, {
-        summary: eventTitle,
-        start: { dateTime: newStart.toISOString(), timeZone: 'America/Toronto' },
-        end:   { dateTime: newEnd.toISOString(),   timeZone: 'America/Toronto' },
-      });
+      await updateSupervisorEvent(
+        id,
+        {
+          start:        newStart.toISOString(),
+          end:          newEnd.toISOString(),
+          timeZone:     'America/Toronto',
+          nameOverride: title,
+          isSupervisor,
+        },
+        calUser(),
+      );
       router.back();
     } catch (e: any) { Alert.alert('Error', e.message); }
     finally { setSaving(false); }
@@ -141,9 +155,7 @@ export default function EditSessionScreen() {
       { text: 'Delete', style: 'destructive', onPress: async () => {
         setDeleting(true);
         try {
-          const token = await getAccessToken();
-          if (!token) throw new Error('Not authenticated');
-          await deleteEvent(token, id);
+          await deleteSupervisorEvent(id, calUser());
           router.back();
         } catch (e: any) { Alert.alert('Error', e.message); }
         finally { setDeleting(false); }
@@ -157,9 +169,8 @@ export default function EditSessionScreen() {
       { text: 'Cancel Request', style: 'destructive', onPress: async () => {
         setDeleting(true);
         try {
-          const token = await getAccessToken();
-          if (!token) throw new Error('Not authenticated');
-          await deleteEvent(token, id);
+          // Requests are created by the admin account, deleted by admin account too
+          await deleteSupervisorEvent(id, { ...calUser(), isSupervisor: true });
           router.back();
         } catch (e: any) { Alert.alert('Error', e.message); }
         finally { setDeleting(false); }
@@ -172,19 +183,19 @@ export default function EditSessionScreen() {
     const newEnd   = buildDateTime(date, endTime);
     if (newEnd <= newStart) { Alert.alert('Invalid time', 'End time must be after start time.'); return; }
 
-    const supervisorName = user?.name ?? 'Supervisor';
-    const fulfilledTitle = `${supervisorName} + ${requesterName} (super)`;
-
     setSaving(true);
     try {
-      const token = await getAccessToken();
-      if (!token) throw new Error('Not authenticated');
-      await deleteEvent(token, id);
-      await createEvent(token, {
-        summary: fulfilledTitle,
-        start: { dateTime: newStart.toISOString(), timeZone: 'America/Toronto' },
-        end:   { dateTime: newEnd.toISOString(),   timeZone: 'America/Toronto' },
-      });
+      // Delete the request event, then create a supervisor session
+      await deleteSupervisorEvent(id, calUser());
+      await createSupervisorEvent(
+        {
+          start:        newStart.toISOString(),
+          end:          newEnd.toISOString(),
+          timeZone:     'America/Toronto',
+          nameOverride: `${title} + ${requesterName}`,
+        },
+        calUser(),
+      );
       router.back();
     } catch (e: any) { Alert.alert('Error', e.message); }
     finally { setSaving(false); }
@@ -311,7 +322,7 @@ export default function EditSessionScreen() {
 
           <View style={[styles.previewBox, { borderLeftColor: KBC.green }]}>
             <Text style={styles.previewLabel}>Fulfilled session preview</Text>
-            <Text style={styles.previewTitle}>{title} + {requesterName} (super)</Text>
+            <Text style={styles.previewTitle}>{title} + {requesterName} (sup)</Text>
             <Text style={styles.previewTime}>
               {formatDate(date)}  ·  {formatTime(startTime)} – {formatTime(endTime)}
             </Text>
@@ -483,7 +494,7 @@ const styles = StyleSheet.create({
   sessionInfoTitle: { fontSize: 20, fontWeight: '800', color: KBC.white },
   sessionInfoTime:  { fontSize: 14, color: '#aaa' },
 
-  // Request card (read-only info block)
+  // Request card
   requestCard: {
     backgroundColor: KBC.black, borderRadius: 14, padding: 20, gap: 6, marginBottom: 8,
     borderLeftWidth: 4, borderLeftColor: KBC.purple,

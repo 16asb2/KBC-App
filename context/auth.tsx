@@ -88,7 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // addScopes only needs to run once — subsequent calls cause the race warning
         if (!scopesGranted.current) {
           const scopeResult = await GoogleSignin.addScopes({
-            scopes: ['https://www.googleapis.com/auth/drive.file'],
+            scopes: ['https://www.googleapis.com/auth/calendar.events'],
           });
           if (!scopeResult) {
             console.warn('Drive scope was not granted by the user.');

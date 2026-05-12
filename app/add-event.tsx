@@ -15,8 +15,10 @@ import {
 
 import { DatePickerModal, TimePickerModal } from '@/components/time-picker-modal';
 import { KBC } from '@/constants/theme';
+import { isAdmin } from '@/constants/admins';
 import { useAuth } from '@/context/auth';
-import { createEvent } from '@/services/calendar';
+import { useProfile } from '@/context/profile';
+import { createSpecialEvent } from '@/services/calendarService';
 
 function formatDate(date: Date) {
   return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
@@ -33,7 +35,8 @@ function isSameDay(a: Date, b: Date) {
 type PickerField = 'startDate' | 'startTime' | 'endDate' | 'endTime' | null;
 
 export default function AddEventScreen() {
-  const { getAccessToken } = useAuth();
+  const { user } = useAuth();
+  const { profile } = useProfile();
   const { presetStart } = useLocalSearchParams<{ presetStart?: string }>();
 
   const base = presetStart ? new Date(presetStart) : new Date();
@@ -96,6 +99,7 @@ export default function AddEventScreen() {
   const multiDay = !isSameDay(start, end);
 
   async function handleSave() {
+    if (!user || !profile) return;
     if (!title.trim()) {
       Alert.alert('Title required', 'Please enter a title for the event.');
       return;
@@ -105,17 +109,30 @@ export default function AddEventScreen() {
       return;
     }
 
+    const isAdminUser = isAdmin(user.email, profile.isAdmin);
+    if (!profile.isSupervisor && !isAdminUser) {
+      Alert.alert('Not authorized', 'Only supervisors and admins can create special events.');
+      return;
+    }
+
     setSaving(true);
     try {
-      const token = await getAccessToken();
-      if (!token) throw new Error('Not authenticated');
-
-      await createEvent(token, {
-        summary: title.trim(),
-        start: { dateTime: start.toISOString(), timeZone: 'America/Toronto' },
-        end:   { dateTime: end.toISOString(),   timeZone: 'America/Toronto' },
-      });
-
+      await createSpecialEvent(
+        {
+          summary:  title.trim(),
+          start:    start.toISOString(),
+          end:      end.toISOString(),
+          timeZone: 'America/Toronto',
+        },
+        {
+          uid:              user.id,
+          name:             profile.preferredName || user.name || user.email,
+          email:            user.email,
+          isSupervisor:     profile.isSupervisor,
+          isAdmin:          isAdminUser,
+          membershipStatus: profile.membershipStatus,
+        },
+      );
       router.back();
     } catch (e: any) {
       Alert.alert('Error', e.message);
