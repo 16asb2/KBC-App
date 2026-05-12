@@ -7,7 +7,6 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -196,17 +195,6 @@ export default function AddEventScreen() {
             autoFocus
           />
 
-          {/* All Day toggle */}
-          <View style={styles.allDayRow}>
-            <Text style={styles.allDayLabel}>All Day</Text>
-            <Switch
-              value={allDay}
-              onValueChange={handleAllDayToggle}
-              thumbColor={allDay ? KBC.cyan : '#ccc'}
-              trackColor={{ false: '#ddd', true: KBC.cyan + '66' }}
-            />
-          </View>
-
           {/* Start */}
           <Text style={styles.sectionLabel}>Start</Text>
           <View style={styles.dateTimeRow}>
@@ -232,6 +220,14 @@ export default function AddEventScreen() {
               </TouchableOpacity>
             )}
           </View>
+
+          {/* All day checkbox */}
+          <TouchableOpacity style={styles.allDayRow} onPress={() => handleAllDayToggle(!allDay)} activeOpacity={0.7}>
+            <View style={[styles.checkbox, allDay && styles.checkboxChecked]}>
+              {allDay && <Text style={styles.checkboxMark}>✓</Text>}
+            </View>
+            <Text style={styles.allDayLabel}>All day</Text>
+          </TouchableOpacity>
 
           {multiDay && (
             <View style={styles.multiDayBadge}>
@@ -302,8 +298,11 @@ const styles = StyleSheet.create({
   screenTitle: { fontSize: 28, fontWeight: '800', color: KBC.black, marginBottom: 8, marginTop: 4 },
   sectionLabel: { fontSize: 11, fontWeight: '700', color: '#999', textTransform: 'uppercase', marginTop: 16, letterSpacing: 0.5 },
 
-  allDayRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, backgroundColor: '#fff', borderRadius: 10, padding: 14, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 3, elevation: 1 },
-  allDayLabel: { fontSize: 16, color: KBC.black },
+  allDayRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  checkbox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: '#ccc', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  checkboxChecked: { borderColor: KBC.cyan, backgroundColor: KBC.cyan },
+  checkboxMark: { color: '#fff', fontSize: 13, fontWeight: '800', lineHeight: 16 },
+  allDayLabel: { fontSize: 15, color: KBC.black },
 
   dateTimeRow: { flexDirection: 'row', gap: 8 },
   dateCell: { flex: 3 },

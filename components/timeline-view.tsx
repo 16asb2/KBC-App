@@ -131,7 +131,7 @@ export function TimelineView({ events, onEventPress, onTimePress, selectedDate, 
     <View style={styles.outerContainer}>
     {allDayEvents.length > 0 && (
       <View style={styles.allDayBanner}>
-        <Text style={styles.allDayLabel}>All Day</Text>
+        <Text style={styles.allDayLabel} numberOfLines={1}>All day</Text>
         <View style={styles.allDayPills}>
           {allDayEvents.map(e => (
             <TouchableOpacity
@@ -216,7 +216,7 @@ export function TimelineView({ events, onEventPress, onTimePress, selectedDate, 
 const styles = StyleSheet.create({
   outerContainer: { flex: 1 },
   allDayBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#f0f0f0', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
-  allDayLabel: { fontSize: 10, fontWeight: '700', color: '#999', textTransform: 'uppercase', letterSpacing: 0.5, width: TIME_COL_WIDTH - 12 },
+  allDayLabel: { fontSize: 11, fontWeight: '600', color: '#999', width: TIME_COL_WIDTH - 4 },
   allDayPills: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   allDayPill: { borderRadius: 4, paddingHorizontal: 8, paddingVertical: 4 },
   allDayPillText: { fontSize: 12, fontWeight: '600', color: '#fff' },
