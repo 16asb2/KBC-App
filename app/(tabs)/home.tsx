@@ -41,7 +41,11 @@ import {
 // ─── Gym status logic ────────────────────────────────────────────────────────
 
 function formatTime(d: Date) {
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const h    = d.getHours();
+  const m    = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hour = h % 12 || 12;
+  return `${hour}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
 function formatDateTime(date: Date) {
