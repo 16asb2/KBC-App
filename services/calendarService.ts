@@ -27,8 +27,8 @@ export type CalendarEvent = {
   id: string;
   summary: string;
   description?: string;
-  start: { dateTime: string; timeZone?: string };
-  end:   { dateTime: string; timeZone?: string };
+  start: { dateTime?: string; date?: string; timeZone?: string };
+  end:   { dateTime?: string; date?: string; timeZone?: string };
   colorId?: string;
   extendedProperties?: {
     private?: Record<string, string>;
@@ -351,20 +351,24 @@ export async function deleteSupervisorEvent(
  * Create a special (non-session) event — competitions, workshops, etc.
  * Free-form title; no participant tracking. Uses the admin account.
  * Requires: requestingUser.isSupervisor || requestingUser.isAdmin
+ * For all-day events pass allDay:true and YYYY-MM-DD date strings (end date is exclusive).
  */
 export async function createSpecialEvent(
-  eventData: { summary: string; start: string; end: string; timeZone?: string },
+  eventData: { summary: string; start: string; end: string; timeZone?: string; allDay?: boolean },
   requestingUser: CalendarUser,
 ): Promise<CalendarEvent> {
   if (!requestingUser.isSupervisor && !requestingUser.isAdmin) {
     throw new Error('Only supervisors and admins can create special events.');
   }
-  const tz = eventData.timeZone ?? 'America/Toronto';
-  const body = {
-    summary: eventData.summary,
-    start: { dateTime: eventData.start, timeZone: tz },
-    end:   { dateTime: eventData.end,   timeZone: tz },
-  };
+  const body: Record<string, any> = { summary: eventData.summary };
+  if (eventData.allDay) {
+    body.start = { date: eventData.start };
+    body.end   = { date: eventData.end };
+  } else {
+    const tz = eventData.timeZone ?? 'America/Toronto';
+    body.start = { dateTime: eventData.start, timeZone: tz };
+    body.end   = { dateTime: eventData.end,   timeZone: tz };
+  }
   const adminToken = await getAdminCalendarToken();
   const url = `${BASE_URL}/calendars/${encodeURIComponent(CALENDAR_ID)}/events`;
   const res = await fetch(url, {

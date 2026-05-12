@@ -29,16 +29,29 @@ function isSupervisorEvent(summary: string | undefined): boolean {
   return s.includes('(sup)') || s.includes('(super)');
 }
 
+function eventOnDay(e: any, day: Date): boolean {
+  if (e.start?.dateTime) return isSameDay(new Date(e.start.dateTime), day);
+  if (e.start?.date && e.end?.date) {
+    const [sy, sm, sd] = e.start.date.split('-').map(Number);
+    const [ey, em, ed] = e.end.date.split('-').map(Number);
+    const start = new Date(sy, sm - 1, sd);
+    const end   = new Date(ey, em - 1, ed); // exclusive
+    const d = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+    return d >= start && d < end;
+  }
+  return false;
+}
+
 function hasSupervisor(events: any[], day: Date) {
-  return events.some(e => e.start?.dateTime && isSameDay(new Date(e.start.dateTime), day) && isSupervisorEvent(e.summary));
+  return events.some(e => eventOnDay(e, day) && isSupervisorEvent(e.summary));
 }
 
 function hasRequested(events: any[], day: Date) {
-  return events.some(e => e.start?.dateTime && isSameDay(new Date(e.start.dateTime), day) && e.summary?.toLowerCase().includes('(requested)'));
+  return events.some(e => eventOnDay(e, day) && e.summary?.toLowerCase().includes('(requested)'));
 }
 
 function hasRegular(events: any[], day: Date) {
-  return events.some(e => e.start?.dateTime && isSameDay(new Date(e.start.dateTime), day) && !isSupervisorEvent(e.summary) && !e.summary?.toLowerCase().includes('(requested)'));
+  return events.some(e => eventOnDay(e, day) && !isSupervisorEvent(e.summary) && !e.summary?.toLowerCase().includes('(requested)'));
 }
 
 export default function CalendarScreen() {

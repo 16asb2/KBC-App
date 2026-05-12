@@ -581,7 +581,7 @@ export default function HomeScreen() {
       return isSpecial
         && new Date(e.start.dateTime) < todayEnd
         && new Date(e.end.dateTime)   > todayStart;
-    }).sort((a, b) => new Date(a.start.dateTime).getTime() - new Date(b.start.dateTime).getTime());
+    }).sort((a, b) => new Date(a.start.dateTime!).getTime() - new Date(b.start.dateTime!).getTime());
   }, [allEvents]);
 
   // Prefer the user's chosen display name for log entries
@@ -879,7 +879,7 @@ export default function HomeScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.specialEventName}>{e.summary}</Text>
                   <Text style={styles.specialEventTime}>
-                    {formatTime(new Date(e.start.dateTime))}
+                    {formatTime(new Date(e.start.dateTime!))}
                     {e.end?.dateTime ? ` – ${formatTime(new Date(e.end.dateTime))}` : ''}
                   </Text>
                 </View>

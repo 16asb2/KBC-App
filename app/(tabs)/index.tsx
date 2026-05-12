@@ -14,11 +14,22 @@ import { isAdmin } from '@/constants/admins';
 import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
 import { useSchedule } from '@/context/schedule';
+import type { CalendarEvent } from '@/services/calendarService';
 
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate();
+}
+
+function isAllDayOnDay(event: CalendarEvent, day: Date): boolean {
+  if (!event.start?.date || !event.end?.date) return false;
+  const [sy, sm, sd] = event.start.date.split('-').map(Number);
+  const [ey, em, ed] = event.end.date.split('-').map(Number);
+  const startDate = new Date(sy, sm - 1, sd);
+  const endDate   = new Date(ey, em - 1, ed); // exclusive
+  const d = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+  return d >= startDate && d < endDate;
 }
 
 function formatHeader(date: Date) {
@@ -47,9 +58,11 @@ export default function ScheduleScreen() {
 
   const isToday = isSameDay(selectedDate, new Date());
 
-  const dayEvents = allEvents.filter(e =>
-    e.start?.dateTime && isSameDay(new Date(e.start.dateTime), selectedDate)
-  );
+  const dayEvents = allEvents.filter(e => {
+    if (e.start?.dateTime) return isSameDay(new Date(e.start.dateTime), selectedDate);
+    if (e.start?.date)     return isAllDayOnDay(e, selectedDate);
+    return false;
+  });
 
   return (
     <View style={styles.container}>
@@ -107,13 +120,16 @@ export default function ScheduleScreen() {
           events={dayEvents}
           selectedDate={selectedDate}
           scrollToFirstEvent
-          onEventPress={event => router.push({ pathname: '/edit-session', params: {
-            id: event.id,
-            summary: event.summary,
-            start: event.start.dateTime,
-            end: event.end.dateTime,
-            description: event.description ?? '',
-          }})}
+          onEventPress={event => {
+            if (!event.start?.dateTime) return; // all-day events not editable from this view
+            router.push({ pathname: '/edit-session', params: {
+              id: event.id,
+              summary: event.summary,
+              start: event.start.dateTime,
+              end: event.end.dateTime,
+              description: event.description ?? '',
+            }});
+          }}
           onTimePress={date => router.push({ pathname: '/add-session', params: {
             presetStart: date.toISOString(),
           }})}
@@ -150,7 +166,7 @@ export default function ScheduleScreen() {
           </>
         )}
 
-        {isAdminUser && (
+        {(isAdminUser || isSupervisor) && (
           <TouchableOpacity
             style={styles.addEventButton}
             onPress={() => router.push({ pathname: '/add-event', params: { presetStart: selectedDate.toISOString() } } as any)}
