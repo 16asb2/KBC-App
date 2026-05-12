@@ -70,9 +70,16 @@ type GymStatus =
   | { open: true;  until: Date; supervisorName?: string }
   | { open: false; next: Date | null };
 
+/** Matches both legacy "(super)" and current "(sup)" event title formats. */
+function isSupervisorEvent(summary: string | undefined): boolean {
+  if (!summary) return false;
+  const s = summary.toLowerCase();
+  return s.includes('(sup)') || s.includes('(super)');
+}
+
 function getGymStatus(events: any[]): GymStatus {
   const now    = new Date();
-  const supers = events.filter(e => e.summary?.toLowerCase().includes('super'));
+  const supers = events.filter(e => isSupervisorEvent(e.summary));
   const current = supers.find(e => {
     if (!e.start?.dateTime || !e.end?.dateTime) return false;
     return new Date(e.start.dateTime) <= now && now < new Date(e.end.dateTime);
@@ -569,8 +576,7 @@ export default function HomeScreen() {
     const todayEnd   = new Date(todayStart); todayEnd.setDate(todayStart.getDate() + 1);
     return allEvents.filter(e => {
       if (!e.start?.dateTime || !e.end?.dateTime) return false;
-      const summary = e.summary?.toLowerCase() ?? '';
-      const isSpecial = !summary.includes('super') && !summary.includes('request');
+      const isSpecial = !isSupervisorEvent(e.summary) && !e.summary?.toLowerCase().includes('(requested)');
       // Include any special event that overlaps today (started before tomorrow AND ends after today started)
       return isSpecial
         && new Date(e.start.dateTime) < todayEnd

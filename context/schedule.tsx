@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
 import { useAuth } from '@/context/auth';
-import { CalendarEvent, fetchEvents } from '@/services/calendar';
+import { CalendarEvent, listUpcomingEvents } from '@/services/calendarService';
 
 type ScheduleContextType = {
   selectedDate: Date;
@@ -28,7 +28,7 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error('Not authenticated');
-      const data = await fetchEvents(token, 60);
+      const data = await listUpcomingEvents(token, 60);
       setAllEvents(data);
     } catch (e: any) {
       setError(e.message);

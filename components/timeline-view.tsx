@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { KBC } from '@/constants/theme';
-import { CalendarEvent } from '@/services/calendar';
+import { CalendarEvent } from '@/services/calendarService';
 
 const HOUR_HEIGHT = 64;
 const TIME_COL_WIDTH = 52;
@@ -14,8 +14,12 @@ function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-function isSupervisorSlot(e: CalendarEvent) { return e.summary?.toLowerCase().includes('super') ?? false; }
-function isRequested(e: CalendarEvent) { return e.summary?.toLowerCase().includes('request') ?? false; }
+/** Matches both legacy "(super)" and current "(sup)" event title formats. */
+function isSupervisorSlot(e: CalendarEvent) {
+  const s = e.summary?.toLowerCase() ?? '';
+  return s.includes('(sup)') || s.includes('(super)');
+}
+function isRequested(e: CalendarEvent) { return e.summary?.toLowerCase().includes('(requested)') ?? false; }
 
 function getEventMinutes(dateTime: string) {
   const d = new Date(dateTime);
