@@ -8,15 +8,7 @@ GoogleSignin.configure({
 });
 
 const FIREBASE_API_KEY = process.env.EXPO_PUBLIC_FIREBASE_API_KEY!;
-const CLOUD_FN_BASE    = process.env.EXPO_PUBLIC_CLOUD_FUNCTIONS_BASE_URL ?? '';
-
-// Legacy on-device admin token credentials.
-// These are still read from env vars during the transition period before the
-// Cloud Function is deployed. Once the Cloud Function is live and
-// EXPO_PUBLIC_CLOUD_FUNCTIONS_BASE_URL is set, remove these three vars from .env.
-const LEGACY_ADMIN_CLIENT_ID     = process.env.EXPO_PUBLIC_GOOGLE_ADMIN_CLIENT_ID ?? '';
-const LEGACY_ADMIN_CLIENT_SECRET = process.env.EXPO_PUBLIC_GOOGLE_ADMIN_CLIENT_SECRET ?? '';
-const LEGACY_ADMIN_REFRESH_TOKEN = process.env.EXPO_PUBLIC_GOOGLE_ADMIN_REFRESH_TOKEN ?? '';
+const CLOUD_FN_BASE    = process.env.EXPO_PUBLIC_CLOUD_FUNCTIONS_BASE_URL!;
 
 type User = {
   id: string;
@@ -256,12 +248,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return request;
   }
 
-  /**
-   * Google Calendar access token for the KBC admin account.
-   * Uses the Cloud Function when EXPO_PUBLIC_CLOUD_FUNCTIONS_BASE_URL is set;
-   * falls back to legacy on-device token refresh otherwise.
-   * Remove the legacy path after the Cloud Function is deployed.
-   */
+  /** Google Calendar access token for the KBC admin account, via Cloudflare Worker. */
   async function getAdminCalendarToken(): Promise<string> {
     if (inflightAdminTok.current) return inflightAdminTok.current;
     const request = (async (): Promise<string> => {
@@ -270,46 +257,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (adminToken.current && now < adminExpiresAt.current) {
           return adminToken.current;
         }
-
-        if (CLOUD_FN_BASE) {
-          const accessToken = await getAccessToken();
-          if (!accessToken) throw new Error('Not authenticated — cannot fetch admin calendar token.');
-          const res = await fetch(`${CLOUD_FN_BASE}/getAdminCalendarToken`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${accessToken}` },
-          });
-          if (!res.ok) {
-            const body = await res.text();
-            throw new Error(`Cloud Function error ${res.status}: ${body}`);
-          }
-          const data = await res.json() as { access_token: string; expires_in: number };
-          adminToken.current    = data.access_token;
-          adminExpiresAt.current = now + (data.expires_in - 60) * 1000;
-          return adminToken.current;
-        }
-
-        // Legacy: refresh admin token on-device using EXPO_PUBLIC_ credentials.
-        // INSECURE — these credentials are in the app bundle. Remove after deploying Cloud Function.
-        if (!LEGACY_ADMIN_REFRESH_TOKEN) {
-          throw new Error('Admin token not configured — set EXPO_PUBLIC_CLOUD_FUNCTIONS_BASE_URL or legacy vars.');
-        }
-        const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+        const accessToken = await getAccessToken();
+        if (!accessToken) throw new Error('Not authenticated — cannot fetch admin calendar token.');
+        const res = await fetch(`${CLOUD_FN_BASE}/getAdminCalendarToken`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: new URLSearchParams({
-            client_id:     LEGACY_ADMIN_CLIENT_ID,
-            client_secret: LEGACY_ADMIN_CLIENT_SECRET,
-            refresh_token: LEGACY_ADMIN_REFRESH_TOKEN,
-            grant_type:    'refresh_token',
-          }).toString(),
+          headers: { Authorization: `Bearer ${accessToken}` },
         });
-        if (!tokenRes.ok) {
-          const text = await tokenRes.text();
-          throw new Error(`Legacy admin token refresh failed (${tokenRes.status}): ${text}`);
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`Admin token worker error ${res.status}: ${body}`);
         }
-        const data = await tokenRes.json() as { access_token: string; expires_in?: number };
-        adminToken.current    = data.access_token;
-        adminExpiresAt.current = now + ((data.expires_in ?? 3600) - 60) * 1000;
+        const data = await res.json() as { access_token: string; expires_in: number };
+        adminToken.current     = data.access_token;
+        adminExpiresAt.current = now + (data.expires_in - 60) * 1000;
         return adminToken.current;
       } finally {
         inflightAdminTok.current = null;
