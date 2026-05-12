@@ -14,7 +14,7 @@ The app is internal-only — not on any public app store. Distributed as an APK 
 ---
 
 ## Current Version
-**v0.2** — May 2026
+**v0.5** — May 2026
 See [CHANGELOG.md](./CHANGELOG.md) for full history.
 
 ---
@@ -49,7 +49,8 @@ See [CHANGELOG.md](./CHANGELOG.md) for full history.
 | Feature | Status | Notes |
 |---|---|---|
 | Admin isAdmin via Firestore | Planned | Currently hardcoded in `constants/admins.ts` — baked into APK; next build should move this to Firestore |
-| Calendar access management | Planned | Grant/revoke Google Calendar sharing per supervisor from within the app (Google Calendar ACL API) |
+| Calendar write centralization | ✅ Done (v0.5) | All writes flow through the KBC super-admin account via stored refresh token — no per-supervisor calendar sharing needed |
+| Calendar ACL management in-app | Future | In-app grant/revoke of Google Calendar read access per supervisor (Google Calendar ACL API) — lower priority now that writes are centralized |
 | Camera (photo on boulder log) | Future | Not implemented; no permissions declared yet |
 | GPS / location auto-fill | Future | Not implemented; no permissions declared yet |
 | Push notifications | Future | No backend to trigger them; would require FCM + a server or Cloud Function |
@@ -101,7 +102,7 @@ The `HoldIcon` component in `components/badge-icon.tsx` renders 40 different cli
 | Question | Context |
 |---|---|
 | **Move `isAdmin` to Firestore?** | Currently hardcoded in `constants/admins.ts` — can't change without a rebuild. Plan is to add `isAdmin` field to member docs and bootstrap via Firebase Console. Needs to happen before wider distribution. |
-| **Calendar ACL management in-app?** | Supervisors currently need the KBC calendar manually shared with their Google account. The Google Calendar ACL API supports granting this programmatically — should be tied to the supervisor toggle in the Members tab. |
+| **Calendar ACL management in-app?** | Write operations no longer require per-user calendar sharing (v0.5). Read access still requires the calendar to be publicly readable or individually shared. In-app ACL grant/revoke (tied to the supervisor toggle) would be a polish improvement but is no longer blocking. |
 | **Punch pass vs membership model** | Both exist but the distinction isn't fully enforced in the UI. What exactly can punch pass holders do vs full members? |
 | **Boulder seasons** | A `seasons` collection exists in Firestore but the UI for managing season transitions (archiving old boulders, starting a new season) is not built yet. |
 | **Waiver versioning** | The waiver is stored as a flag on the member doc but there's no version tracking. If the waiver text changes, existing members won't be prompted to re-sign. |
@@ -200,23 +201,33 @@ The `isAdmin(email, profileIsAdmin?)` helper in `constants/admins.ts` checks bot
 
 ---
 
-## Calendar Mediator Architecture (v0.2)
+## Calendar Mediator Architecture (v0.5)
 
-All Google Calendar API calls go through `services/calendarService.ts`. No other file should call the Calendar API directly.
+All Google Calendar API calls go through `services/calendarService.ts`. No other file calls the Calendar API directly.
+
+**Write operations use a centralized KBC super-admin account.** A refresh token for the super-admin Google account is stored in `.env` (`EXPO_PUBLIC_GOOGLE_ADMIN_REFRESH_TOKEN`). `services/adminToken.ts` exchanges it for a short-lived access token cached in memory (auto-refreshed ~60 s before expiry). No individual user's Google account needs write access to the KBC calendar.
 
 ```
+services/adminToken.ts
+  └── getAdminCalendarToken()               — fetches/caches admin OAuth access token
+
 services/calendarService.ts
-  ├── listUpcomingEvents(token)           — all users
-  ├── createSupervisorEvent(token, ...)   — supervisors + admins only
-  ├── joinSession(token, eventId, user)   — all authenticated users
-  ├── deleteSupervisorEvent(token, ...)   — supervisors + admins only
-  └── createMemberRequest(data, user)     — members only (not non-member) → Firestore only
+  ├── listUpcomingEvents(userToken)          — reads; uses the signed-in user's token
+  ├── createSupervisorEvent(data, user)      — admin token internally; supervisors + admins only
+  ├── joinSession(eventId, user, userToken)  — admin token for write; user token for event read
+  ├── updateSupervisorEvent(id, patch, user) — admin token internally; supervisors + admins only
+  ├── deleteSupervisorEvent(id, user)        — admin token internally; supervisors + admins only
+  ├── createSessionRequest(data, user)       — admin token internally; members only
+  └── createSpecialEvent(data, user)         — admin token internally; supervisors + admins only
 ```
 
 **Session participant tracking:**
 - Participants stored in `extendedProperties.private.participants` as JSON array `{uid, name, role}[]`
 - Title rebuilt from participants: `"Artur (sup) + Garry + Andy"`
-- Supervisors/admins get `(sup)` suffix; others get none
-- Joining replaces the event (delete + create) to update both title and extended properties
+- Supervisors/admins get `(sup)` suffix in the title; regular members get none
+- `joinSession` uses `PATCH` — event ID is preserved across participant joins (no delete+create)
 
-**Note:** Calendar write access requires the signed-in user's OAuth token to have write permission on the KBC calendar. Non-supervisors attempting to join will receive a 403 if their Google account hasn't been granted access.
+**Admin token credential management:**
+- Refresh token is bound to the Desktop OAuth client that issued it (`EXPO_PUBLIC_GOOGLE_ADMIN_CLIENT_ID/SECRET` in `.env`)
+- If that client is ever deleted in Google Cloud Console, run `scripts/get-admin-token.js` with a new Desktop client to re-obtain the refresh token and update `.env`
+- Env vars require a full Metro restart to pick up after changes

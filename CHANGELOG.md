@@ -121,3 +121,36 @@
 - Punch pass vs. full membership distinction not fully enforced in UI
 - Boulder seasons collection exists in Firestore but season transition UI is not built
 - Waiver has no version tracking — existing members won't be re-prompted if waiver text changes
+
+## v0.5 — 2026-05-11
+
+### Added
+- **Centralized calendar write architecture** — all Google Calendar write operations (create, update, delete) now flow through a single KBC super-admin Google account via an OAuth 2.0 refresh token stored in `.env`. No individual user's Google account needs write access to the KBC calendar. All events created via the app appear under the admin account in Google Calendar.
+- **`services/adminToken.ts`** — exchanges the stored admin refresh token for a short-lived Google OAuth access token; caches in memory with automatic re-fetch ~60 s before expiry (tokens last 1 hour).
+- **`scripts/get-admin-token.js`** — one-time Node.js helper to obtain the super-admin refresh token. Opens a local OAuth consent flow (Desktop app client, localhost redirect), then writes the resulting refresh token directly to `.env`. Re-run whenever the Desktop OAuth client is rotated.
+- **`updateSupervisorEvent`** in `calendarService.ts` — new export; PATCHes an existing supervisor session's time, title, or supervisor flag.
+- **`createSessionRequest`** in `calendarService.ts` — new export; creates a member-requested session on the calendar under the admin account (title suffix `(requested)`).
+- **`createSpecialEvent`** in `calendarService.ts` — new export; creates non-session events (competitions, workshops, etc.) with a free-form title.
+
+### Changed
+- **`joinSession`** — changed from delete + create (which needlessly changed the event ID) to a `PATCH` request; event ID is now stable across participant joins.
+- **All write functions** — `createSupervisorEvent`, `joinSession`, `updateSupervisorEvent`, `deleteSupervisorEvent`, `createSessionRequest`, `createSpecialEvent` no longer accept a caller-supplied OAuth token; they obtain the admin token internally via `getAdminCalendarToken()`.
+- **`listUpcomingEvents`** — read-only; still accepts the signed-in user's token (no change needed).
+- **`context/schedule.tsx`** — switched from retired `fetchEvents` to `listUpcomingEvents` from `calendarService.ts`.
+- **`app/add-session.tsx`** — recoded to use `createSupervisorEvent` / `createSessionRequest`; user token no longer passed for writes.
+- **`app/edit-session.tsx`** — recoded to use `updateSupervisorEvent`, `deleteSupervisorEvent`, `createSupervisorEvent`, `joinSession`; all imports from legacy calendar service removed.
+- **`app/add-event.tsx`** — replaced legacy `createEvent` with `createSpecialEvent` from `calendarService.ts`.
+- **OAuth scope in `context/auth.tsx`** — corrected from `drive.file` to `calendar.events`.
+- **Supervisor event detection** — `isSupervisorEvent()` helper added to `home.tsx`, `calendar.tsx`, and `timeline-view.tsx`; matches both `(sup)` (current format) and `(super)` (legacy format) so old events are not invisible to gym-status logic.
+
+### Fixed
+- Supervisor events were invisible to the gym open/closed status card and `hasSupervisor` calendar logic because detection compared `.includes('super')` against titles using `(sup)` — now both formats are matched.
+- `edit-session.tsx` had a runtime syntax error (`user?.name ?? ''` combined with `||` without parens) — fixed.
+
+### Removed
+- **`services/calendar.ts`** — legacy calendar service fully retired; all callers migrated to `calendarService.ts`.
+
+### Known Issues
+- No explicit gym close mechanism — status times out after 2 hours.
+- Waiver has no version tracking.
+- Admin refresh token is bound to the Desktop OAuth client that issued it — if that client is deleted in Google Cloud Console the token is invalidated; re-run `scripts/get-admin-token.js` with a new Desktop client to recover.

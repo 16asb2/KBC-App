@@ -22,16 +22,23 @@ function buildCalendarDays(year: number, month: number): (Date | null)[] {
   return days;
 }
 
+/** Matches both legacy "(super)" and current "(sup)" event title formats. */
+function isSupervisorEvent(summary: string | undefined): boolean {
+  if (!summary) return false;
+  const s = summary.toLowerCase();
+  return s.includes('(sup)') || s.includes('(super)');
+}
+
 function hasSupervisor(events: any[], day: Date) {
-  return events.some(e => e.start?.dateTime && isSameDay(new Date(e.start.dateTime), day) && e.summary?.toLowerCase().includes('super'));
+  return events.some(e => e.start?.dateTime && isSameDay(new Date(e.start.dateTime), day) && isSupervisorEvent(e.summary));
 }
 
 function hasRequested(events: any[], day: Date) {
-  return events.some(e => e.start?.dateTime && isSameDay(new Date(e.start.dateTime), day) && e.summary?.toLowerCase().includes('request'));
+  return events.some(e => e.start?.dateTime && isSameDay(new Date(e.start.dateTime), day) && e.summary?.toLowerCase().includes('(requested)'));
 }
 
 function hasRegular(events: any[], day: Date) {
-  return events.some(e => e.start?.dateTime && isSameDay(new Date(e.start.dateTime), day) && !e.summary?.toLowerCase().includes('super') && !e.summary?.toLowerCase().includes('request'));
+  return events.some(e => e.start?.dateTime && isSameDay(new Date(e.start.dateTime), day) && !isSupervisorEvent(e.summary) && !e.summary?.toLowerCase().includes('(requested)'));
 }
 
 export default function CalendarScreen() {
