@@ -1439,7 +1439,7 @@ function FilterModal({
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.projectLabel}>Projects only</Text>
-              <Text style={styles.projectSub}>Show only boulders you've marked as a project</Text>
+              <Text style={styles.projectSub}>Show only boulders you&apos;ve marked as a project</Text>
             </View>
           </TouchableOpacity>
 

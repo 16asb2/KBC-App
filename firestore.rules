@@ -5,8 +5,8 @@ rules_version = '2';
 // Auth model:
 //   - request.auth is the Firebase Auth user (Google Sign-In via authBridge.ts)
 //   - Super-admin: hardcoded email below (mirrors EXPO_PUBLIC_SUPER_ADMIN_EMAIL)
-//   - Admin:       members/{uid}.isAdmin == true  (set by other admins in-app)
-//   - Supervisor:  members/{uid}.isSupervisor == true  (set by admins)
+//   - Admin:       users/{uid}.isAdmin == true  (set by other admins in-app)
+//   - Supervisor:  users/{uid}.isSupervisor == true  (set by admins)
 //   - Member:      any authenticated user
 
 service cloud.firestore {
@@ -25,11 +25,11 @@ service cloud.firestore {
     }
 
     function memberDoc() {
-      return get(/databases/$(database)/documents/members/$(request.auth.uid));
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
     function memberDocExists() {
-      return exists(/databases/$(database)/documents/members/$(request.auth.uid));
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
     function isSupervisorOrAdmin() {
@@ -63,8 +63,8 @@ service cloud.firestore {
       ]);
     }
 
-    // ── members/{uid} ─────────────────────────────────────────────────────────
-    match /members/{uid} {
+    // ── users/{uid} ───────────────────────────────────────────────────────────
+    match /users/{uid} {
       allow read:           if isAuthenticated();
       allow create, delete: if isSupervisorOrAdmin();
       allow update:         if isSupervisorOrAdmin() ||
@@ -106,9 +106,13 @@ service cloud.firestore {
     }
 
     // ── climbLogs/{id} ───────────────────────────────────────────────────────
-    // Private to owner; app always queries with where('uid', '==', auth.uid).
+    // KBC logs (locationId == 'kbc') are readable by all members — used for
+    // community stats on boulder cards. Logs at other locations are private.
     match /climbLogs/{logId} {
-      allow read:           if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow read:           if isAuthenticated() && (
+                               resource.data.uid == request.auth.uid ||
+                               resource.data.locationId == 'kbc'
+                            );
       allow create:         if isAuthenticated() && request.resource.data.uid == request.auth.uid;
       allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
     }
