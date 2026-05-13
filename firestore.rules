@@ -1,15 +1,129 @@
 rules_version = '2';
 
-// MIGRATION IN PROGRESS: Firebase Auth token exchange is not yet verified working.
-// Reads are temporarily open (same as before this PR).
-// Re-enable strict per-collection rules once Firebase Auth is confirmed working
-// (sign out → sign in → check that Firestore requests include Authorization header).
+// ─── KBC App — Firestore Security Rules ──────────────────────────────────────
+//
+// Auth model:
+//   - request.auth is the Firebase Auth user (Google Sign-In via authBridge.ts)
+//   - Super-admin: hardcoded email below (mirrors EXPO_PUBLIC_SUPER_ADMIN_EMAIL)
+//   - Admin:       members/{uid}.isAdmin == true  (set by other admins in-app)
+//   - Supervisor:  members/{uid}.isSupervisor == true  (set by admins)
+//   - Member:      any authenticated user
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read: if true;
-      allow write: if true;
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      // Keep in sync with EXPO_PUBLIC_SUPER_ADMIN_EMAIL in your .env / EAS vars
+      return isAuthenticated() &&
+        request.auth.token.email == '16asb2@gmail.com';
+    }
+
+    function memberDoc() {
+      return get(/databases/$(database)/documents/members/$(request.auth.uid));
+    }
+
+    function memberDocExists() {
+      return exists(/databases/$(database)/documents/members/$(request.auth.uid));
+    }
+
+    function isSupervisorOrAdmin() {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        (memberDocExists() && (
+          memberDoc().data.get('isAdmin', false) == true ||
+          memberDoc().data.get('isSupervisor', false) == true
+        ))
+      );
+    }
+
+    // Fields that only admins/supervisors may change on a boulder document.
+    // Regular members can update any other field (grade votes, quality votes,
+    // badge votes, updatedAt, etc.) without restriction.
+    function touchesBoulderAdminFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'name', 'setter', 'setterEmail', 'number', 'seasonId',
+        'locations', 'photo', 'removed', 'internalId', 'local', 'area',
+        'permissions', 'createdAt'
+      ]);
+    }
+
+    // Fields that only admins/supervisors may change on a member document.
+    // A member updating their own profile cannot escalate privileges.
+    function touchesMemberPrivilegedFields() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        'isAdmin', 'isSupervisor', 'membershipStatus', 'membershipStart',
+        'membershipExpiry', 'punchPassRemaining', 'pendingMembership',
+        'pendingPunches', 'amendedBy'
+      ]);
+    }
+
+    // ── members/{uid} ─────────────────────────────────────────────────────────
+    match /members/{uid} {
+      allow read:           if isAuthenticated();
+      allow create, delete: if isSupervisorOrAdmin();
+      allow update:         if isSupervisorOrAdmin() ||
+                               (isAuthenticated() &&
+                                request.auth.uid == uid &&
+                                !touchesMemberPrivilegedFields());
+    }
+
+    // ── logs/{id} ─────────────────────────────────────────────────────────────
+    // All members read the sign-in book; purchase entries are filtered client-side.
+    match /logs/{logId} {
+      allow read:           if isAuthenticated();
+      allow create:         if isAuthenticated();
+      allow update, delete: if isSupervisorOrAdmin();
+    }
+
+    // ── boulderSeasons/{id} ───────────────────────────────────────────────────
+    match /boulderSeasons/{seasonId} {
+      allow read:  if isAuthenticated();
+      allow write: if isSupervisorOrAdmin();
+    }
+
+    // ── boulders/{id} ────────────────────────────────────────────────────────
+    // Members can vote (grade, quality, badges); only admins/supervisors can
+    // create, delete, or change structural fields.
+    match /boulders/{boulderId} {
+      allow read:           if isAuthenticated();
+      allow create, delete: if isSupervisorOrAdmin();
+      allow update:         if isSupervisorOrAdmin() ||
+                               (isAuthenticated() && !touchesBoulderAdminFields());
+
+      match /comments/{commentId} {
+        allow read:           if isAuthenticated();
+        allow create:         if isAuthenticated();
+        allow update, delete: if isAuthenticated() &&
+                                 (resource.data.uid == request.auth.uid ||
+                                  isSupervisorOrAdmin());
+      }
+    }
+
+    // ── climbLogs/{id} ───────────────────────────────────────────────────────
+    // Private to owner; app always queries with where('uid', '==', auth.uid).
+    match /climbLogs/{logId} {
+      allow read:           if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create:         if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
+    // ── climbLocations/{id} ──────────────────────────────────────────────────
+    match /climbLocations/{locId} {
+      allow read:           if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create:         if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
+    // ── gymStatus/{doc} ──────────────────────────────────────────────────────
+    match /gymStatus/{doc} {
+      allow read:  if isAuthenticated();
+      allow write: if isSupervisorOrAdmin();
     }
   }
 }

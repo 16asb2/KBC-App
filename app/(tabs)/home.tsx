@@ -955,19 +955,19 @@ export default function HomeScreen() {
               style={[styles.socialBtn, { backgroundColor: '#5865F2' }]}
               onPress={() => Linking.openURL('https://discord.gg/h8PaBftpBu')}
             >
-              <FontAwesome5 name="discord" size={20} color="#fff" />
+              <FontAwesome5 name="discord" size={28} color="#fff" />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.socialBtn, { backgroundColor: '#1877F2' }]}
               onPress={() => Linking.openURL('https://www.facebook.com/kingstonboulderingcoop')}
             >
-              <FontAwesome5 name="facebook" size={20} color="#fff" />
+              <FontAwesome5 name="facebook" size={28} color="#fff" />
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.socialBtn, { backgroundColor: '#E1306C' }]}
               onPress={() => Linking.openURL('https://www.instagram.com/kingstonboulderingcoop/')}
             >
-              <FontAwesome5 name="instagram" size={20} color="#fff" />
+              <FontAwesome5 name="instagram" size={28} color="#fff" />
             </TouchableOpacity>
           </View>
 

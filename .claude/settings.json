@@ -6,7 +6,16 @@
       "Bash(git -C \"d:/Dev/KBC-App\" diff HEAD -- context/auth.tsx firestore.rules firebase.json tsconfig.json)",
       "Bash(Test-Path \"d:\\\\Dev\\\\KBC-App\\\\CHANGELOG.md\")",
       "Bash(git -C \"d:/Dev/KBC-App\" add CHANGELOG.md context/auth.tsx firebase.json firestore.rules tsconfig.json worker/src/ worker/wrangler.toml worker/tsconfig.json services/authBridge.ts services/adminToken.ts services/boulders.ts services/calendarService.ts services/climblog.ts services/firestore.ts services/logbook.ts constants/admins.ts .github/workflows/ci.yml)",
-      "Bash(git -C \"d:/Dev/KBC-App\" add context/auth.tsx PRODUCTION.md EAS_UPGRADES.md)"
+      "Bash(git -C \"d:/Dev/KBC-App\" add context/auth.tsx PRODUCTION.md EAS_UPGRADES.md)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k,v\\) for k,v in sorted\\(d.get\\('dependencies',{}\\).items\\(\\)\\)]\")",
+      "Bash(npx expo *)",
+      "Bash(Test-Path \"d:\\\\Dev\\\\KBC-App\\\\node_modules\\\\expo-image-picker\")",
+      "Bash(Write-Output)",
+      "Bash(firebase --version)",
+      "Bash(firebase login:list)",
+      "Bash(firebase projects:list)",
+      "Bash(firebase deploy *)",
+      "PowerShell(git add \"app/\\(tabs\\)/boulders.tsx\" \"app/\\(tabs\\)/climblog.tsx\" \"app/\\(tabs\\)/logbook.tsx\" \"app/\\(tabs\\)/home.tsx\" \"app/\\(tabs\\)/index.tsx\" components/badge-icon.tsx components/dropdown-picker.tsx components/effort-bar.tsx services/boulders.ts services/climblog.ts firestore.rules .firebaserc CHANGELOG.md app.json package.json package-lock.json 2>&1)"
     ]
   }
 }

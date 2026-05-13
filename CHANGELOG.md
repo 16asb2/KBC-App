@@ -1,5 +1,55 @@
 # Changelog
 
+## [Unreleased] — UI improvements + Firestore security rules
+
+### Security
+- **Firestore security rules deployed** — replaced the temporary open `allow read/write: if true` with production-ready per-collection rules (see `firestore.rules`):
+  - All unauthenticated access blocked
+  - Super-admin bootstrapped via hardcoded email; admins and supervisors identified via `members/{uid}.isAdmin / isSupervisor` in Firestore
+  - Members can vote on boulders but cannot change structural boulder fields (name, setter, locations, etc.)
+  - Members can update their own profile but cannot escalate privileges (self-promotion to admin/supervisor blocked)
+  - Personal climb logs and locations strictly private by UID
+  - Sign-in logs readable by all authenticated members; purchase entries filtered client-side for non-supervisors
+- Added `.firebaserc` to pin `firebase deploy` to `kbc-app-dev`
+
+### Added — Log Book (Sign-In Book)
+- **Date section headers** — entries grouped by calendar day with "Monday, May 13, 2026" subheadings; time column now shows time only (date carried by the header)
+- **Name search bar** — real-time filter by member name with a clear ✕ button, below the Recent / Archive toggle
+
+### Added — Personal Climbs (Log Book tab)
+- **Filter modal** — ⚙ button in top bar opens a filter sheet with:
+  - Climb Type: All / ✓ Sent / △ Attempted
+  - Projects Only checkbox
+  - Sort Order: Newest first / Oldest first
+  - Button shows a badge count and turns cyan when any filter is active
+
+### Added — Climbs tab (KBC boulders)
+- **"Projects only" filter** checkbox at top of Filter Boulders modal — shows only boulders the current user has marked as a project
+- **Attempts field** in the Log Climb modal (was previously missing from the KBC boulder log flow)
+- **Community grade average** (red marker) pre-loaded when the Log Climb modal opens
+- **Default attempts = 1** everywhere (log modal, edit modal, new boulder)
+
+### Added — Badge set
+- New **Hold Types** badge: `Crack`
+- New **Climbing Technique** badges: `Hand-Jam`, `Finger-Jam`, `Foot-Jam`
+- New **Others** badges: `Love it`, `Hate it`, `Suffer`
+
+### Changed — Badge set
+- Removed badges: `One-try`, `Last-try`, `No-feet`
+
+### Changed — Badge display in list rows
+- Badges in Climbs and Log Book list rows: labels retained, compact layout (no fixed column width, left-aligned, `flexWrap: nowrap`, gap 4) — always fits in a single line
+
+### Changed — Grade & effort inputs
+- KBC grade slider in the Log Climb modal (Log Book tab) now allows any continuous position — matches behaviour in the Climbs tab (was snapping to discrete label positions)
+- Effort bar marker changed from a white circle to a narrow vertical yellow mark
+
+### Fixed
+- `expo-image-picker` lazy-loaded with try/catch to prevent crash in Expo Go where the native module is unavailable; photo picker button hidden gracefully when not available
+- `attempts` field added to all `addClimb()` call sites that were missing it (TypeScript error after `PersonalClimb.attempts` was introduced as a required field)
+
+---
+
 ## [Unreleased] — feat/special-event-improvements
 
 ### Schedule tab
@@ -79,9 +129,9 @@
   `Authorization: Bearer` header when available.
 
 - `firestore.rules` — Full per-collection security rules written (members, logs, gym status,
-  boulders, climb logs, climb locations, session requests). **Temporarily set to open
-  `allow read, write: if true`** pending end-to-end verification of the Firebase Auth token
-  exchange in production. Strict rules are preserved in git history and ready to re-enable.
+  boulders, climb logs, climb locations, session requests). Initially set to open while Firebase
+  Auth token exchange was verified; **strict rules subsequently deployed** (see UI improvements
+  entry above).
 
 - `firebase.json` — Firestore rules deployment config for `firebase-tools`.
 
@@ -101,8 +151,6 @@
 
 - Rotate the old `GOOGLE_ADMIN_REFRESH_TOKEN` in Google Cloud Console, then remove the
   `EXPO_PUBLIC_GOOGLE_ADMIN_*` legacy vars from `.env`.
-- Re-enable strict Firestore security rules once Firebase Auth token exchange is confirmed
-  working in production.
 
 ---
 

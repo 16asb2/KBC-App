@@ -147,8 +147,8 @@ export default function ScheduleScreen() {
 
       {/* Bottom action buttons */}
       <View style={styles.buttonRow}>
-        {isSupervisor ? (
-          // Supervisors: single "Climb Session" button
+        {(isSupervisor || isAdminUser) ? (
+          // Supervisors/admins: pink "+ Climb Session" button
           <TouchableOpacity
             style={styles.addButton}
             onPress={() => router.push('/add-session')}
@@ -156,23 +156,13 @@ export default function ScheduleScreen() {
             <Text style={styles.addButtonText}>+ Climb Session</Text>
           </TouchableOpacity>
         ) : (
-          // Non-supervisors: session button always shown; request only for members (not non-members)
-          <>
-            <TouchableOpacity
-              style={[styles.addButton, styles.addButtonSession]}
-              onPress={() => router.push('/add-session')}
-            >
-              <Text style={styles.addButtonText}>+ Session</Text>
-            </TouchableOpacity>
-            {profile?.membershipStatus !== 'non-member' && (
-              <TouchableOpacity
-                style={[styles.addButton, styles.addButtonRequest]}
-                onPress={() => router.push({ pathname: '/add-session', params: { isRequest: 'true' } } as any)}
-              >
-                <Text style={styles.addButtonText}>+ Request</Text>
-              </TouchableOpacity>
-            )}
-          </>
+          // Regular members: single purple "Request Climb Session" button
+          <TouchableOpacity
+            style={[styles.addButton, styles.addButtonRequest]}
+            onPress={() => router.push({ pathname: '/add-session', params: { isRequest: 'true' } } as any)}
+          >
+            <Text style={styles.addButtonText}>Request Climb Session</Text>
+          </TouchableOpacity>
         )}
 
         {(isAdminUser || isSupervisor) && (

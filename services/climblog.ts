@@ -134,9 +134,10 @@ export type PersonalClimb = {
   gradeVote: number | null;     // numeric 0–4 (KBC) or null; used for aggregate avg
   problemInternalId: string;    // links to Boulder.internalId or PersonalProblem.internalId; '' for free-form
   quality: number;              // 0 = no vote, 1–3
-  effort: string;               // '' | 'Easy' | 'Medium' | 'Hard' | 'Impossible'
+  effort: string | number;      // '' | legacy string | 0–100 continuous scale
   type: 'ascent' | 'attempt';
   project: boolean;
+  attempts: number;             // 1–99; 0 = not recorded
   badges: string[];
   comment: string;
   createdAt: string;
@@ -218,6 +219,7 @@ function docToClimb(doc: any): PersonalClimb {
     effort:            d.effort            ?? '',
     type:              d.type              ?? 'attempt',
     project:           d.project           ?? false,
+    attempts:          typeof d.attempts === 'number' ? d.attempts : 0,
     badges:            Array.isArray(d.badges) ? d.badges : [],
     comment:           d.comment           ?? '',
     createdAt:         d.createdAt         ?? '',

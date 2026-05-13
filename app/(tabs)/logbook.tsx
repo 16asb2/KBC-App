@@ -27,15 +27,13 @@ import { updateProfile } from '@/services/firestore';
 
 function formatLogTime(iso: string): string {
   const d = new Date(iso);
-  const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-  const isYesterday = d.toDateString() === yesterday.toDateString();
-
   const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  if (isToday)     return time;
-  if (isYesterday) return `Yesterday\n${time}`;
-  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}\n${time}`;
+  return time;
+}
+
+function formatDateHeader(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 function accessColor(accessType: string): string {
@@ -174,6 +172,7 @@ export default function LogBookScreen() {
   const [archive, setArchive]     = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [amending, setAmending]   = useState<LogEntry | null>(null);
+  const [search, setSearch]       = useState('');
 
   const canAmend    = isAdmin(user?.email, profile?.isAdmin) || (profile?.isSupervisor ?? false);
   const canDelete   = isAdmin(user?.email, profile?.isAdmin);
@@ -267,6 +266,23 @@ export default function LogBookScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Search bar */}
+      <View style={styles.searchBar}>
+        <TextInput
+          style={styles.searchInput}
+          value={search}
+          onChangeText={setSearch}
+          placeholder="🔍  Search by name…"
+          placeholderTextColor="#bbb"
+          returnKeyType="search"
+        />
+        {!!search && (
+          <TouchableOpacity onPress={() => setSearch('')} style={styles.searchClear}>
+            <Text style={styles.searchClearText}>✕</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
       {/* Table header */}
       <View style={styles.tableHeader}>
         <Text style={[styles.tableHeaderCell, { width: 72 }]}>Time</Text>
@@ -283,28 +299,55 @@ export default function LogBookScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={KBC.green} />}
         >
           {(() => {
-            const visible = canSeePurchases
-              ? logs
-              : logs.filter(l => !l.notes?.includes('Purchased:'));
-            return visible.length === 0 ? (
-              <Text style={styles.emptyText}>
-                {archive ? 'No archived entries.' : 'No sign-ins in the last 30 days.'}
-              </Text>
-            ) : (
-              visible.map(entry => (
-                <LogRow
-                  key={entry.id}
-                  entry={entry}
-                  canAmend={canAmend}
-                  canDelete={canDelete}
-                  onAmend={() => setAmending(entry)}
-                  onDelete={() => handleDelete(entry)}
-                  onViewProfile={canAmend && entry.userId
-                    ? () => router.push({ pathname: '/(tabs)/members', params: { openUid: entry.userId } } as any)
-                    : undefined
-                  }
-                />
-              ))
+            const base = canSeePurchases ? logs : logs.filter(l => !l.notes?.includes('Purchased:'));
+            const visible = search
+              ? base.filter(l => l.userName.toLowerCase().includes(search.toLowerCase()))
+              : base;
+
+            if (visible.length === 0) {
+              return (
+                <Text style={styles.emptyText}>
+                  {search ? 'No matching sign-ins.' : archive ? 'No archived entries.' : 'No sign-ins in the last 30 days.'}
+                </Text>
+              );
+            }
+
+            // Group entries by calendar date
+            const groups: { dateKey: string; header: string; entries: LogEntry[] }[] = [];
+            for (const entry of visible) {
+              const dateKey = new Date(entry.timestamp).toDateString();
+              const last = groups[groups.length - 1];
+              if (!last || last.dateKey !== dateKey) {
+                groups.push({ dateKey, header: formatDateHeader(entry.timestamp), entries: [entry] });
+              } else {
+                last.entries.push(entry);
+              }
+            }
+
+            return (
+              <>
+                {groups.map(group => (
+                  <View key={group.dateKey}>
+                    <View style={styles.dateHeader}>
+                      <Text style={styles.dateHeaderText}>{group.header}</Text>
+                    </View>
+                    {group.entries.map(entry => (
+                      <LogRow
+                        key={entry.id}
+                        entry={entry}
+                        canAmend={canAmend}
+                        canDelete={canDelete}
+                        onAmend={() => setAmending(entry)}
+                        onDelete={() => handleDelete(entry)}
+                        onViewProfile={canAmend && entry.userId
+                          ? () => router.push({ pathname: '/(tabs)/members', params: { openUid: entry.userId } } as any)
+                          : undefined
+                        }
+                      />
+                    ))}
+                  </View>
+                ))}
+              </>
             );
           })()}
         </ScrollView>
@@ -376,6 +419,26 @@ const styles = StyleSheet.create({
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
   emptyText: { textAlign: 'center', color: '#aaa', fontSize: 14, paddingTop: 60 },
+
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 8,
+    borderBottomWidth: 1, borderBottomColor: '#eee',
+  },
+  searchInput: {
+    flex: 1, backgroundColor: '#f5f5f5', borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: '#111',
+  },
+  searchClear: { padding: 4 },
+  searchClearText: { color: '#999', fontSize: 14, fontWeight: '700' },
+  dateHeader: {
+    paddingHorizontal: 12, paddingTop: 14, paddingBottom: 6,
+    backgroundColor: '#f2f2f2',
+  },
+  dateHeaderText: {
+    fontSize: 11, fontWeight: '800', color: '#888',
+    textTransform: 'uppercase', letterSpacing: 0.8,
+  },
 
   // Amend modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },

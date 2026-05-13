@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +18,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BadgeIcon } from '@/components/badge-icon';
+import { DropdownPicker, DropdownOption } from '@/components/dropdown-picker';
+import { EffortBar, effortToNumber, effortLabel } from '@/components/effort-bar';
 import { GradeBar } from '@/components/grade-bar';
 import { DatePickerModal } from '@/components/time-picker-modal';
 import { KBC } from '@/constants/theme';
@@ -38,10 +40,6 @@ const DISCIPLINE_LABELS: Record<ClimbDiscipline, string> = {
 };
 const GRADE_SYSTEM_LABELS: Record<GradeSystem, string> = {
   'kbc': 'KBC', 'v-scale': 'V-Scale', 'font': 'Font', 'yosemite': 'Yosemite',
-};
-const EFFORT_OPTIONS = ['Easy', 'Medium', 'Hard', 'Impossible'] as const;
-const EFFORT_COLORS: Record<string, string> = {
-  Easy: '#2ecc71', Medium: '#f39c12', Hard: '#e74c3c', Impossible: '#8e44ad',
 };
 const STAR_COLORS = ['#fbbf24', '#fbbf24', '#fbbf24'];
 
@@ -74,30 +72,6 @@ function StarRow({ value, onChange }: { value: number; onChange: (v: number) => 
   );
 }
 
-// ─── GradePicker ──────────────────────────────────────────────────────────────
-
-function GradePicker({ grades, value, onChange }: {
-  grades: string[]; value: string; onChange: (g: string) => void;
-}) {
-  return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 4 }}>
-      <View style={{ flexDirection: 'row', gap: 6 }}>
-        {grades.map(g => {
-          const sel = g === value;
-          return (
-            <TouchableOpacity
-              key={g}
-              style={[styles.gradeChip, sel && styles.gradeChipSel]}
-              onPress={() => onChange(sel ? '' : g)}
-            >
-              <Text style={[styles.gradeChipText, sel && { color: '#fff' }]}>{g}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </ScrollView>
-  );
-}
 
 // ─── BadgeSection ─────────────────────────────────────────────────────────────
 
@@ -360,12 +334,20 @@ function LogClimbModal({
   const [personalGrade,   setPersonalGrade]   = useState(editingClimb?.personalGrade ?? '');
   const [type,            setType]            = useState<'ascent' | 'attempt'>(editingClimb?.type ?? 'ascent');
   const [quality,         setQuality]         = useState(editingClimb?.quality ?? 0);
-  const [effort,          setEffort]          = useState(editingClimb?.effort ?? '');
+  const [effort,          setEffort]          = useState<number | null>(effortToNumber(editingClimb?.effort));
+  const [attempts,        setAttempts]        = useState(editingClimb?.attempts ? String(editingClimb.attempts) : '1');
   const [project,         setProject]         = useState(editingClimb?.project ?? false);
   const [badges,          setBadges]          = useState<string[]>(editingClimb?.badges ?? []);
   const [comment,         setComment]         = useState(editingClimb?.comment ?? '');
   const [saving,          setSaving]          = useState(false);
   const [showDate,        setShowDate]        = useState(false);
+  // KBC grade stored as continuous 0-4 float; converted to label only on save
+  const [kbcGradeFloat,   setKbcGradeFloat]   = useState<number | null>(() => {
+    if (editingClimb?.locationId !== 'kbc') return null;
+    if (editingClimb.gradeVote !== null && editingClimb.gradeVote !== undefined) return editingClimb.gradeVote;
+    const idx = KBC_GRADE_LABELS.indexOf(editingClimb.personalGrade as any);
+    return idx >= 0 ? idx : null;
+  });
 
   // Re-initialise when editingClimb changes (modal re-opens for a different entry or add-new)
   const prevEditId = useRef<string | null>(null);
@@ -380,16 +362,26 @@ function LogClimbModal({
       setPersonalGrade(editingClimb.personalGrade);
       setType(editingClimb.type);
       setQuality(editingClimb.quality);
-      setEffort(editingClimb.effort);
+      setEffort(effortToNumber(editingClimb.effort));
+      setAttempts(editingClimb.attempts ? String(editingClimb.attempts) : '1');
       setProject(editingClimb.project);
       setBadges(editingClimb.badges ?? []);
       setComment(editingClimb.comment);
+      const kbcFloat = editingClimb.locationId === 'kbc'
+        ? (editingClimb.gradeVote !== null && editingClimb.gradeVote !== undefined
+           ? editingClimb.gradeVote
+           : (KBC_GRADE_LABELS.indexOf(editingClimb.personalGrade as any) >= 0
+              ? KBC_GRADE_LABELS.indexOf(editingClimb.personalGrade as any)
+              : null))
+        : null;
+      setKbcGradeFloat(kbcFloat);
     } else {
       // Switching to "add new" mode — reset to defaults
       setLocationId(defaultLocId);
       setSectorIdx(0); setLogDate(new Date()); setClimbName('');
       setEstablishedGrade(''); setPersonalGrade(''); setType('ascent');
-      setQuality(0); setEffort(''); setProject(false); setBadges([]); setComment('');
+      setQuality(0); setEffort(null); setAttempts('1'); setProject(false); setBadges([]); setComment('');
+      setKbcGradeFloat(null);
     }
   }
 
@@ -402,25 +394,20 @@ function LogClimbModal({
   const grades     = gradesForSystem(gradeSystem);
   const showBadges = locationId === 'kbc' || (activeLoc?.useBadges ?? false);
 
-  // KBC grade bar: convert personalGrade label → index for GradeBar votes
-  const kbcGradeIdx = gradeSystem === 'kbc'
-    ? KBC_GRADE_LABELS.indexOf(personalGrade as any)
-    : -1;
-  const kbcGradeVotes: Record<string, number> = kbcGradeIdx >= 0
-    ? { __self: kbcGradeIdx }
-    : {};
+  // KBC grade: continuous 0-4 float drives GradeBar; converted to label only on save
+  const kbcGradeVotes: Record<string, number> = kbcGradeFloat !== null ? { __self: kbcGradeFloat } : {};
 
   function handleKbcVote(val: number) {
-    if (val < 0) { setPersonalGrade(''); return; }
-    const idx = Math.round(Math.max(0, Math.min(4, val)));
-    setPersonalGrade(KBC_GRADE_LABELS[idx]);
+    if (val < 0) { setKbcGradeFloat(null); return; }
+    setKbcGradeFloat(Math.max(0, Math.min(4, val)));
   }
 
   function reset() {
     setLocationId(defaultLocId);
     setSectorIdx(0); setLogDate(new Date()); setClimbName('');
     setEstablishedGrade(''); setPersonalGrade(''); setType('ascent');
-    setQuality(0); setEffort(''); setProject(false); setBadges([]); setComment('');
+    setQuality(0); setEffort(null); setAttempts('1'); setProject(false); setBadges([]); setComment('');
+    setKbcGradeFloat(null);
   }
 
   async function handleSave() {
@@ -435,10 +422,15 @@ function LogClimbModal({
         timestamp:         logDate.toISOString(),
         name:              climbName.trim(),
         establishedGrade:  locationId === 'kbc' ? '' : establishedGrade,
-        personalGrade,
-        gradeVote:         editingClimb?.gradeVote         ?? null,
+        personalGrade:     locationId === 'kbc'
+          ? (kbcGradeFloat !== null ? KBC_GRADE_LABELS[Math.round(Math.max(0, Math.min(4, kbcGradeFloat)))] : '')
+          : personalGrade,
+        gradeVote:         locationId === 'kbc' ? kbcGradeFloat : (editingClimb?.gradeVote ?? null),
         problemInternalId: editingClimb?.problemInternalId ?? '',
-        quality, effort, type, project, badges,
+        quality,
+        effort: effort ?? '',
+        attempts: Math.min(99, Math.max(1, parseInt(attempts || '1', 10) || 1)),
+        type, project, badges,
         comment: comment.trim(),
         createdAt: editingClimb?.createdAt ?? now,
       };
@@ -497,44 +489,44 @@ function LogClimbModal({
                 </TouchableOpacity>
               </View>
 
+              {/* Number of attempts */}
+              <View style={styles.attemptsRow}>
+                <Text style={styles.attemptsLabel}>Number of attempts:</Text>
+                <TextInput
+                  style={styles.attemptsInput}
+                  value={attempts}
+                  onChangeText={t => {
+                    const n = t.replace(/[^0-9]/g, '');
+                    if (n === '' || (parseInt(n, 10) >= 1 && parseInt(n, 10) <= 99)) setAttempts(n);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  placeholder="—"
+                  placeholderTextColor="#bbb"
+                />
+              </View>
+
               {/* Location */}
               <Text style={styles.fieldLabel}>Location</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-                <View style={{ flexDirection: 'row', gap: 6 }}>
-                  {locOptions.map(o => {
-                    const sel = o.id === locationId;
-                    return (
-                      <TouchableOpacity
-                        key={o.id}
-                        style={[styles.miniChip, sel && styles.miniChipActive]}
-                        onPress={() => { setLocationId(o.id); setSectorIdx(0); setPersonalGrade(''); }}
-                      >
-                        <Text style={[styles.miniChipText, sel && { color: '#fff' }]}>{o.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </ScrollView>
+              <DropdownPicker
+                options={locOptions.map(o => ({ label: o.label, value: o.id }))}
+                value={locationId}
+                onChange={id => { setLocationId(id); setSectorIdx(0); setPersonalGrade(''); }}
+                placeholder="Select location…"
+                accentColor={KBC.cyan}
+              />
 
-              {/* Sector */}
+              {/* Area / Sector */}
               {sectors.length > 0 && (
                 <>
-                  <Text style={styles.fieldLabel}>Sector</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }}>
-                    <View style={{ flexDirection: 'row', gap: 6 }}>
-                      {sectors.map((s, i) => (
-                        <TouchableOpacity
-                          key={i}
-                          style={[styles.miniChip, sectorIdx === i && styles.miniChipActive]}
-                          onPress={() => { setSectorIdx(i); setPersonalGrade(''); }}
-                        >
-                          <Text style={[styles.miniChipText, sectorIdx === i && { color: '#fff' }]}>
-                            {s.name || `Sector ${i + 1}`}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
+                  <Text style={styles.fieldLabel}>Area</Text>
+                  <DropdownPicker
+                    options={sectors.map((s, i) => ({ label: s.name || `Sector ${i + 1}`, value: String(i) }))}
+                    value={String(sectorIdx)}
+                    onChange={v => { setSectorIdx(Number(v)); setPersonalGrade(''); }}
+                    placeholder="Select area…"
+                    accentColor={KBC.cyan}
+                  />
                 </>
               )}
 
@@ -578,7 +570,13 @@ function LogClimbModal({
                   interactive
                 />
               ) : (
-                <GradePicker grades={grades} value={personalGrade} onChange={setPersonalGrade} />
+                <DropdownPicker
+                  options={[{ label: '— Not set —', value: '' }, ...grades.map(g => ({ label: g, value: g }))]}
+                  value={personalGrade}
+                  onChange={setPersonalGrade}
+                  placeholder="Select grade…"
+                  accentColor={KBC.lime}
+                />
               )}
 
               {/* Quality */}
@@ -587,20 +585,7 @@ function LogClimbModal({
 
               {/* Effort */}
               <Text style={styles.fieldLabel}>Effort</Text>
-              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                {EFFORT_OPTIONS.map(e => {
-                  const sel = effort === e;
-                  return (
-                    <TouchableOpacity
-                      key={e}
-                      style={[styles.effortChip, sel && { backgroundColor: EFFORT_COLORS[e], borderColor: EFFORT_COLORS[e] }]}
-                      onPress={() => setEffort(sel ? '' : e)}
-                    >
-                      <Text style={[styles.effortChipText, sel && { color: '#fff' }]}>{e}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              <EffortBar value={effort} onChange={setEffort} />
 
               {/* Project */}
               <TouchableOpacity style={styles.checkRow} onPress={() => setProject(p => !p)}>
@@ -699,19 +684,19 @@ function ClimbRow({
         {climb.quality > 0 && (
           <Text style={{ color: '#fbbf24', fontSize: 12 }}>{'★'.repeat(climb.quality)}</Text>
         )}
-        {climb.effort ? (
-          <Text style={[styles.effortBadge, { backgroundColor: EFFORT_COLORS[climb.effort] ?? '#888' }]}>
-            {climb.effort}
+        {(climb.effort !== '' && climb.effort !== null && climb.effort !== undefined) ? (
+          <Text style={[styles.effortBadge, { backgroundColor: '#888' }]}>
+            {effortLabel(climb.effort)}
           </Text>
         ) : null}
         {climb.project && <Text style={styles.projectBadge}>🏔 Project</Text>}
       </View>
 
-      {/* Badge icons (xs) */}
+      {/* Badge icons — up to 5, left-aligned */}
       {climb.badges && climb.badges.length > 0 && (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-          {climb.badges.map(b => (
-            <BadgeIcon key={b} label={b} selected size="sm" />
+        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4, marginTop: 4, alignSelf: 'flex-start' }}>
+          {climb.badges.slice(0, 5).map(b => (
+            <BadgeIcon key={b} label={b} selected size="sm" compact />
           ))}
         </View>
       )}
@@ -721,6 +706,103 @@ function ClimbRow({
         <Text style={styles.climbRowComment} numberOfLines={2}>{climb.comment}</Text>
       )}
     </TouchableOpacity>
+  );
+}
+
+// ─── Climb Filter ─────────────────────────────────────────────────────────────
+
+type ClimbFilter = {
+  type: 'all' | 'sent' | 'attempted';
+  projectsOnly: boolean;
+  sort: 'newest' | 'oldest';
+};
+const DEFAULT_CLIMB_FILTER: ClimbFilter = { type: 'all', projectsOnly: false, sort: 'newest' };
+
+function ClimbFilterModal({
+  visible, onClose, filter, onApply,
+}: {
+  visible: boolean; onClose: () => void; filter: ClimbFilter; onApply: (f: ClimbFilter) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const [draft, setDraft] = useState<ClimbFilter>(filter);
+
+  // Sync draft when modal opens
+  const openRef = useRef(visible);
+  if (visible !== openRef.current) {
+    openRef.current = visible;
+    if (visible) setDraft({ ...filter });
+  }
+
+  function apply() { onApply(draft); onClose(); }
+  function reset()  { setDraft(DEFAULT_CLIMB_FILTER); }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose} />
+      <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+        <View style={styles.sheetHeader}>
+          <Text style={styles.sheetTitle}>Filter Climbs</Text>
+          <TouchableOpacity onPress={onClose}><Text style={styles.sheetClose}>✕</Text></TouchableOpacity>
+        </View>
+        <ScrollView style={styles.sheetBody} showsVerticalScrollIndicator={false}>
+
+          {/* Climb type */}
+          <Text style={styles.fieldLabel}>Climb Type</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {([['all', 'All'], ['sent', '✓ Sent'], ['attempted', '△ Attempted']] as const).map(([val, label]) => (
+              <TouchableOpacity
+                key={val}
+                style={[styles.miniChip, draft.type === val && styles.miniChipActive]}
+                onPress={() => setDraft(d => ({ ...d, type: val }))}
+              >
+                <Text style={[styles.miniChipText, draft.type === val && { color: '#fff' }]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Projects only */}
+          <TouchableOpacity style={styles.checkRow} onPress={() => setDraft(d => ({ ...d, projectsOnly: !d.projectsOnly }))}>
+            <View style={[styles.checkbox, draft.projectsOnly && styles.checkboxOn]}>
+              {draft.projectsOnly && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+            <View>
+              <Text style={styles.checkLabel}>Projects only</Text>
+              <Text style={styles.checkSub}>Show only climbs marked as projects</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Sort order */}
+          <Text style={styles.fieldLabel}>Sort Order</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {([['newest', 'Newest first'], ['oldest', 'Oldest first']] as const).map(([val, label]) => (
+              <TouchableOpacity
+                key={val}
+                style={[styles.miniChip, draft.sort === val && styles.miniChipActive]}
+                onPress={() => setDraft(d => ({ ...d, sort: val }))}
+              >
+                <Text style={[styles.miniChipText, draft.sort === val && { color: '#fff' }]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 24 }}>
+            <TouchableOpacity
+              style={[styles.saveBtn, { flex: 1, backgroundColor: '#eee', marginTop: 0 }]}
+              onPress={reset}
+            >
+              <Text style={[styles.saveBtnText, { color: '#555' }]}>Reset</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.saveBtn, { flex: 2, marginTop: 0 }]}
+              onPress={apply}
+            >
+              <Text style={styles.saveBtnText}>Apply</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={{ height: 20 }} />
+        </ScrollView>
+      </View>
+    </Modal>
   );
 }
 
@@ -786,12 +868,26 @@ export default function ClimbLogScreen() {
   const [showNewLoc,   setShowNewLoc]   = useState(false);
   const [showLogClimb, setShowLogClimb] = useState(false);
   const [editingClimb, setEditingClimb] = useState<PersonalClimb | null>(null);
+  const [filter,       setFilter]       = useState<ClimbFilter>(DEFAULT_CLIMB_FILTER);
+  const [showFilter,   setShowFilter]   = useState(false);
 
   // Build a lookup map: locationId → display name
   const locationNames: Record<string, string> = {
     kbc: 'KBC Gym',
     ...Object.fromEntries(locations.map(l => [l.id, l.name])),
   };
+
+  const filterCount = (filter.type !== 'all' ? 1 : 0) + (filter.projectsOnly ? 1 : 0) + (filter.sort !== 'newest' ? 1 : 0);
+
+  const displayed = useMemo(() => {
+    let list = [...climbs];
+    if (filter.type !== 'all') list = list.filter(c => c.type === (filter.type === 'sent' ? 'ascent' : 'attempt'));
+    if (filter.projectsOnly) list = list.filter(c => c.project);
+    list.sort((a, b) => filter.sort === 'oldest'
+      ? a.timestamp.localeCompare(b.timestamp)
+      : b.timestamp.localeCompare(a.timestamp));
+    return list;
+  }, [climbs, filter]);
 
   async function loadAll(silent = false) {
     if (!uid) return;
@@ -856,6 +952,14 @@ export default function ClimbLogScreen() {
         <TouchableOpacity style={styles.locPill} onPress={() => setShowLocPick(true)}>
           <Text style={styles.locPillText} numberOfLines={1}>📍 {activeLocLabel} ▾</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.filterBtn, filterCount > 0 && styles.filterBtnActive]}
+          onPress={() => setShowFilter(true)}
+        >
+          <Text style={[styles.filterBtnText, filterCount > 0 && { color: '#fff' }]}>
+            ⚙{filterCount > 0 ? ` ${filterCount}` : ''}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.summaryBtn} onPress={() => router.push({ pathname: '/climb-summary', params: { locationId } })}>
           <Text style={styles.summaryBtnText}>📊 Summary</Text>
         </TouchableOpacity>
@@ -863,7 +967,7 @@ export default function ClimbLogScreen() {
 
       {/* ── Climb list ── */}
       <FlatList
-        data={climbs}
+        data={displayed}
         keyExtractor={c => c.id}
         renderItem={({ item }) => (
           <ClimbRow
@@ -925,6 +1029,13 @@ export default function ClimbLogScreen() {
         initialLocationId={locationId}
         editingClimb={editingClimb}
       />
+
+      <ClimbFilterModal
+        visible={showFilter}
+        onClose={() => setShowFilter(false)}
+        filter={filter}
+        onApply={f => setFilter(f)}
+      />
     </View>
   );
 }
@@ -945,6 +1056,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 8,
   },
   locPillText: { fontSize: 14, fontWeight: '600', color: KBC.black },
+  filterBtn: {
+    backgroundColor: '#f0f0f0', borderRadius: 20,
+    paddingHorizontal: 14, paddingVertical: 8,
+  },
+  filterBtnActive: { backgroundColor: KBC.cyan },
+  filterBtnText: { fontSize: 13, fontWeight: '700', color: '#555' },
   summaryBtn: {
     backgroundColor: KBC.cyan, borderRadius: 20,
     paddingHorizontal: 14, paddingVertical: 8,
@@ -1076,6 +1193,15 @@ const styles = StyleSheet.create({
   },
   badgeChipSel: { backgroundColor: KBC.lime, borderColor: KBC.lime },
   badgeChipText: { fontSize: 12, color: '#444' },
+
+  // Attempts
+  attemptsRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  attemptsLabel: { fontSize: 14, fontWeight: '600', color: '#555' },
+  attemptsInput: {
+    width: 56, borderWidth: 1, borderColor: '#ddd', borderRadius: 8,
+    padding: 8, fontSize: 15, color: '#111', backgroundColor: '#fafafa',
+    textAlign: 'center',
+  },
 
   // Type buttons (log modal)
   typeRow: { flexDirection: 'row', gap: 10, marginBottom: 4 },
