@@ -19,11 +19,11 @@ export type Grade = typeof GRADES[number];
 export const BADGE_GROUPS = [
   {
     title: 'Hold Types',
-    badges: ['Jugs', 'Crimps', 'Slopers', 'Pinches', 'Pockets', 'Underclings', 'Side Pulls', 'Gaston', 'Small-feet', 'Slippery-feet', 'No-feet'],
+    badges: ['Jugs', 'Crimps', 'Slopers', 'Pinches', 'Pockets', 'Underclings', 'Side Pulls', 'Gaston', 'Crack', 'Small-feet', 'Slippery-feet'],
   },
   {
     title: 'Climbing Technique',
-    badges: ['Balancing', 'Drop Knee', 'Flagging', 'Heel Hook', 'Toe Hook', 'Bicycle', 'Deadpoint', 'Compression', 'Dyno', 'Double Dyno', 'Campus', 'Bat Hang'],
+    badges: ['Balancing', 'Drop Knee', 'Flagging', 'Heel Hook', 'Toe Hook', 'Bicycle', 'Deadpoint', 'Compression', 'Dyno', 'Double Dyno', 'Campus', 'Bat Hang', 'Hand-Jam', 'Finger-Jam', 'Foot-Jam'],
   },
   {
     title: 'Body Dependent',
@@ -31,7 +31,7 @@ export const BADGE_GROUPS = [
   },
   {
     title: 'Others',
-    badges: ['Joy', 'Peaceful', 'Pain', 'Cry', 'Anger', 'Ego-Breaker', 'Joke', 'Outrageous', 'One-try', 'Last-try', 'OMG'],
+    badges: ['Joy', 'Peaceful', 'Pain', 'Cry', 'Anger', 'Ego-Breaker', 'Joke', 'Outrageous', 'OMG', 'Love it', 'Hate it', 'Suffer'],
   },
 ] as const;
 

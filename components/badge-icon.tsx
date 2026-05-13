@@ -12,9 +12,9 @@ export const BADGE_COLOR: Record<string, string> = {
   'Underclings':    '#ab47bc',
   'Side Pulls':     '#e67e22',
   'Gaston':         '#16a085',
+  'Crack':          '#8d6e63',
   'Small-feet':     '#90a4ae',
   'Slippery-feet':  '#29b6f6',
-  'No-feet':        '#78909c',
   // Climbing Technique
   'Balancing':      '#1abc9c',
   'Drop Knee':      '#f57c00',
@@ -28,6 +28,9 @@ export const BADGE_COLOR: Record<string, string> = {
   'Double Dyno':    '#e91e63',
   'Campus':         '#ec407a',
   'Bat Hang':       '#37474f',
+  'Hand-Jam':       '#ff6b35',
+  'Finger-Jam':     '#ffb347',
+  'Foot-Jam':       '#4ecdc4',
   // Body Dependent
   'Flexibility':    '#00acc1',
   'Reachy':         '#2196f3',
@@ -44,9 +47,10 @@ export const BADGE_COLOR: Record<string, string> = {
   'Ego-Breaker':    '#ad1457',
   'Joke':           '#fdd835',
   'Outrageous':     '#fd79a8',
-  'One-try':        '#00b894',
-  'Last-try':       '#fdcb6e',
   'OMG':            '#e17055',
+  'Love it':        '#e91e63',
+  'Hate it':        '#424242',
+  'Suffer':         '#6a1b9a',
 };
 
 // ─── HoldIcon ─────────────────────────────────────────────────────────────────
@@ -345,20 +349,57 @@ export function HoldIcon({ badge, color, size }: { badge: string; color: string;
           ))}
         </View>
       );
-    case 'One-try':
+    case 'Crack':
       return (
         <View style={{ width: s, height: s, alignItems: 'center', justifyContent: 'center' }}>
-          <View style={{ width: s * 0.14, height: s * 0.56, backgroundColor: color, borderRadius: 3 }} />
-          <View style={{ width: s * 0.28, height: s * 0.12, backgroundColor: color, borderRadius: 2, position: 'absolute', bottom: s * 0.1 }} />
-          <View style={{ width: s * 0.22, height: s * 0.14, backgroundColor: color, borderRadius: 2, transform: [{ rotate: '-45deg' }], position: 'absolute', top: s * 0.15, left: s * 0.26 }} />
+          <View style={{ width: s * 0.1, height: s * 0.46, backgroundColor: color, borderRadius: 2, position: 'absolute', top: s * 0.04, transform: [{ rotate: '12deg' }], marginLeft: -s * 0.06 }} />
+          <View style={{ width: s * 0.1, height: s * 0.46, backgroundColor: color, borderRadius: 2, position: 'absolute', bottom: s * 0.04, transform: [{ rotate: '-12deg' }], marginLeft: s * 0.06 }} />
         </View>
       );
-    case 'Last-try':
+    case 'Hand-Jam':
       return (
-        <View style={{ width: s, height: s, alignItems: 'center', justifyContent: 'center', gap: s * 0.04 }}>
-          <View style={{ width: s * 0.16, height: s * 0.38, backgroundColor: color, borderRadius: 2 }} />
-          <View style={{ width: 0, height: 0, borderLeftWidth: s * 0.22, borderRightWidth: s * 0.22, borderTopWidth: s * 0.28, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: color, marginTop: -2 }} />
-          <View style={{ width: s * 0.16, height: s * 0.16, borderRadius: s * 0.08, backgroundColor: color, marginTop: s * 0.04 }} />
+        <View style={{ width: s, height: s, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: s * 0.11, height: s * 0.68, backgroundColor: color, borderRadius: 2, position: 'absolute', left: s * 0.22 }} />
+          <View style={{ width: s * 0.11, height: s * 0.68, backgroundColor: color, borderRadius: 2, position: 'absolute', right: s * 0.22 }} />
+          <View style={{ width: s * 0.44, height: s * 0.11, backgroundColor: color, borderRadius: 2 }} />
+        </View>
+      );
+    case 'Finger-Jam':
+      return (
+        <View style={{ width: s, height: s, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: s * 0.09, height: s * 0.58, backgroundColor: color, borderRadius: 2, position: 'absolute', left: s * 0.28 }} />
+          <View style={{ width: s * 0.09, height: s * 0.58, backgroundColor: color, borderRadius: 2, position: 'absolute', right: s * 0.28 }} />
+          <View style={{ width: s * 0.32, height: s * 0.09, backgroundColor: color, borderRadius: 2 }} />
+        </View>
+      );
+    case 'Foot-Jam':
+      return (
+        <View style={{ width: s, height: s, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: s * 0.62, height: s * 0.18, backgroundColor: color, borderRadius: 4, position: 'absolute', bottom: s * 0.16 }} />
+          <View style={{ width: s * 0.14, height: s * 0.44, backgroundColor: color, borderRadius: 3, position: 'absolute', bottom: s * 0.3 }} />
+        </View>
+      );
+    case 'Love it':
+      return (
+        <View style={{ width: s, height: s, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ position: 'absolute', width: s * 0.32, height: s * 0.32, borderRadius: s * 0.16, backgroundColor: color, top: s * 0.14, left: s * 0.12 }} />
+          <View style={{ position: 'absolute', width: s * 0.32, height: s * 0.32, borderRadius: s * 0.16, backgroundColor: color, top: s * 0.14, right: s * 0.12 }} />
+          <View style={{ width: 0, height: 0, borderLeftWidth: s * 0.26, borderRightWidth: s * 0.26, borderTopWidth: s * 0.3, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: color, position: 'absolute', bottom: s * 0.12 }} />
+        </View>
+      );
+    case 'Hate it':
+      return (
+        <View style={{ width: s, height: s, alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: s * 0.62, height: s * 0.12, backgroundColor: color, borderRadius: 2, transform: [{ rotate: '45deg' }], position: 'absolute' }} />
+          <View style={{ width: s * 0.62, height: s * 0.12, backgroundColor: color, borderRadius: 2, transform: [{ rotate: '-45deg' }], position: 'absolute' }} />
+        </View>
+      );
+    case 'Suffer':
+      return (
+        <View style={{ width: s, height: s, alignItems: 'center', justifyContent: 'center', gap: s * 0.1 }}>
+          {[s * 0.58, s * 0.44, s * 0.32].map((w, i) => (
+            <View key={i} style={{ width: w, height: s * 0.1, backgroundColor: color, borderRadius: 2, transform: [{ rotate: '-10deg' }] }} />
+          ))}
         </View>
       );
     case 'OMG':
@@ -382,10 +423,10 @@ export function HoldIcon({ badge, color, size }: { badge: string; color: string;
 const BADGE_COL_W = Math.floor((Dimensions.get('window').width - 32) / 5);
 
 export function BadgeIcon({
-  label, count, selected, onPress, size = 'md',
+  label, count, selected, onPress, size = 'md', compact = false,
 }: {
   label: string; count?: number; selected?: boolean;
-  onPress?: () => void; size?: 'xs' | 'sm' | 'md';
+  onPress?: () => void; size?: 'xs' | 'sm' | 'md'; compact?: boolean;
 }) {
   const color  = BADGE_COLOR[label] ?? '#9b5de5';
   const dim    = size === 'xs' ? 24 : size === 'sm' ? 36 : 44;
@@ -407,6 +448,12 @@ export function BadgeIcon({
 
   const medal = size === 'xs' ? (
     <View style={{ opacity: selected ? 1 : 0.4 }}>{disk}</View>
+  ) : compact ? (
+    // Compact: no fixed width — for list row display
+    <View style={[bi.wrap, { opacity: selected ? 1 : 0.4 }]}>
+      {disk}
+      <Text numberOfLines={1} style={[bi.label, selected && { color, fontWeight: '800' }]}>{label}</Text>
+    </View>
   ) : (
     <View style={[bi.wrap, { width: BADGE_COL_W, opacity: selected ? 1 : 0.4 }]}>
       {disk}
