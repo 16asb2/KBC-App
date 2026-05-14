@@ -65,12 +65,19 @@ service cloud.firestore {
 
     // ── users/{uid} ───────────────────────────────────────────────────────────
     match /users/{uid} {
-      allow read:           if isAuthenticated();
-      allow create, delete: if isSupervisorOrAdmin();
-      allow update:         if isSupervisorOrAdmin() ||
-                               (isAuthenticated() &&
-                                request.auth.uid == uid &&
-                                !touchesMemberPrivilegedFields());
+      allow read:   if isAuthenticated();
+      // Supervisors/admins can create any profile; authenticated users can self-register
+      // as long as they don't grant themselves admin or supervisor privileges.
+      allow create: if isSupervisorOrAdmin() ||
+                       (isAuthenticated() &&
+                        request.auth.uid == uid &&
+                        request.resource.data.get('isAdmin', false) == false &&
+                        request.resource.data.get('isSupervisor', false) == false);
+      allow delete: if isSupervisorOrAdmin();
+      allow update: if isSupervisorOrAdmin() ||
+                       (isAuthenticated() &&
+                        request.auth.uid == uid &&
+                        !touchesMemberPrivilegedFields());
     }
 
     // ── logs/{id} ─────────────────────────────────────────────────────────────

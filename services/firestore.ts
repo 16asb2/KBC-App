@@ -4,6 +4,7 @@ import { getFirebaseToken } from '@/services/authBridge';
 const PROJECT_ID = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID!;
 const API_KEY    = process.env.EXPO_PUBLIC_FIREBASE_API_KEY!;
 const BASE       = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+const QUERY_URL  = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${API_KEY}`;
 
 // 'non-member'  = never had any access (new sign-ups, manually created profiles)
 // 'inactive'    = had a membership that has since expired
@@ -121,6 +122,36 @@ async function fsList(col: string): Promise<any[]> {
   return json.documents ?? [];
 }
 
+async function fsQuery(query: any): Promise<any[]> {
+  const authH = await firebaseAuthHeader();
+  const res = await fetch(QUERY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authH },
+    body: JSON.stringify({ structuredQuery: query }),
+  });
+  if (!res.ok) throw new Error(`Firestore QUERY ${res.status}`);
+  const rows: any[] = await res.json();
+  return rows.filter((r: any) => r.document).map((r: any) => r.document);
+}
+
+async function findProfileByEmail(email: string): Promise<UserProfile | null> {
+  const docs = await fsQuery({
+    from: [{ collectionId: 'users' }],
+    where: {
+      fieldFilter: {
+        field: { fieldPath: 'email' },
+        op: 'EQUAL',
+        value: { stringValue: email.toLowerCase().trim() },
+      },
+    },
+    limit: 1,
+  });
+  if (!docs.length) return null;
+  const doc = docs[0];
+  const docUid = doc.name.split('/').pop() as string;
+  return { uid: docUid, ...decodeDoc(doc) } as UserProfile;
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export async function getOrCreateProfile(
@@ -132,12 +163,28 @@ export async function getOrCreateProfile(
   const doc = await fsGet(`users/${uid}`);
   if (doc) return { uid, ...decodeDoc(doc) } as UserProfile;
 
-  // Brand-new user — default to non-member with no access
+  // Check for an existing profile by email (e.g., manually created before first Google sign-in)
+  let existing: UserProfile | null = null;
+  try {
+    existing = await findProfileByEmail(email);
+  } catch (e) {
+    console.warn('[Profile] Email lookup failed, creating fresh profile:', e);
+  }
+
+  if (existing) {
+    console.log('[Profile] Linking Firebase UID to existing member profile for', email);
+    const { uid: _discarded, ...existingData } = existing;
+    const linked: Omit<UserProfile, 'uid'> = { ...existingData, name, email, photo };
+    await fsPatch(`users/${uid}`, linked);
+    return { uid, ...linked };
+  }
+
+  // Brand-new user — create as inactive member pending admin review
   const fresh: Omit<UserProfile, 'uid'> = {
     name,
     email,
     photo,
-    membershipStatus: 'non-member',
+    membershipStatus: 'inactive',
     isAdmin: false,
     isSupervisor: false,
     punchPassRemaining: 0,
