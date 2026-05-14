@@ -15,7 +15,20 @@
       "Bash(firebase login:list)",
       "Bash(firebase projects:list)",
       "Bash(firebase deploy *)",
-      "PowerShell(git add \"app/\\(tabs\\)/boulders.tsx\" \"app/\\(tabs\\)/climblog.tsx\" \"app/\\(tabs\\)/logbook.tsx\" \"app/\\(tabs\\)/home.tsx\" \"app/\\(tabs\\)/index.tsx\" components/badge-icon.tsx components/dropdown-picker.tsx components/effort-bar.tsx services/boulders.ts services/climblog.ts firestore.rules .firebaserc CHANGELOG.md app.json package.json package-lock.json 2>&1)"
+      "PowerShell(git add \"app/\\(tabs\\)/boulders.tsx\" \"app/\\(tabs\\)/climblog.tsx\" \"app/\\(tabs\\)/logbook.tsx\" \"app/\\(tabs\\)/home.tsx\" \"app/\\(tabs\\)/index.tsx\" components/badge-icon.tsx components/dropdown-picker.tsx components/effort-bar.tsx services/boulders.ts services/climblog.ts firestore.rules .firebaserc CHANGELOG.md app.json package.json package-lock.json 2>&1)",
+      "Bash(git -C \"d:\\\\Dev\\\\KBC-App\" show cc82837 --stat)",
+      "Bash(git -C \"d:\\\\Dev\\\\KBC-App\" show cc82837 -- firestore.rules)",
+      "PowerShell(git -C \"d:\\\\Dev\\\\KBC-App\" show cc82837 -- \"app/\\(tabs\\)/boulders.tsx\")",
+      "Read(//c/Program Files/Android/Android Studio/jbr/bin/**)",
+      "Read(//c/Program Files/**)",
+      "Read(//c//**)",
+      "PowerShell($env:JAVA_HOME)",
+      "PowerShell(Get-Command java -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-ChildItem \"$env:LOCALAPPDATA\\\\Android\\\\Sdk\" -ErrorAction SilentlyContinue | Select-Object Name)",
+      "PowerShell(Get-ChildItem \"$env:ANDROID_HOME\" -ErrorAction SilentlyContinue | Select-Object -First 5 Name; $env:ANDROID_HOME; $env:ANDROID_SDK_ROOT)",
+      "Read(//d//**)",
+      "Bash(find / -name \"keytool*\" -type f 2>/dev/null | head -10)",
+      "Bash(npx eas *)"
     ]
   }
 }

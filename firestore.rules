@@ -124,6 +124,13 @@ service cloud.firestore {
       allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
     }
 
+    // ── personalProblems/{id} ────────────────────────────────────────────────
+    match /personalProblems/{problemId} {
+      allow read:           if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create:         if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
     // ── gymStatus/{doc} ──────────────────────────────────────────────────────
     match /gymStatus/{doc} {
       allow read:  if isAuthenticated();

@@ -24,6 +24,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BADGE_COLOR } from '@/components/badge-icon';
+import { EffortBar } from '@/components/effort-bar';
 import { GradeBar } from '@/components/grade-bar';
 import { DatePickerModal, TimePickerModal } from '@/components/time-picker-modal';
 import { KBC } from '@/constants/theme';
@@ -1524,10 +1525,17 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
 
 // ─── Boulder Log Modal ────────────────────────────────────────────────────────
 
-const EFFORT_OPTIONS = ['Easy', 'Medium', 'Hard', 'Impossible'] as const;
-const EFFORT_COLORS: Record<string, string> = {
-  Easy: '#2ecc71', Medium: '#f39c12', Hard: '#e74c3c', Impossible: '#8e44ad',
-};
+function SimpleStarRow({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: 6 }}>
+      {[1, 2, 3].map(i => (
+        <TouchableOpacity key={i} onPress={() => onChange(value === i ? 0 : i)}>
+          <Text style={{ fontSize: 26, color: i <= value ? '#fbbf24' : '#ddd' }}>★</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
 
 function BoulderLogModal({
   visible, boulder, logs, onClose, onSaved, userUid, userName,
@@ -1548,7 +1556,7 @@ function BoulderLogModal({
   const [qualityVotes,   setQualityVotes]   = useState<Record<string, number>>({});
   const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
   const [badgesOpen,     setBadgesOpen]     = useState(false);
-  const [effort,         setEffort]         = useState('');
+  const [effort,         setEffort]         = useState<number | null>(null);
   const [project,        setProject]        = useState(false);
   const [attempts,       setAttempts]       = useState('1');
   const [publicComment,  setPublicComment]  = useState('');
@@ -1572,7 +1580,7 @@ function BoulderLogModal({
       setQualityVotes({});
       setSelectedBadges([]);
       setBadgesOpen(false);
-      setEffort('');
+      setEffort(null);
       setProject(false);
       setAttempts('1');
       setPublicComment('');
@@ -1609,7 +1617,7 @@ function BoulderLogModal({
         gradeVote: gradeIdx,
         problemInternalId: boulder.internalId,
         quality,
-        effort,
+        effort: effort ?? '',
         type,
         project,
         attempts: Math.min(99, Math.max(1, parseInt(attempts || '1', 10) || 1)),
@@ -1737,20 +1745,7 @@ function BoulderLogModal({
 
               {/* Effort */}
               <Text style={styles.fieldLabel}>Effort</Text>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {EFFORT_OPTIONS.map(e => {
-                  const sel = effort === e;
-                  return (
-                    <TouchableOpacity
-                      key={e}
-                      style={[styles.effortChip, sel && { backgroundColor: EFFORT_COLORS[e], borderColor: EFFORT_COLORS[e] }]}
-                      onPress={() => setEffort(sel ? '' : e)}
-                    >
-                      <Text style={[styles.effortChipText, sel && { color: '#fff' }]}>{e}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              <EffortBar value={effort} onChange={setEffort} />
 
               {/* Badges */}
               {(() => {
@@ -1868,19 +1863,24 @@ function PersonalLogModal({
   userUid: string;
 }) {
   const insets = useSafeAreaInsets();
-  const [logDate, setLogDate] = useState(new Date());
-  const [type,    setType]    = useState<'ascent' | 'attempt'>('ascent');
-  const [effort,  setEffort]  = useState('');
-  const [project, setProject] = useState(false);
-  const [comment, setComment] = useState('');
-  const [saving,  setSaving]  = useState(false);
-  const [showDate, setShowDate] = useState(false);
-  const [showTime, setShowTime] = useState(false);
+  const [logDate,     setLogDate]     = useState(new Date());
+  const [type,        setType]        = useState<'ascent' | 'attempt'>('ascent');
+  const [effort,      setEffort]      = useState<number | null>(null);
+  const [attempts,    setAttempts]    = useState('1');
+  const [quality,     setQuality]     = useState(0);
+  const [badges,      setBadges]      = useState<string[]>([]);
+  const [badgesOpen,  setBadgesOpen]  = useState(false);
+  const [project,     setProject]     = useState(false);
+  const [comment,     setComment]     = useState('');
+  const [saving,      setSaving]      = useState(false);
+  const [showDate,    setShowDate]    = useState(false);
+  const [showTime,    setShowTime]    = useState(false);
 
   useEffect(() => {
     if (visible) {
       setLogDate(new Date()); setType('ascent');
-      setEffort(''); setProject(false); setComment('');
+      setEffort(null); setAttempts('1'); setQuality(0);
+      setBadges([]); setBadgesOpen(false); setProject(false); setComment('');
     }
   }, [visible]);
 
@@ -1899,12 +1899,12 @@ function PersonalLogModal({
         personalGrade:     problem.grade,
         gradeVote:         null,
         problemInternalId: problem.internalId,
-        quality:           0,
-        effort,
+        quality,
+        effort: effort ?? '',
         type,
         project,
-        attempts:          0,
-        badges:            [],
+        attempts: Math.min(99, Math.max(1, parseInt(attempts || '1', 10) || 1)),
+        badges,
         comment,
         createdAt:         now,
       });
@@ -1934,6 +1934,7 @@ function PersonalLogModal({
               <TouchableOpacity onPress={onClose}><Text style={styles.formClose}>✕</Text></TouchableOpacity>
             </View>
             <ScrollView style={styles.formBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {/* Sent / Attempted */}
               <View style={styles.logTypeRow}>
                 <TouchableOpacity style={[styles.logTypeBtn, type === 'ascent' && styles.logTypeBtnSent]} onPress={() => setType('ascent')}>
                   <Text style={[styles.logTypeBtnText, type === 'ascent' && { color: '#fff' }]}>✓  Sent</Text>
@@ -1942,6 +1943,25 @@ function PersonalLogModal({
                   <Text style={[styles.logTypeBtnText, type === 'attempt' && { color: '#fff' }]}>△  Attempted</Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Attempts */}
+              <View style={styles.attemptsRow}>
+                <Text style={styles.attemptsLabel}>Number of attempts:</Text>
+                <TextInput
+                  style={styles.attemptsInput}
+                  value={attempts}
+                  onChangeText={t => {
+                    const n = t.replace(/[^0-9]/g, '');
+                    if (n === '' || (parseInt(n, 10) >= 1 && parseInt(n, 10) <= 99)) setAttempts(n);
+                  }}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  placeholder="1"
+                  placeholderTextColor="#bbb"
+                />
+              </View>
+
+              {/* When */}
               <Text style={styles.fieldLabel}>When</Text>
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <TouchableOpacity style={[styles.textInput, { flex: 1, justifyContent: 'center' }]} onPress={() => setShowDate(true)}>
@@ -1951,17 +1971,52 @@ function PersonalLogModal({
                   <Text style={{ color: '#111', fontSize: 14 }}>{timeStr}</Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Quality */}
+              <Text style={styles.fieldLabel}>Quality</Text>
+              <SimpleStarRow value={quality} onChange={setQuality} />
+
+              {/* Effort */}
               <Text style={styles.fieldLabel}>Effort</Text>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {EFFORT_OPTIONS.map(e => {
-                  const sel = effort === e;
-                  return (
-                    <TouchableOpacity key={e} style={[styles.effortChip, sel && { backgroundColor: EFFORT_COLORS[e], borderColor: EFFORT_COLORS[e] }]} onPress={() => setEffort(sel ? '' : e)}>
-                      <Text style={[styles.effortChipText, sel && { color: '#fff' }]}>{e}</Text>
+              <EffortBar value={effort} onChange={setEffort} />
+
+              {/* Badges */}
+              {(() => {
+                const cnt = badges.length;
+                return (
+                  <>
+                    <TouchableOpacity style={styles.collapseHeader} onPress={() => setBadgesOpen(o => !o)}>
+                      <Text style={styles.fieldLabel}>
+                        Badges{cnt > 0 ? `  ·  ${cnt} selected` : ''}
+                      </Text>
+                      <Text style={styles.collapseArrow}>{badgesOpen ? '▲' : '▼'}</Text>
                     </TouchableOpacity>
-                  );
-                })}
-              </View>
+                    {badgesOpen && BADGE_GROUPS.map(group => (
+                      <View key={group.title}>
+                        <Text style={styles.badgeGroupLabel}>{group.title}</Text>
+                        <View style={styles.badgeGrid}>
+                          {group.badges.map(badge => {
+                            const on = badges.includes(badge);
+                            return (
+                              <BadgeIcon
+                                key={badge}
+                                label={badge}
+                                count={0}
+                                selected={on}
+                                onPress={() => setBadges(prev =>
+                                  on ? prev.filter(b => b !== badge) : [...prev, badge],
+                                )}
+                              />
+                            );
+                          })}
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                );
+              })()}
+
+              {/* Project */}
               <TouchableOpacity style={styles.projectRow} onPress={() => setProject(p => !p)}>
                 <View style={[styles.checkbox, project && styles.checkboxChecked]}>
                   {project && <Text style={styles.checkboxCheck}>✓</Text>}
@@ -1971,6 +2026,8 @@ function PersonalLogModal({
                   <Text style={styles.projectSub}>Still working on it</Text>
                 </View>
               </TouchableOpacity>
+
+              {/* Notes */}
               <Text style={styles.fieldLabel}>Notes</Text>
               <TextInput style={[styles.textInput, styles.textArea]} value={comment} onChangeText={setComment} placeholder="Private notes…" placeholderTextColor="#aaa" multiline />
               <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={handleSave} disabled={saving}>

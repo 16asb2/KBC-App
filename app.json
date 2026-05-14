@@ -45,7 +45,13 @@
           }
         }
       ],
-      "@react-native-google-signin/google-signin"
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "googleServicesFile": "./google-services.json",
+          "iosUrlScheme": "com.googleusercontent.apps.743058786289-0r8a9rvp6a0ajvthogetlu0d0djv1ce1"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

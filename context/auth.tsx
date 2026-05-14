@@ -2,8 +2,10 @@ import { GoogleSignin, isSuccessResponse } from '@react-native-google-signin/goo
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { registerBridge, clearBridge } from '@/services/authBridge';
 
+const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID;
+console.log('[Auth] configure webClientId:', GOOGLE_WEB_CLIENT_ID ?? '*** UNDEFINED ***');
 GoogleSignin.configure({
-  webClientId: process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID!,
+  webClientId: GOOGLE_WEB_CLIENT_ID!,
   offlineAccess: false,
 });
 
@@ -32,7 +34,8 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 async function exchangeGoogleIdToken(
   googleIdToken: string,
-): Promise<{ idToken: string; refreshToken: string } | null> {
+): Promise<{ idToken: string; refreshToken: string; uid: string } | null> {
+  console.log('[Auth] exchangeGoogleIdToken: calling Identity Toolkit, apiKey length:', FIREBASE_API_KEY?.length ?? 0);
   const res = await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${FIREBASE_API_KEY}`,
     {
@@ -46,11 +49,13 @@ async function exchangeGoogleIdToken(
     },
   );
   if (!res.ok) {
-    console.warn('Firebase Auth exchange failed:', res.status, await res.text());
+    console.warn('[Auth] exchangeGoogleIdToken FAILED:', res.status, await res.text());
     return null;
   }
   const data = await res.json();
-  return { idToken: data.idToken as string, refreshToken: data.refreshToken as string };
+  console.log('[Auth] exchangeGoogleIdToken: success, Firebase uid:', data.localId);
+  // localId is the Firebase Auth UID — used as user.id so it matches request.auth.uid in Firestore rules
+  return { idToken: data.idToken as string, refreshToken: data.refreshToken as string, uid: data.localId as string };
 }
 
 async function refreshFirebaseIdToken(
@@ -100,23 +105,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const currentUser = GoogleSignin.getCurrentUser();
         if (currentUser) {
-          setUser({
-            id: currentUser.user.id, name: currentUser.user.name,
-            email: currentUser.user.email, photo: currentUser.user.photo,
-          });
-          // Re-establish Firebase session via silent sign-in
+          console.log('[Auth] restoreSession: found existing Google user:', currentUser.user.email);
+          // Establish Firebase session BEFORE setting user — if silent sign-in fails,
+          // user stays null and the layout redirects to login for a fresh interactive sign-in.
           try {
+            console.log('[Auth] restoreSession: attempting silent sign-in…');
             const silent = await GoogleSignin.signInSilently();
+            console.log('[Auth] restoreSession: silent sign-in result type:', silent.type);
             if (silent.type === 'success' && silent.data.idToken) {
               const fb = await exchangeGoogleIdToken(silent.data.idToken);
               if (fb) {
                 firebaseIdToken.current   = fb.idToken;
                 firebaseRefresh.current   = fb.refreshToken;
                 firebaseExpiresAt.current = Date.now() + 55 * 60 * 1000;
+                console.log('[Auth] restoreSession: Firebase session restored — setting user');
+                setUser({
+                  id: fb.uid, name: currentUser.user.name,
+                  email: currentUser.user.email, photo: currentUser.user.photo,
+                });
+              } else {
+                console.warn('[Auth] restoreSession: Firebase exchange returned null — redirecting to login');
               }
+            } else {
+              console.warn('[Auth] restoreSession: silent sign-in returned', silent.type, '— redirecting to login');
             }
           } catch (e) {
-            console.warn('Silent Firebase session restore failed:', e);
+            console.warn('[Auth] restoreSession: silent sign-in threw:', e);
           }
         }
       } catch (e) {
@@ -140,20 +154,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn('Sign-in response was not a success:', response);
         return;
       }
+      if (!response.data.idToken) {
+        console.warn('[Auth] signIn: Google sign-in response had no idToken');
+        return;
+      }
+      console.log('[Auth] signIn: exchanging Google idToken for Firebase token…');
+      const fb = await exchangeGoogleIdToken(response.data.idToken);
+      if (!fb) {
+        console.warn('[Auth] signIn: Firebase exchange returned null — aborting sign-in');
+        return;
+      }
+      firebaseIdToken.current   = fb.idToken;
+      firebaseRefresh.current   = fb.refreshToken;
+      firebaseExpiresAt.current = Date.now() + 55 * 60 * 1000;
+      console.log('[Auth] signIn: Firebase token acquired successfully — setting user');
+      registerBridge(getFirebaseToken, getAdminCalendarToken);
       setUser({
-        id: response.data.user.id, name: response.data.user.name,
+        id: fb.uid, name: response.data.user.name,
         email: response.data.user.email, photo: response.data.user.photo,
       });
-      // Exchange Google ID token for Firebase session
-      if (response.data.idToken) {
-        const fb = await exchangeGoogleIdToken(response.data.idToken);
-        if (fb) {
-          firebaseIdToken.current   = fb.idToken;
-          firebaseRefresh.current   = fb.refreshToken;
-          firebaseExpiresAt.current = Date.now() + 55 * 60 * 1000;
-        }
-      }
-      registerBridge(getFirebaseToken, getAdminCalendarToken);
     } catch (e) {
       console.warn('Sign-in error:', e);
     }
