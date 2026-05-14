@@ -35,6 +35,10 @@ yarn-error.*
 .env.local
 .env*.local
 
+# Firebase config — contains API key; file stays local, not in repo
+google-services.json
+GoogleService-Info.plist
+
 # internal docs
 PRODUCTION.md
 
