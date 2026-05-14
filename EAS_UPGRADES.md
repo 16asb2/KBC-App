@@ -129,17 +129,53 @@ Google account (e.g. `kbc.climb@gmail.com`).
    ```
    *(You will need Storage enabled on both projects for this)*
 
-### Phase C — Update app credentials
-1. Update all `EXPO_PUBLIC_FIREBASE_*` env vars in Expo dashboard to new project values
-2. Update `EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID` to the new project's web client ID
-3. Update `EXPO_PUBLIC_SUPER_ADMIN_EMAIL` to the KBC account email
-4. Update the hardcoded email in `firestore.rules` (`isSuperAdmin()`)
-5. Update `EXPO_PUBLIC_GOOGLE_CALENDAR_ID` if the KBC calendar moves to the new account
-6. Re-run `eas build` to bake the new credentials into the APK
+### Phase C — Migrate Google Cloud Platform
+When Firebase creates a new project it also creates a linked GCP project.
+All OAuth clients, API keys, and service accounts need to be set up there.
+
+1. **OAuth 2.0 clients** — in the new GCP project (Cloud Console → APIs &
+   Services → Credentials):
+   - Create a new **Web client** (used for `signInWithIdp` token exchange and
+     the admin calendar token proxy) — note the new Client ID and Client Secret
+   - Create a new **Android client** for `com.kbcscheduler.app` + SHA-1 `BA:2F:DE:…`
+   - Create a new **Android client** for `com.kbcscheduler.app.dev` + SHA-1 `83:A3:21:…`
+   - These are what Firebase uses for Google Sign-In; they replace the ones
+     currently in `kbc-app-dev`
+
+2. **API key restrictions** — restrict the new project's Firebase API key to:
+   - Android apps: `com.kbcscheduler.app` + SHA-1 `BA:2F:DE:…`
+   - This prevents the extracted key from being used outside the app
+
+3. **Re-obtain the admin refresh token** — the `GOOGLE_ADMIN_REFRESH_TOKEN`
+   is tied to the old web client. After creating the new web client:
+   ```bash
+   node scripts/get-admin-token.js
+   ```
+   Update the token in Cloud Functions env vars (not in the app).
+
+4. **Transfer Google Calendar ownership** — share the KBC Google Calendar
+   with the KBC account and make it the owner; remove personal account access.
+   Update `EXPO_PUBLIC_GOOGLE_CALENDAR_ID` if the calendar ID changes.
+
+5. **Expo dashboard** — update all environment variables to new project values:
+   - `EXPO_PUBLIC_FIREBASE_PROJECT_ID`
+   - `EXPO_PUBLIC_FIREBASE_API_KEY`
+   - `EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID` (new web client ID)
+   - `EXPO_PUBLIC_GOOGLE_CALENDAR_ID` (if changed)
+   - `EXPO_PUBLIC_SUPER_ADMIN_EMAIL` → KBC account email
+   - `EXPO_PUBLIC_GOOGLE_CLIENT_SECRET` (new web client secret)
+   - `EXPO_PUBLIC_GOOGLE_ADMIN_REFRESH_TOKEN` (newly obtained token)
+
+6. **Update `firestore.rules`** — change the hardcoded email in `isSuperAdmin()`
+   from `16asb2@gmail.com` to the KBC account email, then redeploy.
+
+7. **Re-run EAS build** to bake the new credentials into the APK.
 
 ### Phase D — Cut over and decommission
 1. Point all active users to the new build (force-update via Play Store or
    distribute new APK internally)
 2. Verify sign-in, Firestore reads/writes, and calendar integration all work
-3. Revoke the old project's OAuth clients in GCP Console
+3. Revoke all OAuth clients in the old `kbc-app-dev` GCP project
 4. Delete or archive the `kbc-app-dev` Firebase project
+5. Remove personal account (`16asb2@gmail.com`) from all KBC-related Google
+   services (Calendar, Drive, Firebase, GCP)
