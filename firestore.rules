@@ -77,7 +77,15 @@ service cloud.firestore {
       allow update: if isSupervisorOrAdmin() ||
                        (isAuthenticated() &&
                         request.auth.uid == uid &&
-                        !touchesMemberPrivilegedFields());
+                        !touchesMemberPrivilegedFields()) ||
+                       // Auto-expire: members can self-downgrade to 'inactive' when their
+                       // membership lapses — they cannot upgrade themselves.
+                       (isAuthenticated() &&
+                        request.auth.uid == uid &&
+                        resource.data.membershipStatus in ['active', 'pending'] &&
+                        request.resource.data.membershipStatus == 'inactive' &&
+                        request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(['membershipStatus', 'lastUpdatedBy', 'lastUpdatedAt']));
     }
 
     // ── logs/{id} ─────────────────────────────────────────────────────────────
