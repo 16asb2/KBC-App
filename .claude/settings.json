@@ -28,7 +28,11 @@
       "PowerShell(Get-ChildItem \"$env:ANDROID_HOME\" -ErrorAction SilentlyContinue | Select-Object -First 5 Name; $env:ANDROID_HOME; $env:ANDROID_SDK_ROOT)",
       "Read(//d//**)",
       "Bash(find / -name \"keytool*\" -type f 2>/dev/null | head -10)",
-      "Bash(npx eas *)"
+      "Bash(npx eas *)",
+      "Bash(npx firebase *)",
+      "Bash(git -C \"d:\\\\Dev\\\\KBC-App\" status)",
+      "Bash(git -C \"d:\\\\Dev\\\\KBC-App\" diff)",
+      "Bash(git -C \"d:\\\\Dev\\\\KBC-App\" log --oneline -5)"
     ]
   }
 }
