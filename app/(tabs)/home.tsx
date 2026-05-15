@@ -422,10 +422,9 @@ function OtherClimberModal({
   };
 
   const statusLabel = (m: UserProfile) => {
-    if (m.membershipStatus === 'active')     return 'Active member';
-    if (m.membershipStatus === 'pending')    return 'Pending';
-    if (m.membershipStatus === 'non-member') return 'No access';
-    if (m.punchPassRemaining > 0)            return `${m.punchPassRemaining} punch${m.punchPassRemaining !== 1 ? 'es' : ''}`;
+    if (m.membershipStatus === 'active')  return 'Active member';
+    if (m.membershipStatus === 'pending') return 'Pending';
+    if (m.punchPassRemaining > 0)         return `${m.punchPassRemaining} punch${m.punchPassRemaining !== 1 ? 'es' : ''}`;
     return 'Inactive';
   };
 
@@ -639,17 +638,6 @@ export default function HomeScreen() {
     // ── Access check ──────────────────────────────────────────────────────────
     const targetDisplayName = target.preferredName || target.name;
     const { membershipStatus, punchPassRemaining } = target;
-
-    // Non-members with no punch passes cannot be signed in — they have no access pass
-    if (membershipStatus === 'non-member' && punchPassRemaining === 0) {
-      Alert.alert(
-        'No Access Pass',
-        isSelf
-          ? 'You don\'t have an active access pass or punch passes. Please purchase access to sign in.'
-          : `${targetDisplayName} doesn't have an active access pass or punch passes. They need to purchase access before signing in.`,
-      );
-      return;
-    }
 
     if (membershipStatus === 'active' || membershipStatus === 'pending') {
       setSigningIn(true);

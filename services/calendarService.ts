@@ -21,7 +21,7 @@ const FS_BASE    = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/d
 export type CalendarParticipant = {
   uid:  string;
   name: string;
-  role: string; // 'supervisor' | 'admin' | 'member' | 'non-member'
+  role: string; // 'supervisor' | 'admin' | 'member'
 };
 
 export type CalendarEvent = {
@@ -352,16 +352,11 @@ export async function createSupervisorEvent(
  * Pre-checks for overlapping supervisor slots and only creates requests for uncovered intervals.
  * May create multiple events if supervisor slots split the requested time.
  * Throws if the entire requested time is already covered by a supervisor session.
- * Requires: requesterUser.membershipStatus !== 'non-member'
  */
 export async function createSessionRequest(
   eventData: { start: string; end: string; timeZone?: string; nameOverride?: string },
   requesterUser: CalendarUser,
 ): Promise<CalendarEvent[]> {
-  if (requesterUser.membershipStatus === 'non-member') {
-    throw new Error('Non-members cannot submit session requests.');
-  }
-
   const adminToken  = await getAdminCalendarToken();
   const tz          = eventData.timeZone ?? 'America/Toronto';
   const reqStart    = new Date(eventData.start);
@@ -442,8 +437,7 @@ export async function joinSession(
     name: joiningUser.name,
     role: joiningUser.isAdmin        ? 'admin'
         : joiningUser.isSupervisor   ? 'supervisor'
-        : joiningUser.membershipStatus !== 'non-member' ? 'member'
-        : 'non-member',
+        : 'member',
   };
   const updatedParticipants = [...participants, newParticipant];
   const updatedTitle        = buildTitle(updatedParticipants);
@@ -768,16 +762,11 @@ export async function createSpecialEvent(
 /**
  * Submit a session request to Firestore (does NOT write to Google Calendar).
  * Use createSessionRequest() to also put it on the calendar.
- * Requires: requesterUser.membershipStatus !== 'non-member'
  */
 export async function createMemberRequest(
   requestData: SessionRequestData,
   requesterUser: CalendarUser,
 ): Promise<void> {
-  if (requesterUser.membershipStatus === 'non-member') {
-    throw new Error('Non-members cannot submit session requests.');
-  }
-
   const id  = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const now = new Date().toISOString();
   await fsPatch(`sessionRequests/${id}`, {

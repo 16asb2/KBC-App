@@ -6,11 +6,10 @@ const API_KEY    = process.env.EXPO_PUBLIC_FIREBASE_API_KEY!;
 const BASE       = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
 const QUERY_URL  = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${API_KEY}`;
 
-// 'non-member'  = never had any access (new sign-ups, manually created profiles)
-// 'inactive'    = had a membership that has since expired
-// 'pending'     = purchased access, awaiting admin confirmation
-// 'active'      = has a valid current membership
-export type MembershipStatus = 'active' | 'pending' | 'inactive' | 'non-member';
+// 'inactive' = registered but no current access (new sign-ups, lapsed memberships)
+// 'pending'  = purchased access, awaiting admin confirmation
+// 'active'   = has a valid current membership
+export type MembershipStatus = 'active' | 'pending' | 'inactive';
 
 export type WaiverRecord = {
   signedAt: string;    // ISO timestamp
@@ -273,7 +272,7 @@ export async function deleteProfile(uid: string): Promise<void> {
  * Rules:
  *  - If membershipExpiry is non-null and in the past → set 'inactive'
  *  - Punch-pass-only users are NOT promoted to 'active' — punch passes grant
- *    per-visit access only; membershipStatus stays 'inactive'/'non-member'
+ *    per-visit access only; membershipStatus stays 'inactive'
  */
 export async function checkAndUpdateMembershipStatus(
   profile: UserProfile,

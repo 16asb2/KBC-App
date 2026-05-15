@@ -122,7 +122,7 @@ export default function EditSessionScreen() {
       email:            user!.email,
       isSupervisor:     profile?.isSupervisor ?? false,
       isAdmin:          isAdminUser,
-      membershipStatus: profile?.membershipStatus ?? 'non-member',
+      membershipStatus: profile?.membershipStatus ?? 'inactive',
     };
   }
 

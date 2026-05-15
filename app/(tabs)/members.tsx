@@ -35,10 +35,10 @@ const PASS_OPTIONS = [
 type PassId = typeof PASS_OPTIONS[number]['id'] | 'inactive';
 
 const STATUS_LABELS: Record<MembershipStatus, string> = {
-  active: 'Active', pending: 'Pending', inactive: 'Inactive', 'non-member': 'Non-member',
+  active: 'Active', pending: 'Pending', inactive: 'Inactive',
 };
 const STATUS_COLORS: Record<MembershipStatus, string> = {
-  active: KBC.green, pending: KBC.orange, inactive: '#aaa', 'non-member': '#666',
+  active: KBC.green, pending: KBC.orange, inactive: '#aaa',
 };
 
 /** Derives the closest PassId from a start/expiry date pair. */
@@ -158,7 +158,7 @@ function EditModal({
   // ── Edit panel state ──
   const [showMembershipEdit, setShowMembershipEdit] = useState(false);
   const [selectedPass, setSelectedPass] = useState<PassId>(() => {
-    if (member.membershipStatus === 'inactive' || member.membershipStatus === 'non-member')
+    if (member.membershipStatus === 'inactive')
       return 'inactive';
     return getPassId(member.membershipStart, member.membershipExpiry);
   });
@@ -592,8 +592,6 @@ function MemberRow({ member, onPress }: { member: UserProfile; onPress: () => vo
         </Text>
         {(member.membershipStatus === 'active' || member.membershipStatus === 'pending') && member.membershipExpiry
           ? <Text style={styles.memberSub}>Until {formatDate(member.membershipExpiry)}</Text>
-          : member.membershipStatus === 'non-member'
-          ? <Text style={styles.memberSub}>No access pass</Text>
           : <Text style={styles.memberSub}>{member.email}</Text>
         }
       </View>
