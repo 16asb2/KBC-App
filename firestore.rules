@@ -63,6 +63,16 @@ service cloud.firestore {
       ]);
     }
 
+    // A member may update their own access/purchase state as long as they
+    // don't touch role fields and don't self-approve to 'active'.
+    function canSelfUpdateAccess(uid) {
+      return isAuthenticated() &&
+        request.auth.uid == uid &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'isSupervisor', 'amendedBy']) &&
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['membershipStatus']) ||
+          request.resource.data.membershipStatus == 'pending');
+    }
+
     // ── users/{uid} ───────────────────────────────────────────────────────────
     match /users/{uid} {
       allow read:   if isAuthenticated();
@@ -78,6 +88,10 @@ service cloud.firestore {
                        (isAuthenticated() &&
                         request.auth.uid == uid &&
                         !touchesMemberPrivilegedFields()) ||
+                       // Members may purchase/use access for themselves (pending admin confirmation).
+                       // They can write access fields but cannot set membershipStatus to 'active'
+                       // and cannot touch role fields.
+                       canSelfUpdateAccess(uid) ||
                        // Auto-expire: members can self-downgrade to 'inactive' when their
                        // membership lapses — they cannot upgrade themselves.
                        (isAuthenticated() &&

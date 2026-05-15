@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { KBC } from '@/constants/theme';
 import type { CalendarEvent } from '@/services/calendarService';
@@ -68,7 +69,17 @@ export function CalendarPicker({ selectedDate, allEvents, onDayPress }: Props) {
 
   const days = buildCalendarDays(viewYear, viewMonth);
 
+  const monthSwipe = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-25, 25])
+    .failOffsetY([-20, 20])
+    .onEnd(e => {
+      if (Math.abs(e.translationX) < 60) return;
+      if (e.translationX < 0) nextMonth(); else prevMonth();
+    });
+
   return (
+    <GestureDetector gesture={monthSwipe}>
     <View
       style={styles.container}
       onLayout={e => setContainerWidth(e.nativeEvent.layout.width - 24)}
@@ -144,6 +155,7 @@ export function CalendarPicker({ selectedDate, allEvents, onDayPress }: Props) {
         </View>
       </View>
     </View>
+    </GestureDetector>
   );
 }
 

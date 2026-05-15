@@ -1,7 +1,6 @@
-import { Tabs, router, usePathname } from 'expo-router';
+import { Tabs } from 'expo-router';
 import React from 'react';
 import { Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -12,17 +11,6 @@ import { ScheduleProvider } from '@/context/schedule';
 
 const logoSource = require('@/assets/images/kbc-logo.png');
 
-const TABS = ['/(tabs)/home', '/(tabs)', '/(tabs)/calendar', '/(tabs)/members', '/(tabs)/boulders', '/(tabs)/climblog'] as const;
-const TAB_COLORS = [KBC.cyan, KBC.pink, KBC.purple, KBC.orange, KBC.lime, KBC.green];
-
-function getTabIndex(pathname: string): number {
-  if (pathname.endsWith('/home'))     return 0;
-  if (pathname.endsWith('/calendar')) return 2;
-  if (pathname.endsWith('/members'))  return 3;
-  if (pathname.endsWith('/boulders')) return 4;
-  if (pathname.endsWith('/climblog')) return 5;
-  return 1; // Schedule (index)
-}
 
 function KBCHeader() {
   const { signOut } = useAuth();
@@ -43,27 +31,10 @@ function KBCHeader() {
 }
 
 function TabsLayout() {
-  const pathname = usePathname();
   const insets = useSafeAreaInsets();
 
-  const swipe = Gesture.Pan()
-    .runOnJS(true)
-    .activeOffsetX([-20, 20])
-    .failOffsetY([-15, 15])
-    .onEnd((e) => {
-      const dx = e.translationX;
-      if (Math.abs(dx) < 60) return;
-      const current = getTabIndex(pathname);
-      if (dx < 0 && current < TABS.length - 1) {
-        router.navigate(TABS[current + 1]);
-      } else if (dx > 0 && current > 0) {
-        router.navigate(TABS[current - 1]);
-      }
-    });
-
   return (
-    <GestureDetector gesture={swipe}>
-      <View style={{ flex: 1 }} collapsable={false}>
+    <View style={{ flex: 1 }} collapsable={false}>
       <Tabs
         screenOptions={{
           tabBarInactiveTintColor: '#555',
@@ -129,8 +100,7 @@ function TabsLayout() {
           }}
         />
       </Tabs>
-      </View>
-    </GestureDetector>
+    </View>
   );
 }
 

@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { CalendarPicker } from '@/components/calendar-picker';
 import { TimelineView } from '@/components/timeline-view';
@@ -64,6 +65,15 @@ export default function ScheduleScreen() {
     setSelectedDate(next);
   }
 
+  const daySwipe = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-25, 25])
+    .failOffsetY([-20, 20])
+    .onEnd(e => {
+      if (Math.abs(e.translationX) < 60) return;
+      changeDay(e.translationX < 0 ? 1 : -1);
+    });
+
   const dayEvents = allEvents.filter(e => {
     if (e.start?.dateTime) return isSameDay(new Date(e.start.dateTime), selectedDate);
     if (e.start?.date)     return isAllDayOnDay(e, selectedDate);
@@ -71,12 +81,10 @@ export default function ScheduleScreen() {
   });
 
   return (
+    <GestureDetector gesture={daySwipe}>
     <View style={styles.container}>
       {/* Day navigator */}
       <View style={styles.dayNav}>
-        <TouchableOpacity style={styles.navArrow} onPress={() => changeDay(-1)}>
-          <Text style={styles.navArrowText}>‹</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={styles.dayTitleGroup} onPress={() => setCalPickerVisible(true)} activeOpacity={0.7}>
           <View style={styles.dayTitleRow}>
             <Text style={styles.dayTitle}>{formatHeaderDate(selectedDate)}</Text>
@@ -85,6 +93,12 @@ export default function ScheduleScreen() {
           {formatHeaderLabel(selectedDate) && (
             <Text style={styles.dayLabel}>{formatHeaderLabel(selectedDate)}</Text>
           )}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.refreshBtn} onPress={reload}>
+          <Text style={styles.refreshBtnText}>↻</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navArrow} onPress={() => changeDay(-1)}>
+          <Text style={styles.navArrowText}>‹</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.navArrow} onPress={() => changeDay(1)}>
           <Text style={styles.navArrowText}>›</Text>
@@ -141,6 +155,7 @@ export default function ScheduleScreen() {
           }}
           onTimePress={date => router.push({ pathname: '/add-session', params: {
             presetStart: date.toISOString(),
+            ...(!isSupervisor && !isAdminUser ? { isRequest: 'true' } : {}),
           }})}
         />
       )}
@@ -175,7 +190,7 @@ export default function ScheduleScreen() {
         )}
       </View>
 
-      {/* Calendar picker modal */}
+      {/* Calendar picker modal — outside GestureDetector to avoid gesture conflicts */}
       <Modal
         visible={calPickerVisible}
         transparent
@@ -201,6 +216,7 @@ export default function ScheduleScreen() {
         </TouchableOpacity>
       </Modal>
     </View>
+    </GestureDetector>
   );
 }
 
@@ -217,7 +233,9 @@ const styles = StyleSheet.create({
   },
   navArrow: { padding: 8 },
   navArrowText: { fontSize: 32, color: '#c0005a', lineHeight: 36 },
-  dayTitleGroup: { flex: 1, alignItems: 'center' },
+  dayTitleGroup: { flex: 1, alignItems: 'flex-start' },
+  refreshBtn: { padding: 8, marginRight: 2 },
+  refreshBtnText: { fontSize: 24, color: '#c0005a', lineHeight: 30 },
   dayTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dayTitle: { fontSize: 17, fontWeight: '700', color: '#fff' },
   dayLabel: { fontSize: 11, color: '#aaa', fontWeight: '500', marginTop: 1 },

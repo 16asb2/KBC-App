@@ -620,21 +620,6 @@ export default function HomeScreen() {
   async function processSignIn(target: UserProfile, isSelf = true): Promise<void> {
     if (!user) return;
 
-    // ── 24-hour sign-in limit ─────────────────────────────────────────────────
-    const TWENTY_FOUR_H = 24 * 60 * 60 * 1000;
-    if (target.lastSignInAt) {
-      const elapsed = Date.now() - new Date(target.lastSignInAt).getTime();
-      if (elapsed < TWENTY_FOUR_H) {
-        const nextTime = new Date(new Date(target.lastSignInAt).getTime() + TWENTY_FOUR_H);
-        const who = isSelf ? 'You have' : `${target.preferredName || target.name} has`;
-        Alert.alert(
-          'Already Signed In',
-          `${who} already signed in today. Next sign-in available at ${nextTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.`,
-        );
-        return;
-      }
-    }
-
     // ── Access check ──────────────────────────────────────────────────────────
     const targetDisplayName = target.preferredName || target.name;
     const { membershipStatus, punchPassRemaining } = target;

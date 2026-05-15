@@ -65,6 +65,17 @@ export default function EditSessionScreen() {
     }
     return new Date(start) < new Date();
   })();
+  // Event is over: end time has passed. Used for join eligibility — members can
+  // join an in-progress session right up until it ends.
+  const isEventOver = (() => {
+    if (!end) return false;
+    if (isAllDayEvent) {
+      const [y, m, d] = end.split('-').map(Number);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      return new Date(y, m - 1, d) <= today;
+    }
+    return new Date(end) < new Date();
+  })();
   const requesterName  = isRequestEvent ? (summary?.replace(/\s*\(requested\)/i, '').trim() ?? '') : '';
   const requesterEmail = (() => {
     const m = description?.match(/^requested_by:(.+)$/);
@@ -238,7 +249,7 @@ export default function EditSessionScreen() {
   // ── Join Session banner (shown on supervisor events to ALL users) ─────────────
   function JoinBanner() {
     if (!isSuperEvent || isRequestEvent) return null;
-    if (isPastEvent) return null;
+    if (isEventOver) return null;
 
     // Organizer: supervisor whose name was already in the title before any explicit join.
     // They manage the event via the edit form — no join/cancel button for them.

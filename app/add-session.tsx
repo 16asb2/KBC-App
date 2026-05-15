@@ -32,9 +32,9 @@ export default function AddSessionScreen() {
   const { user } = useAuth();
   const { profile } = useProfile();
   const { presetStart, isRequest } = useLocalSearchParams<{ presetStart?: string; isRequest?: string }>();
-  const requestMode  = isRequest === 'true';
   const isAdminUser  = isAdmin(user?.email, profile?.isAdmin);
   const isSupervisor = (profile?.isSupervisor ?? false) || isAdminUser;
+  const requestMode  = isRequest === 'true' || !isSupervisor;
 
   const now = new Date();
   const defaultStart = presetStart ? new Date(presetStart) : (() => {
