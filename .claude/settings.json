@@ -32,7 +32,10 @@
       "Bash(npx firebase *)",
       "Bash(git -C \"d:\\\\Dev\\\\KBC-App\" status)",
       "Bash(git -C \"d:\\\\Dev\\\\KBC-App\" diff)",
-      "Bash(git -C \"d:\\\\Dev\\\\KBC-App\" log --oneline -5)"
+      "Bash(git -C \"d:\\\\Dev\\\\KBC-App\" log --oneline -5)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

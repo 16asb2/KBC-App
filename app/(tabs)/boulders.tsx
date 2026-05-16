@@ -815,12 +815,21 @@ function ClimbCard({ boulder, logs, uid, onPress, onLog, isProject, onToggleProj
         </View>
       </View>
 
-      {/* Row 2: grade bar */}
+      {/* Row 2: badges (community) — above grade bar */}
+      {agg.topBadges.length > 0 && (
+        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4, alignSelf: 'flex-start' }}>
+          {agg.topBadges.slice(0, 5).map(b => (
+            <BadgeIcon key={b} label={b} count={badgeCounts[b] ?? 0} selected size="sm" compact />
+          ))}
+        </View>
+      )}
+
+      {/* Row 3: grade bar */}
       <View style={{ marginTop: 2 }}>
         <GradeBar votes={gradeVotesMap} compact />
       </View>
 
-      {/* Row 3: action buttons — right-aligned, below grade bar */}
+      {/* Row 4: action buttons — right-aligned, below grade bar */}
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 4 }}>
         <TouchableOpacity
           style={[styles.cardProjectBtn, isProject && styles.cardProjectBtnActive]}
@@ -842,15 +851,6 @@ function ClimbCard({ boulder, logs, uid, onPress, onLog, isProject, onToggleProj
           <Text style={styles.cardLogBtnText}>+ Log</Text>
         </TouchableOpacity>
       </View>
-
-      {/* Row 4: top badges (community) */}
-      {agg.topBadges.length > 0 && (
-        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4, marginTop: 4, alignSelf: 'flex-start' }}>
-          {agg.topBadges.slice(0, 5).map(b => (
-            <BadgeIcon key={b} label={b} count={badgeCounts[b] ?? 0} selected size="sm" compact />
-          ))}
-        </View>
-      )}
 
     </TouchableOpacity>
   );
@@ -1519,7 +1519,7 @@ function BoulderOverviewModal({
             {/* Action buttons: Project + Like + Log */}
             <View style={styles.overviewActions}>
               <TouchableOpacity
-                style={[styles.cardProjectBtn, isProject && styles.cardProjectBtnActive, { flex: 1 }]}
+                style={[styles.cardProjectBtn, isProject && styles.cardProjectBtnActive]}
                 onPress={onToggleProject}
               >
                 <Text style={[styles.cardProjectBtnText, isProject && styles.cardProjectBtnTextActive]}>
@@ -1527,7 +1527,7 @@ function BoulderOverviewModal({
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.cardLikeBtn, isLiked && styles.cardLikeBtnActive, { flex: 1 }]}
+                style={[styles.cardLikeBtn, isLiked && styles.cardLikeBtnActive]}
                 onPress={onToggleLike}
               >
                 <Text style={[styles.cardLikeBtnText, isLiked && styles.cardLikeBtnTextActive]}>
@@ -1536,7 +1536,7 @@ function BoulderOverviewModal({
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.cardLogBtn, { flex: 1 }]}
+                style={styles.cardLogBtn}
                 onPress={onLog}
               >
                 <Text style={styles.cardLogBtnText}>+ Log</Text>
@@ -3296,25 +3296,27 @@ export default function BouldersScreen() {
 
       {/* Sort bar — KBC only */}
       {mode === 'kbc' && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sortBar}>
-          <View style={styles.sortBarContent}>
-            {SORT_OPTIONS.map(opt => {
-              const active = sortKey === opt.key;
-              const arrow  = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
-              return (
-                <TouchableOpacity
-                  key={opt.key}
-                  style={[styles.sortPill, active && styles.sortPillActive]}
-                  onPress={() => handleSortPress(opt.key)}
-                >
-                  <Text style={[styles.sortPillText, active && styles.sortPillTextActive]}>
-                    {opt.label}{arrow}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </ScrollView>
+        <View style={styles.sortBar}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.sortBarContent}>
+              {SORT_OPTIONS.map(opt => {
+                const active = sortKey === opt.key;
+                const arrow  = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    style={[styles.sortPill, active && styles.sortPillActive]}
+                    onPress={() => handleSortPress(opt.key)}
+                  >
+                    <Text style={[styles.sortPillText, active && styles.sortPillTextActive]}>
+                      {opt.label}{arrow}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </View>
       )}
 
       {/* Content */}
@@ -3602,7 +3604,7 @@ const styles = StyleSheet.create({
   personalManageText: { color: '#aaa', fontSize: 13, fontWeight: '600' },
 
   // Sort bar
-  sortBar: { backgroundColor: '#f5f5f5', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
+  sortBar: { backgroundColor: '#f5f5f5', borderBottomWidth: 1, borderBottomColor: '#e0e0e0', flexShrink: 0 },
   sortBarContent: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10, gap: 8, alignItems: 'center' },
   sortPill: {
     paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20,
@@ -3816,7 +3818,7 @@ const styles = StyleSheet.create({
   overviewMetaText:  { fontSize: 13, color: '#555', fontWeight: '600' },
   overviewMetaDot:   { fontSize: 13, color: '#ccc' },
   overviewMetaLikes: { fontSize: 13, color: '#0284c7', fontWeight: '700' },
-  overviewActions:   { flexDirection: 'row', gap: 10, marginTop: 14, marginBottom: 4 },
+  overviewActions:   { flexDirection: 'row', gap: 10, marginTop: 14, marginBottom: 4, justifyContent: 'flex-end' },
   overviewSectionLabel: {
     fontSize: 11, fontWeight: '700', color: '#999',
     textTransform: 'uppercase', letterSpacing: 0.5,
