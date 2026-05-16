@@ -805,12 +805,20 @@ export default function HomeScreen() {
       await updateProfile(target.uid, profileUpdates, user.email);
       if (!isOther) await reloadProfile();
 
+      // Purchase record (Access Pass History)
       await addLogEntry({
         timestamp: now.toISOString(),
         userId: target.uid,
         userName: targetName,
         accessType,
         notes,
+      });
+      // Sign-in record (Sign-In History) — every purchase also signs the member in
+      await addLogEntry({
+        timestamp: new Date(now.getTime() + 1).toISOString(),
+        userId: target.uid,
+        userName: targetName,
+        accessType,
       });
 
       showToast(`✓ ${isOther ? `${targetName} signed in!` : 'Signed in!'} Session logged.`);

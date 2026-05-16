@@ -791,7 +791,7 @@ function ClimbCard({ boulder, logs, uid, onPress, onLog, isProject, onToggleProj
             {[
               boulder.name || null,
               boulder.locations.slice(0, 2).join(', ') || null,
-              boulder.tapeColor || null,
+              boulder.tapeColor ? `${boulder.tapeColor} Tape` : null,
             ].filter(Boolean).join('  |  ') || `Boulder #${boulder.number}`}
           </Text>
           {boulder.setter ? (
@@ -932,7 +932,6 @@ function BoulderFormModal({
   const [name,               setName]               = useState(b?.name      ?? '');
   const [boulderNumber,      setBoulderNumber]      = useState(String(isEdit ? (b?.number ?? 1) : (mode as { type: 'add'; nextNumber: number }).nextNumber));
   const [tapeColor,          setTapeColor]          = useState(b?.tapeColor  ?? '');
-  const [tapeColorOpen,      setTapeColorOpen]      = useState(false);
   const [newTapeColorText,   setNewTapeColorText]   = useState('');
   const [setter,             setSetter]             = useState(b?.setter    ?? defaultSetter);
   const [locations,          setLocations]          = useState<string[]>(b?.locations ?? []);
@@ -954,7 +953,6 @@ function BoulderFormModal({
     setName(b?.name          ?? '');
     setBoulderNumber(String(isEdit ? (b?.number ?? 1) : (mode as { type: 'add'; nextNumber: number }).nextNumber));
     setTapeColor(b?.tapeColor ?? '');
-    setTapeColorOpen(false);
     setNewTapeColorText('');
     setSetter(b?.setter      ?? defaultSetter);
     setLocations(b?.locations ?? []);
@@ -1104,55 +1102,37 @@ function BoulderFormModal({
           <ScrollView style={styles.formBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {/* Tape Color (required) */}
             <Text style={styles.fieldLabel}>Tape Color *</Text>
-            <TouchableOpacity
-              style={[styles.textInput, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
-              onPress={() => setTapeColorOpen(o => !o)}
-              activeOpacity={0.75}
-            >
-              <Text style={{ fontSize: 14, color: tapeColor ? '#111' : '#aaa' }}>
-                {tapeColor || 'Select or add tape color…'}
-              </Text>
-              <Text style={{ color: KBC.lime }}>{tapeColorOpen ? '▲' : '▾'}</Text>
-            </TouchableOpacity>
-            {tapeColorOpen && (
-              <View style={{ marginTop: 8, gap: 10 }}>
-                {tapeColorPool.length > 0 && (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                    {tapeColorPool.map(c => (
-                      <TouchableOpacity
-                        key={c}
-                        style={[styles.sortPill, tapeColor === c && styles.sortPillActive]}
-                        onPress={() => { setTapeColor(c); setTapeColorOpen(false); }}
-                      >
-                        <Text style={[styles.sortPillText, tapeColor === c && styles.sortPillTextActive]}>{c}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-                  <TextInput
-                    style={[styles.textInput, { flex: 1, marginTop: 0 }]}
-                    value={newTapeColorText}
-                    onChangeText={setNewTapeColorText}
-                    placeholder="Add new color…"
-                    placeholderTextColor="#aaa"
-                  />
-                  <TouchableOpacity
-                    style={[styles.saveBtn, { marginTop: 0, paddingHorizontal: 16 }]}
-                    onPress={() => {
-                      const c = newTapeColorText.trim();
-                      if (!c) return;
-                      onAddTapeColor(c);
-                      setTapeColor(c);
-                      setNewTapeColorText('');
-                      setTapeColorOpen(false);
-                    }}
-                  >
-                    <Text style={styles.saveBtnText}>Add</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+            <DropdownPicker
+              options={[
+                { label: 'Select tape color…', value: '' },
+                ...tapeColorPool.map(c => ({ label: c, value: c })),
+              ]}
+              value={tapeColor}
+              onChange={setTapeColor}
+              placeholder="Select tape color…"
+              accentColor={KBC.lime}
+            />
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 8 }}>
+              <TextInput
+                style={[styles.textInput, { flex: 1, marginTop: 0 }]}
+                value={newTapeColorText}
+                onChangeText={setNewTapeColorText}
+                placeholder="Add new color…"
+                placeholderTextColor="#aaa"
+              />
+              <TouchableOpacity
+                style={[styles.saveBtn, { marginTop: 0, paddingHorizontal: 16 }]}
+                onPress={() => {
+                  const c = newTapeColorText.trim();
+                  if (!c) return;
+                  onAddTapeColor(c);
+                  setTapeColor(c);
+                  setNewTapeColorText('');
+                }}
+              >
+                <Text style={styles.saveBtnText}>Add</Text>
+              </TouchableOpacity>
+            </View>
 
             {/* Number */}
             <Text style={[styles.fieldLabel, { marginTop: 16 }]}>Boulder Number</Text>
@@ -1235,7 +1215,7 @@ function BoulderFormModal({
             <Text style={styles.fieldLabel}>Photo (optional)</Text>
             {photo ? (
               <View style={styles.photoPreviewWrap}>
-                <Image source={{ uri: photo }} style={styles.photoPreview} contentFit="cover" />
+                <Image source={{ uri: photo }} style={styles.photoPreview} contentFit="contain" />
                 <TouchableOpacity
                   style={styles.photoDeleteBtn}
                   onPress={() => setPhoto('')}
@@ -1254,7 +1234,7 @@ function BoulderFormModal({
                   }
                   const result = await ImagePicker!.launchImageLibraryAsync({
                     mediaTypes: ['images'],
-                    allowsEditing: true,
+                    allowsEditing: false,
                     quality: 0.7,
                   });
                   if (!result.canceled && result.assets[0]) {
@@ -1404,6 +1384,7 @@ function BoulderOverviewModal({
   const [commentText,     setCommentText]     = useState('');
   const [loadingComments, setLoadingComments] = useState(false);
   const [postingComment,  setPostingComment]  = useState(false);
+  const [showFullPhoto,   setShowFullPhoto]   = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -1472,7 +1453,9 @@ function BoulderOverviewModal({
 
           {/* ── Photo ───────────────────────────────────────────────────── */}
           {boulder.photo ? (
-            <Image source={{ uri: boulder.photo }} style={styles.overviewPhoto} contentFit="cover" />
+            <TouchableOpacity onPress={() => setShowFullPhoto(true)} activeOpacity={0.9}>
+              <Image source={{ uri: boulder.photo }} style={styles.overviewPhoto} contentFit="cover" />
+            </TouchableOpacity>
           ) : null}
 
           <View style={styles.overviewBody}>
@@ -1609,6 +1592,15 @@ function BoulderOverviewModal({
           </View>
         </ScrollView>
       </View>
+
+      {/* Full-screen photo viewer */}
+      {boulder.photo ? (
+        <Modal visible={showFullPhoto} transparent animationType="fade" onRequestClose={() => setShowFullPhoto(false)}>
+          <TouchableOpacity style={styles.fullPhotoOverlay} activeOpacity={1} onPress={() => setShowFullPhoto(false)}>
+            <Image source={{ uri: boulder.photo }} style={styles.fullPhotoImage} contentFit="contain" />
+          </TouchableOpacity>
+        </Modal>
+      ) : null}
     </Modal>
   );
 }
@@ -1845,27 +1837,16 @@ function FilterModal({
           })()}
 
           <Text style={styles.filterSectionLabel}>Setter</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
-            <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
-              <TouchableOpacity
-                style={[styles.sortPill, !local.setter && styles.sortPillActive]}
-                onPress={() => setLocal(f => ({ ...f, setter: '' }))}
-              >
-                <Text style={[styles.sortPillText, !local.setter && styles.sortPillTextActive]}>All</Text>
-              </TouchableOpacity>
-              {setterOptions.map(opt => (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={[styles.sortPill, local.setter === opt.value && styles.sortPillActive]}
-                  onPress={() => setLocal(f => ({ ...f, setter: opt.value }))}
-                >
-                  <Text style={[styles.sortPillText, local.setter === opt.value && styles.sortPillTextActive]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </ScrollView>
+          <DropdownPicker
+            options={[
+              { label: 'All setters', value: '' },
+              ...setterOptions.map(o => ({ label: o.label, value: o.value })),
+            ]}
+            value={local.setter}
+            onChange={v => setLocal(f => ({ ...f, setter: v }))}
+            placeholder="All setters"
+            accentColor={KBC.lime}
+          />
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 24 }}>
             <TouchableOpacity style={[styles.saveBtn, { flex: 1, marginTop: 0 }]} onPress={apply}>
@@ -3573,6 +3554,7 @@ const styles = StyleSheet.create({
   sortPill: {
     paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20,
     backgroundColor: '#e8e8e8', borderWidth: 1, borderColor: '#ddd',
+    flexShrink: 0,
   },
   sortPillActive:     { backgroundColor: KBC.lime + '22', borderColor: KBC.lime },
   sortPillText:       { fontSize: 13, fontWeight: '600', color: '#666' },
@@ -3651,8 +3633,10 @@ const styles = StyleSheet.create({
     padding: 20, alignItems: 'center', backgroundColor: '#fafafa',
   },
   photoPickBtnText: { fontSize: 15, fontWeight: '600', color: '#888' },
-  photoPreviewWrap: { borderRadius: 10, overflow: 'hidden', marginTop: 4 },
-  photoPreview: { width: '100%', height: 180, borderRadius: 10 },
+  photoPreviewWrap: { borderRadius: 10, overflow: 'hidden', marginTop: 4, backgroundColor: '#111' },
+  photoPreview: { width: '100%', height: 220, borderRadius: 10 },
+  fullPhotoOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
+  fullPhotoImage: { width: '100%', height: '100%' },
   photoDeleteBtn: {
     marginTop: 8, alignSelf: 'flex-start',
     paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
