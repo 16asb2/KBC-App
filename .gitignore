@@ -39,6 +39,9 @@ yarn-error.*
 google-services.json
 GoogleService-Info.plist
 
+# Firebase service account credentials — secrets stored in EAS, never commit locally
+*service-account*.json
+
 # internal docs
 PRODUCTION.md
 

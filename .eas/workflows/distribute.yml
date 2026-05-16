@@ -1,0 +1,28 @@
+name: Build and Distribute to Firebase
+
+on:
+  build:
+    profiles:
+      - preview
+    platforms:
+      - android
+
+jobs:
+  distribute:
+    name: Upload to Firebase App Distribution
+    needs: build
+    steps:
+      - name: Write service account credentials
+        run: |
+          echo "$GOOGLE_APPLICATION_CREDENTIALS_JSON" > /tmp/service-account.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/service-account.json" >> $EAS_ENV
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+
+      - name: Upload to Firebase App Distribution
+        run: |
+          npx firebase-tools appdistribution:distribute \
+            ${{ needs.build.outputs.artifact_path }} \
+            --app ${{ secrets.FIREBASE_APP_ID }} \
+            --groups "kbc-friends" \
+            --release-notes "Build from EAS"
