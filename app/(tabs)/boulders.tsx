@@ -3246,22 +3246,24 @@ export default function BouldersScreen() {
 
       {/* Sort bar — KBC only */}
       {mode === 'kbc' && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sortBar} contentContainerStyle={styles.sortBarContent}>
-          {SORT_OPTIONS.map(opt => {
-            const active = sortKey === opt.key;
-            const arrow  = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
-            return (
-              <TouchableOpacity
-                key={opt.key}
-                style={[styles.sortPill, active && styles.sortPillActive]}
-                onPress={() => handleSortPress(opt.key)}
-              >
-                <Text style={[styles.sortPillText, active && styles.sortPillTextActive]}>
-                  {opt.label}{arrow}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.sortBar}>
+          <View style={styles.sortBarContent}>
+            {SORT_OPTIONS.map(opt => {
+              const active = sortKey === opt.key;
+              const arrow  = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.sortPill, active && styles.sortPillActive]}
+                  onPress={() => handleSortPress(opt.key)}
+                >
+                  <Text style={[styles.sortPillText, active && styles.sortPillTextActive]}>
+                    {opt.label}{arrow}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </ScrollView>
       )}
 
@@ -3550,11 +3552,10 @@ const styles = StyleSheet.create({
 
   // Sort bar
   sortBar: { backgroundColor: '#f5f5f5', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
-  sortBarContent: { paddingHorizontal: 12, paddingVertical: 10, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  sortBarContent: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 10, gap: 8, alignItems: 'center' },
   sortPill: {
     paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20,
     backgroundColor: '#e8e8e8', borderWidth: 1, borderColor: '#ddd',
-    flexShrink: 0,
   },
   sortPillActive:     { backgroundColor: KBC.lime + '22', borderColor: KBC.lime },
   sortPillText:       { fontSize: 13, fontWeight: '600', color: '#666' },

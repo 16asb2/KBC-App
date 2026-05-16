@@ -113,6 +113,8 @@ export async function addLogEntry(entry: Omit<LogEntry, 'id'>): Promise<void> {
 export async function getRecentLogs(): Promise<LogEntry[]> {
   const since = new Date();
   since.setDate(since.getDate() - 30);
+  // No orderBy — range filter + orderBy on the same field can still require an explicit
+  // descending index in Firestore REST. Sort client-side instead (matches project convention).
   const docs = await fsQuery({
     from: [{ collectionId: 'logs' }],
     where: {
@@ -122,10 +124,11 @@ export async function getRecentLogs(): Promise<LogEntry[]> {
         value: { stringValue: since.toISOString() },
       },
     },
-    orderBy: [{ field: { fieldPath: 'timestamp' }, direction: 'DESCENDING' }],
     limit: 500,
   });
-  return docs.map(r => ({ id: r.document.name.split('/').pop(), ...decodeDoc(r.document) } as LogEntry));
+  return docs
+    .map(r => ({ id: r.document.name.split('/').pop(), ...decodeDoc(r.document) } as LogEntry))
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 }
 
 export async function getArchiveLogs(): Promise<LogEntry[]> {
@@ -140,10 +143,11 @@ export async function getArchiveLogs(): Promise<LogEntry[]> {
         value: { stringValue: cutoff.toISOString() },
       },
     },
-    orderBy: [{ field: { fieldPath: 'timestamp' }, direction: 'DESCENDING' }],
     limit: 300,
   });
-  return docs.map(r => ({ id: r.document.name.split('/').pop(), ...decodeDoc(r.document) } as LogEntry));
+  return docs
+    .map(r => ({ id: r.document.name.split('/').pop(), ...decodeDoc(r.document) } as LogEntry))
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 }
 
 export async function getUserLogs(uid: string): Promise<LogEntry[]> {

@@ -115,7 +115,7 @@ async function fsPatch(path: string, data: Record<string, any>, mask?: string[])
 
 async function fsList(col: string): Promise<any[]> {
   const authH = await firebaseAuthHeader();
-  const res = await fetch(`${BASE}/${col}?key=${API_KEY}&pageSize=500`, { headers: authH });
+  const res = await fetch(`${BASE}/${col}?key=${API_KEY}&pageSize=300`, { headers: authH });
   if (!res.ok) throw new Error(`Firestore LIST ${res.status}`);
   const json = await res.json();
   return json.documents ?? [];
