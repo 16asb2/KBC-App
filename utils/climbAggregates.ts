@@ -5,15 +5,28 @@ export type ClimbAggregates = {
   attemptCount: number;
   avgGrade:     number | null;  // 0–4 for KBC; null if no votes
   avgQuality:   number | null;  // 1–3; null if no votes
-  topBadges:    string[];       // up to 5, by frequency across all logs
+  topBadges:    string[];       // up to 5, by frequency (setter pick counts as 1 initial vote)
 };
 
-export function computeAggregates(logs: PersonalClimb[]): ClimbAggregates {
+export function computeAggregates(
+  logs: PersonalClimb[],
+  setterGradeVote?: number | null,
+  setterBadges?: string[],
+): ClimbAggregates {
   let sendCount    = 0;
   let attemptCount = 0;
-  const gradeVotes: number[]        = [];
-  const qualityVotes: number[]      = [];
+  const gradeVotes: number[]                = [];
+  const qualityVotes: number[]              = [];
   const badgeCounts: Record<string, number> = {};
+
+  // Setter's initial grade vote counts like a community vote
+  if (setterGradeVote !== null && setterGradeVote !== undefined) {
+    gradeVotes.push(setterGradeVote);
+  }
+  // Setter's badge picks each count as one initial vote
+  for (const b of setterBadges ?? []) {
+    badgeCounts[b] = (badgeCounts[b] ?? 0) + 1;
+  }
 
   for (const log of logs) {
     if (log.type === 'ascent') sendCount++;

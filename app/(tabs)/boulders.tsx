@@ -4,7 +4,7 @@ let ImagePicker: typeof import('expo-image-picker') | null = null;
 try { ImagePicker = require('expo-image-picker'); } catch {}
 import { Image } from 'expo-image';
 import { DropdownPicker } from '@/components/dropdown-picker';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -752,7 +752,10 @@ function ClimbCard({ boulder, logs, uid, onPress, onLog, isProject, onToggleProj
   isLiked: boolean;
   onToggleLike: () => void;
 }) {
-  const agg   = useMemo(() => computeAggregates(logs), [logs]);
+  const agg   = useMemo(
+    () => computeAggregates(logs, boulder.setterGradeVote, boulder.setterBadges),
+    [logs, boulder.setterGradeVote, boulder.setterBadges],
+  );
   const myLog = useMemo(() => getPersonalStatus(logs, uid), [logs, uid]);
 
   const { gradeVotesMap, qualityVotesMap, badgeCounts } = useMemo(() => {
@@ -815,10 +818,10 @@ function ClimbCard({ boulder, logs, uid, onPress, onLog, isProject, onToggleProj
         </View>
       </View>
 
-      {/* Row 2: badges (community) — above grade bar */}
+      {/* Row 2: top-5 badges (setter initial + community) — above grade bar */}
       {agg.topBadges.length > 0 && (
-        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4, alignSelf: 'flex-start' }}>
-          {agg.topBadges.slice(0, 5).map(b => (
+        <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 2, alignSelf: 'flex-start', marginTop: 6 }}>
+          {agg.topBadges.map(b => (
             <BadgeIcon key={b} label={b} count={badgeCounts[b] ?? 0} selected size="sm" compact />
           ))}
         </View>
@@ -3152,23 +3155,11 @@ export default function BouldersScreen() {
   const boulderAggregates = useMemo(() => {
     const map: Record<string, ClimbAggregates> = {};
     for (const b of boulders) {
-      const agg = computeAggregates(logsByProblem[b.internalId] ?? []);
-      // Include setter's initial grade vote in the community average
-      if (b.setterGradeVote !== null && b.setterGradeVote !== undefined) {
-        const logs = logsByProblem[b.internalId] ?? [];
-        const grades = logs.filter(l => l.gradeVote !== null && l.gradeVote !== undefined).map(l => l.gradeVote!);
-        grades.push(b.setterGradeVote);
-        agg.avgGrade = grades.reduce((s, v) => s + v, 0) / grades.length;
-      }
-      // Include setter's badges in topBadges
-      if (b.setterBadges?.length) {
-        const logs = logsByProblem[b.internalId] ?? [];
-        const bc: Record<string, number> = {};
-        for (const log of logs) for (const badge of log.badges ?? []) bc[badge] = (bc[badge] ?? 0) + 1;
-        for (const badge of b.setterBadges) bc[badge] = (bc[badge] ?? 0) + 1;
-        agg.topBadges = Object.entries(bc).sort((a, bx) => bx[1] - a[1]).slice(0, 5).map(([badge]) => badge);
-      }
-      map[b.internalId] = agg;
+      map[b.internalId] = computeAggregates(
+        logsByProblem[b.internalId] ?? [],
+        b.setterGradeVote,
+        b.setterBadges,
+      );
     }
     return map;
   }, [boulders, logsByProblem]);
@@ -3368,12 +3359,22 @@ export default function BouldersScreen() {
             />
           )}
 
-          {/* Add boulder button */}
-          {isPrivileged && seasons.length > 0 && (
-            <TouchableOpacity style={styles.addBtn} onPress={openAddForm}>
-              <Text style={styles.addBtnText}>+ Add Boulder</Text>
-            </TouchableOpacity>
-          )}
+          {/* Action buttons */}
+          <View style={{ flexDirection: 'row', gap: 10, marginHorizontal: 14, marginBottom: 14 }}>
+            {isPrivileged && seasons.length > 0 && (
+              <TouchableOpacity style={[styles.addBtn, { flex: 1, margin: 0 }]} onPress={openAddForm}>
+                <Text style={styles.addBtnText}>+ Add Boulder</Text>
+              </TouchableOpacity>
+            )}
+            {selectedSeason && (
+              <TouchableOpacity
+                style={[styles.addBtn, { flex: 1, margin: 0, backgroundColor: KBC.purple, shadowColor: KBC.purple }]}
+                onPress={() => router.push({ pathname: '/boulder-summary' as any, params: { seasonId: selectedSeason.id, seasonName: selectedSeason.name } })}
+              >
+                <Text style={styles.addBtnText}>Summary</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </>
       ) : (
         <>
