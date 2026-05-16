@@ -34,7 +34,7 @@ import { useProfile } from '@/context/profile';
 import {
   BADGE_GROUPS, BADGES, GRADE_COLORS, GRADE_TEXT, GRADES,
   Boulder, BoulderComment, BoulderSeason,
-  avgQuality,
+  avgGrade, avgQuality,
   addComment, createBoulder, createSeason, deleteComment,
   getBouldersForSeason, getComments, getNextBoulderNumber, getSeasons,
   getTapeColorPool, saveTapeColorPool,
@@ -756,25 +756,25 @@ function ClimbCard({ boulder, logs, uid, onPress, onLog, isProject, onToggleProj
   const myLog = useMemo(() => getPersonalStatus(logs, uid), [logs, uid]);
 
   const { gradeVotesMap, qualityVotesMap, badgeCounts } = useMemo(() => {
-    const gv: Record<string, number>  = {};
-    const qv: Record<string, number>  = {};
-    const bc: Record<string, number>  = {};
+    // Grade votes come from boulder.gradeVotes (voted on Overview screen) + setter initial vote
+    const gv: Record<string, number> = { ...boulder.gradeVotes };
+    if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) {
+      gv['__setter'] = boulder.setterGradeVote;
+    }
+    // Quality votes and badges still come from personal logs
+    const qv: Record<string, number> = {};
+    const bc: Record<string, number> = {};
     const seen = new Set<string>();
     for (const log of logs) {
       if (!seen.has(log.uid)) {
         seen.add(log.uid);
-        if (log.gradeVote !== null) gv[log.uid] = log.gradeVote;
-        if (log.quality > 0)        qv[log.uid] = log.quality;
+        if (log.quality > 0) qv[log.uid] = log.quality;
       }
       for (const b of log.badges ?? []) bc[b] = (bc[b] ?? 0) + 1;
     }
-    // Include setter's initial votes (stored on boulder, not in climb logs)
-    if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) {
-      gv['__setter'] = boulder.setterGradeVote;
-    }
     for (const b of boulder.setterBadges ?? []) bc[b] = (bc[b] ?? 0) + 1;
     return { gradeVotesMap: gv, qualityVotesMap: qv, badgeCounts: bc };
-  }, [logs, boulder.setterGradeVote, boulder.setterBadges]);
+  }, [logs, boulder.gradeVotes, boulder.setterGradeVote, boulder.setterBadges]);
 
   const hasStats = Object.keys(qualityVotesMap).length > 0 || likeCount > 0 || agg.sendCount > 0 || agg.attemptCount > 0;
 
@@ -1054,6 +1054,7 @@ function BoulderFormModal({
           likes: [],
           setterGradeVote: gradeIdx,
           setterBadges: selectedBadges,
+          gradeVotes: {},
         });
       }
       onSaved();
@@ -1331,7 +1332,7 @@ function BoulderFormModal({
 
 function BoulderOverviewModal({
   visible, boulder, logs, uid, userName, canEdit, onEdit, onClose, canRemove,
-  likeCount, isLiked, onToggleLike, isProject, onToggleProject,
+  likeCount, isLiked, onToggleLike, isProject, onToggleProject, onLog, onVoteGrade,
 }: {
   visible:         boolean;
   boulder:         Boulder;
@@ -1347,30 +1348,49 @@ function BoulderOverviewModal({
   onToggleLike:    () => void;
   isProject:       boolean;
   onToggleProject: () => void;
+  onLog:           () => void;
+  onVoteGrade:     (grade: number) => void;
 }) {
   const insets = useSafeAreaInsets();
 
-  // ── Vote maps derived from logs ──────────────────────────────────────────
-  const { gradeVotesMap, qualityVotesMap, badgeCounts } = useMemo(() => {
-    const gv: Record<string, number> = {};
+  // ── Local grade votes state (boulder.gradeVotes + setter; interactive in overview) ──
+  const [localGradeVotes, setLocalGradeVotes] = useState<Record<string, number>>({});
+  const voteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    const merged: Record<string, number> = { ...boulder.gradeVotes };
+    if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) {
+      merged['__setter'] = boulder.setterGradeVote;
+    }
+    setLocalGradeVotes(merged);
+  }, [visible, boulder.id]);
+
+  function handleGradeVote(g: number) {
+    setLocalGradeVotes(prev => {
+      const next = { ...prev };
+      if (g < 0) delete next[uid]; else next[uid] = g;
+      return next;
+    });
+    if (voteTimerRef.current) clearTimeout(voteTimerRef.current);
+    voteTimerRef.current = setTimeout(() => onVoteGrade(g), 500);
+  }
+
+  // ── Quality votes and badges still derived from logs ──────────────────────
+  const { qualityVotesMap, badgeCounts } = useMemo(() => {
     const qv: Record<string, number> = {};
     const bc: Record<string, number> = {};
     const seen = new Set<string>();
     for (const log of logs) {
       if (!seen.has(log.uid)) {
         seen.add(log.uid);
-        if (log.gradeVote !== null && log.gradeVote !== undefined) gv[log.uid] = log.gradeVote;
         if (log.quality > 0) qv[log.uid] = log.quality;
       }
       for (const b of log.badges ?? []) bc[b] = (bc[b] ?? 0) + 1;
     }
-    // Include setter's initial votes (stored on boulder, not in climb logs)
-    if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) {
-      gv['__setter'] = boulder.setterGradeVote;
-    }
     for (const b of boulder.setterBadges ?? []) bc[b] = (bc[b] ?? 0) + 1;
-    return { gradeVotesMap: gv, qualityVotesMap: qv, badgeCounts: bc };
-  }, [logs, boulder.setterGradeVote, boulder.setterBadges]);
+    return { qualityVotesMap: qv, badgeCounts: bc };
+  }, [logs, boulder.setterBadges]);
 
   // All badges with at least 1 vote, sorted by count desc
   const sortedBadges = useMemo(() =>
@@ -1496,8 +1516,16 @@ function BoulderOverviewModal({
               </Text>
             </View>
 
-            {/* Action buttons: Like + Project */}
+            {/* Action buttons: Project + Like + Log */}
             <View style={styles.overviewActions}>
+              <TouchableOpacity
+                style={[styles.cardProjectBtn, isProject && styles.cardProjectBtnActive, { flex: 1 }]}
+                onPress={onToggleProject}
+              >
+                <Text style={[styles.cardProjectBtnText, isProject && styles.cardProjectBtnTextActive]}>
+                  {isProject ? '− Project' : '+ Project'}
+                </Text>
+              </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.cardLikeBtn, isLiked && styles.cardLikeBtnActive, { flex: 1 }]}
                 onPress={onToggleLike}
@@ -1508,12 +1536,10 @@ function BoulderOverviewModal({
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.cardProjectBtn, isProject && styles.cardProjectBtnActive, { flex: 1 }]}
-                onPress={onToggleProject}
+                style={[styles.cardLogBtn, { flex: 1 }]}
+                onPress={onLog}
               >
-                <Text style={[styles.cardProjectBtnText, isProject && styles.cardProjectBtnTextActive]}>
-                  {isProject ? '− My Project' : '+ My Project'}
-                </Text>
+                <Text style={styles.cardLogBtnText}>+ Log</Text>
               </TouchableOpacity>
             </View>
 
@@ -1537,7 +1563,7 @@ function BoulderOverviewModal({
 
             {/* ── Grade ───────────────────────────────────────────────── */}
             <Text style={styles.overviewSectionLabel}>Community Grade</Text>
-            <GradeBar votes={gradeVotesMap} />
+            <GradeBar votes={localGradeVotes} userUid={uid} onVote={handleGradeVote} interactive />
 
             {/* ── Discussion ──────────────────────────────────────────── */}
             <Text style={styles.overviewSectionLabel}>Discussion</Text>
@@ -1888,11 +1914,10 @@ function SimpleStarRow({ value, onChange }: { value: number; onChange: (v: numbe
 }
 
 function BoulderLogModal({
-  visible, boulder, logs, onClose, onSaved, userUid, userName,
+  visible, boulder, onClose, onSaved, userUid, userName,
 }: {
   visible: boolean;
   boulder: Boulder;
-  logs: PersonalClimb[];
   onClose: () => void;
   onSaved: (newLog: PersonalClimb) => void;
   userUid: string;
@@ -1900,33 +1925,32 @@ function BoulderLogModal({
 }) {
   const insets = useSafeAreaInsets();
 
-  const [logDate,        setLogDate]        = useState(new Date());
-  const [type,           setType]           = useState<'ascent' | 'attempt'>('ascent');
-  const [gradeVotes,     setGradeVotes]     = useState<Record<string, number>>({});
-  const [qualityVotes,   setQualityVotes]   = useState<Record<string, number>>({});
-  const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
-  const [badgesOpen,     setBadgesOpen]     = useState(false);
-  const [effort,         setEffort]         = useState<number | null>(null);
-  const [project,        setProject]        = useState(false);
-  const [attempts,       setAttempts]       = useState('1');
-  const [publicComment,  setPublicComment]  = useState('');
-  const [privateComment, setPrivateComment] = useState('');
-  const [saving,         setSaving]         = useState(false);
-  const [showDate,       setShowDate]       = useState(false);
-  const [showTime,       setShowTime]       = useState(false);
+  const [logDate,          setLogDate]          = useState(new Date());
+  const [type,             setType]             = useState<'ascent' | 'attempt'>('ascent');
+  const [personalGradeIdx, setPersonalGradeIdx] = useState<number>(-1);
+  const [qualityVotes,     setQualityVotes]     = useState<Record<string, number>>({});
+  const [selectedBadges,   setSelectedBadges]   = useState<string[]>([]);
+  const [badgesOpen,       setBadgesOpen]       = useState(false);
+  const [effort,           setEffort]           = useState<number | null>(null);
+  const [project,          setProject]          = useState(false);
+  const [attempts,         setAttempts]         = useState('1');
+  const [publicComment,    setPublicComment]    = useState('');
+  const [privateComment,   setPrivateComment]   = useState('');
+  const [saving,           setSaving]           = useState(false);
+  const [showDate,         setShowDate]         = useState(false);
+  const [showTime,         setShowTime]         = useState(false);
 
   useEffect(() => {
     if (visible) {
       setLogDate(new Date());
       setType('ascent');
-      // Pre-populate community grade votes so the red avg marker shows
-      const initialVotes: Record<string, number> = {};
-      for (const log of logs) {
-        if (log.gradeVote !== null && log.gradeVote !== undefined) {
-          initialVotes[log.uid] = log.gradeVote;
-        }
+      // Default personal grade = rounded community avg from boulder.gradeVotes + setter
+      const allVotes: Record<string, number> = { ...boulder.gradeVotes };
+      if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) {
+        allVotes['__setter'] = boulder.setterGradeVote;
       }
-      setGradeVotes(initialVotes);
+      const avg = avgGrade(allVotes);
+      setPersonalGradeIdx(avg !== null ? Math.round(Math.max(0, Math.min(4, avg))) : -1);
       setQualityVotes({});
       setSelectedBadges([]);
       setBadgesOpen(false);
@@ -1941,18 +1965,21 @@ function BoulderLogModal({
   async function handleSave() {
     setSaving(true);
     try {
-      const gradeIdx = userUid in gradeVotes ? gradeVotes[userUid] : null;
-      const quality  = userUid in qualityVotes ? qualityVotes[userUid] : 0;
-      const now      = new Date().toISOString();
-      const ts       = logDate.toISOString();
+      const quality = userUid in qualityVotes ? qualityVotes[userUid] : 0;
+      const now     = new Date().toISOString();
+      const ts      = logDate.toISOString();
 
-      // Established grade = community avg from existing logs; personal grade = user's vote
-      const communityAvg     = computeAggregates(logs).avgGrade;
+      // Established grade = community avg from boulder.gradeVotes + setter
+      const allVotes: Record<string, number> = { ...boulder.gradeVotes };
+      if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) {
+        allVotes['__setter'] = boulder.setterGradeVote;
+      }
+      const communityAvg     = avgGrade(allVotes);
       const establishedGrade = communityAvg !== null
         ? KBC_GRADE_LABELS[Math.round(Math.max(0, Math.min(4, communityAvg)))]
         : '';
-      const personalGrade = gradeIdx !== null
-        ? KBC_GRADE_LABELS[Math.round(Math.max(0, Math.min(4, gradeIdx)))]
+      const personalGrade = personalGradeIdx >= 0
+        ? KBC_GRADE_LABELS[personalGradeIdx]
         : '';
 
       const entry = await addClimb({
@@ -1964,7 +1991,7 @@ function BoulderLogModal({
         name: boulder.name || `Boulder #${boulder.number}`,
         establishedGrade,
         personalGrade,
-        gradeVote: gradeIdx,
+        gradeVote: personalGradeIdx >= 0 ? personalGradeIdx : null,
         problemInternalId: boulder.internalId,
         quality,
         effort: effort ?? '',
@@ -2068,18 +2095,27 @@ function BoulderLogModal({
                 </TouchableOpacity>
               </View>
 
-              {/* Proposed Grade */}
-              <Text style={styles.fieldLabel}>Proposed Grade</Text>
-              <GradeBar
-                votes={gradeVotes}
-                userUid={userUid}
-                onVote={g => setGradeVotes(prev => {
-                  const next = { ...prev };
-                  if (g < 0) delete next[userUid]; else next[userUid] = g;
-                  return next;
-                })}
-                interactive
-              />
+              {/* Personal Grade */}
+              <Text style={styles.fieldLabel}>Personal Grade</Text>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {GRADES.map((grade, i) => (
+                  <TouchableOpacity
+                    key={i}
+                    onPress={() => setPersonalGradeIdx(i)}
+                    style={{
+                      flex: 1, height: 44,
+                      backgroundColor: GRADE_COLORS[i],
+                      borderRadius: 8,
+                      alignItems: 'center', justifyContent: 'center',
+                      borderWidth: 2.5,
+                      borderColor: personalGradeIdx === i ? '#fff' : 'transparent',
+                      opacity: personalGradeIdx === -1 || personalGradeIdx === i ? 1 : 0.35,
+                    }}
+                  >
+                    <Text style={{ color: GRADE_TEXT[i], fontSize: 10, fontWeight: '700' }}>{grade}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
               {/* Quality */}
               <Text style={styles.fieldLabel}>Quality</Text>
@@ -3014,6 +3050,20 @@ export default function BouldersScreen() {
     });
   }
 
+  async function handleVoteGrade(boulder: Boulder, grade: number) {
+    const oldVotes = boulder.gradeVotes ?? {};
+    const updated: Record<string, number> = { ...oldVotes };
+    if (grade < 0) delete updated[userUid]; else updated[userUid] = grade;
+    setBoulders(prev => prev.map(b => b.id === boulder.id ? { ...b, gradeVotes: updated } : b));
+    setViewBoulder(prev => prev?.id === boulder.id ? { ...prev, gradeVotes: updated } : prev);
+    try {
+      await updateBoulder(boulder.id, { gradeVotes: updated });
+    } catch {
+      setBoulders(prev => prev.map(b => b.id === boulder.id ? { ...b, gradeVotes: oldVotes } : b));
+      setViewBoulder(prev => prev?.id === boulder.id ? { ...prev, gradeVotes: oldVotes } : prev);
+    }
+  }
+
   async function loadData(forceSeason?: BoulderSeason) {
     setLoading(true);
     try {
@@ -3390,6 +3440,8 @@ export default function BouldersScreen() {
           onToggleLike={() => handleToggleLike(viewBoulder)}
           isProject={myProjects.has(viewBoulder.internalId)}
           onToggleProject={() => handleToggleProject(viewBoulder)}
+          onLog={() => { setViewBoulder(null); setLogBoulder(viewBoulder); }}
+          onVoteGrade={grade => handleVoteGrade(viewBoulder, grade)}
           onEdit={() => {
             const b = viewBoulder;
             setViewBoulder(null);
@@ -3429,7 +3481,6 @@ export default function BouldersScreen() {
         <BoulderLogModal
           visible
           boulder={logBoulder}
-          logs={logsByProblem[logBoulder.internalId] ?? []}
           onClose={() => setLogBoulder(null)}
           onSaved={newLog => {
             setLogsByProblem(prev => ({

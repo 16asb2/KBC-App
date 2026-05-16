@@ -65,6 +65,7 @@ export type Boulder = {
   likes:           string[];  // UIDs of users who liked this boulder
   setterGradeVote: number | null;  // setter's initial grade vote (stored on boulder, not a log)
   setterBadges:    string[];        // setter's initial badge picks (stored on boulder, not a log)
+  gradeVotes:      Record<string, number>;  // community grade votes; key=uid, value=grade index 0-4
 };
 
 export type BoulderComment = {
@@ -244,6 +245,9 @@ function docToBoulder(doc: any): Boulder {
     likes:           Array.isArray(d.likes) ? d.likes as string[] : [],
     setterGradeVote: typeof d.setterGradeVote === 'number' ? d.setterGradeVote : null,
     setterBadges:    Array.isArray(d.setterBadges) ? d.setterBadges as string[] : [],
+    gradeVotes:      (typeof d.gradeVotes === 'object' && d.gradeVotes !== null && !Array.isArray(d.gradeVotes))
+                       ? d.gradeVotes as Record<string, number>
+                       : {},
   };
 }
 

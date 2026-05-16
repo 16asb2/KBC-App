@@ -96,11 +96,11 @@ export function GradeBar({ votes, userUid, onVote, interactive = false, compact 
             ))}
           </View>
           <View style={s.gradeInfoRow}>
-            <Text style={s.gradeVoteInfo}>
-              {voteCount === 0
-                ? 'Tap or slide to set grade'
-                : `${voteCount} vote${voteCount !== 1 ? 's' : ''}${avg !== null ? `  ·  avg: ${GRADES[Math.round(avg)]}` : ''}`}
-            </Text>
+            {voteCount > 0 && (
+              <Text style={s.gradeVoteInfo}>
+                {`${voteCount} vote${voteCount !== 1 ? 's' : ''}${avg !== null ? `  ·  avg: ${GRADES[Math.round(avg)]}` : ''}`}
+              </Text>
+            )}
             {userVote !== null && (
               <Text style={s.gradeVoteInfo}>
                 {'  '}
