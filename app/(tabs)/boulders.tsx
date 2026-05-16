@@ -37,7 +37,9 @@ import {
   avgQuality,
   addComment, createBoulder, createSeason, deleteComment,
   getBouldersForSeason, getComments, getNextBoulderNumber, getSeasons,
-  removeBoulder, updateBoulder,
+  getTapeColorPool, saveTapeColorPool,
+  removeBoulder, updateBoulder, toggleLike,
+  getBoulderProjects, setBoulderProject,
 } from '@/services/boulders';
 import { addClimb, ClimbDiscipline, ClimbLocation, GradeSystem, Sector, getKBCLogs, getMyLocations, getMyLogs, gradesForSystem, createLocation, updateLocation, deleteLocation, KBC_GRADE_LABELS, PersonalClimb } from '@/services/climblog';
 import { PersonalProblem, createProblem as createPersonalProblem, updateProblem, deleteProblem, getMyProblems } from '@/services/personalProblems';
@@ -57,9 +59,10 @@ type FilterState = {
   badges: string[];  // badge names; empty = all
   setter: string;
   projectsOnly: boolean;
+  likedOnly: boolean;
 };
 
-const DEFAULT_FILTER: FilterState = { locations: [], grades: [], badges: [], setter: '', projectsOnly: false };
+const DEFAULT_FILTER: FilterState = { locations: [], grades: [], badges: [], setter: '', projectsOnly: false, likedOnly: false };
 const FILTER_FILE = (FileSystem.documentDirectory ?? '') + 'boulder_filters.json';
 
 async function loadSavedFilters(): Promise<FilterState> {
@@ -73,7 +76,7 @@ async function saveFilters(f: FilterState) {
 }
 
 function filterCount(f: FilterState) {
-  return f.locations.length + f.grades.length + f.badges.length + (f.setter ? 1 : 0) + (f.projectsOnly ? 1 : 0);
+  return f.locations.length + f.grades.length + f.badges.length + (f.setter ? 1 : 0) + (f.projectsOnly ? 1 : 0) + (f.likedOnly ? 1 : 0);
 }
 
 
@@ -737,18 +740,21 @@ function GymMap({ selected, onToggle }: { selected: string[]; onToggle: (loc: st
 
 // ─── Climb Card (KBC boulders) ────────────────────────────────────────────────
 
-function ClimbCard({ boulder, logs, uid, canEdit, onPress, onLog }: {
+function ClimbCard({ boulder, logs, uid, onPress, onLog, isProject, onToggleProject, likeCount, isLiked, onToggleLike }: {
   boulder: Boulder;
   logs: PersonalClimb[];
   uid: string;
-  canEdit: boolean;
   onPress: () => void;
   onLog: () => void;
+  isProject: boolean;
+  onToggleProject: () => void;
+  likeCount: number;
+  isLiked: boolean;
+  onToggleLike: () => void;
 }) {
   const agg   = useMemo(() => computeAggregates(logs), [logs]);
   const myLog = useMemo(() => getPersonalStatus(logs, uid), [logs, uid]);
 
-  // Reconstruct per-user vote maps from logs (most recent log per user wins)
   const { gradeVotesMap, qualityVotesMap, badgeCounts } = useMemo(() => {
     const gv: Record<string, number>  = {};
     const qv: Record<string, number>  = {};
@@ -762,60 +768,82 @@ function ClimbCard({ boulder, logs, uid, canEdit, onPress, onLog }: {
       }
       for (const b of log.badges ?? []) bc[b] = (bc[b] ?? 0) + 1;
     }
+    // Include setter's initial votes (stored on boulder, not in climb logs)
+    if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) {
+      gv['__setter'] = boulder.setterGradeVote;
+    }
+    for (const b of boulder.setterBadges ?? []) bc[b] = (bc[b] ?? 0) + 1;
     return { gradeVotesMap: gv, qualityVotesMap: qv, badgeCounts: bc };
-  }, [logs]);
+  }, [logs, boulder.setterGradeVote, boulder.setterBadges]);
 
-  const locsToShow = boulder.locations.slice(0, 2);
-  const extraLocs  = boulder.locations.length - locsToShow.length;
+  const hasStats = Object.keys(qualityVotesMap).length > 0 || likeCount > 0 || agg.sendCount > 0 || agg.attemptCount > 0;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={canEdit ? onPress : undefined} activeOpacity={canEdit ? 0.85 : 1}>
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
 
-      {/* Row 1: number · name · setter · personal status · Edit (if allowed) · Log button */}
-      <View style={styles.cardRow}>
+      {/* Row 1: #number · Name/setter · top-right: status pill + stats */}
+      <View style={[styles.cardRow, { alignItems: 'flex-start' }]}>
         <View style={styles.cardNumberBadge}>
           <Text style={styles.cardNumber}>#{boulder.number}</Text>
         </View>
-        <View style={{ flexShrink: 1 }}>
-          {boulder.name ? <Text style={styles.cardName} numberOfLines={1}>{boulder.name}</Text> : null}
-          {boulder.setter ? <Text style={styles.cardSetter} numberOfLines={1}>by {boulder.setter}</Text> : null}
+        <View style={{ flex: 1, flexShrink: 1 }}>
+          <Text style={styles.cardName} numberOfLines={1}>
+            {[
+              boulder.name || null,
+              boulder.locations.slice(0, 2).join(', ') || null,
+              boulder.tapeColor || null,
+            ].filter(Boolean).join('  |  ') || `Boulder #${boulder.number}`}
+          </Text>
+          {boulder.setter ? (
+            <Text style={styles.cardSetter} numberOfLines={1}>by {boulder.setter}</Text>
+          ) : null}
         </View>
-        <View style={{ flex: 1 }} />
-        {myLog && (
-          <View style={[styles.statusPill, myLog.type === 'ascent' ? styles.statusPillSent : styles.statusPillTried]}>
-            <Text style={styles.statusPillText}>{myLog.type === 'ascent' ? '✓ Sent' : '△ Tried'}</Text>
-          </View>
-        )}
-        {canEdit && (
-          <TouchableOpacity style={styles.cardEditBtn} onPress={onPress}>
-            <Text style={styles.cardEditBtnText}>✎</Text>
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity style={styles.cardLogBtn} onPress={onLog}>
+        <View style={{ alignItems: 'flex-end', gap: 3 }}>
+          {myLog && (
+            <View style={[styles.statusPill, myLog.type === 'ascent' ? styles.statusPillSent : styles.statusPillTried]}>
+              <Text style={styles.statusPillText}>{myLog.type === 'ascent' ? '✓ Sent' : '△ Tried'}</Text>
+            </View>
+          )}
+          {hasStats && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              {Object.keys(qualityVotesMap).length > 0 && <StarRating votes={qualityVotesMap} compact />}
+              {likeCount > 0 && <Text style={styles.cardCountLiked}>♥{likeCount}</Text>}
+              {agg.sendCount > 0 && <Text style={styles.cardCountSent}>✓{agg.sendCount}</Text>}
+              {agg.attemptCount > 0 && <Text style={styles.cardCountTried}>△{agg.attemptCount}</Text>}
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Row 2: grade bar */}
+      <View style={{ marginTop: 2 }}>
+        <GradeBar votes={gradeVotesMap} compact />
+      </View>
+
+      {/* Row 3: action buttons — right-aligned, below grade bar */}
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 4 }}>
+        <TouchableOpacity
+          style={[styles.cardProjectBtn, isProject && styles.cardProjectBtnActive]}
+          onPress={e => { e.stopPropagation?.(); onToggleProject(); }}
+        >
+          <Text style={[styles.cardProjectBtnText, isProject && styles.cardProjectBtnTextActive]}>
+            {isProject ? '− Project' : '+ Project'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.cardLikeBtn, isLiked && styles.cardLikeBtnActive]}
+          onPress={e => { e.stopPropagation?.(); onToggleLike(); }}
+        >
+          <Text style={[styles.cardLikeBtnText, isLiked && styles.cardLikeBtnTextActive]}>
+            {isLiked ? '♥' : '♡'} Like
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.cardLogBtn} onPress={e => { e.stopPropagation?.(); onLog(); }}>
           <Text style={styles.cardLogBtnText}>+ Log</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Row 2: grade bar */}
-      <View style={{ marginTop: 8 }}>
-        <GradeBar votes={gradeVotesMap} compact />
-      </View>
-
-      {/* Row 3: locations · quality · counts */}
-      <View style={[styles.cardRow, { marginTop: 6 }]}>
-        {locsToShow.map(loc => (
-          <View key={loc} style={styles.locationChip}>
-            <Text style={styles.locationChipText}>{loc}</Text>
-          </View>
-        ))}
-        {extraLocs > 0 && <Text style={styles.locationChipText}>+{extraLocs}</Text>}
-        <View style={{ flex: 1 }} />
-        {Object.keys(qualityVotesMap).length > 0 && <StarRating votes={qualityVotesMap} compact />}
-        {agg.sendCount > 0 && <Text style={styles.cardCountSent}>  ✓{agg.sendCount}</Text>}
-        {agg.attemptCount > 0 && <Text style={styles.cardCountTried}>  △{agg.attemptCount}</Text>}
-      </View>
-
-      {/* Row 4: top badges (community) — up to 5, left-aligned, compact */}
+      {/* Row 4: top badges (community) */}
       {agg.topBadges.length > 0 && (
         <View style={{ flexDirection: 'row', flexWrap: 'nowrap', gap: 4, marginTop: 4, alignSelf: 'flex-start' }}>
           {agg.topBadges.slice(0, 5).map(b => (
@@ -882,6 +910,9 @@ function BoulderFormModal({
   userUid,
   defaultSetter,
   canRemove,
+  tapeColorPool,
+  onAddTapeColor,
+  existingNumbers,
 }: {
   mode: FormMode;
   visible: boolean;
@@ -890,19 +921,26 @@ function BoulderFormModal({
   userUid: string;
   defaultSetter: string;
   canRemove: boolean;
+  tapeColorPool: string[];
+  onAddTapeColor: (color: string) => void;
+  existingNumbers: number[];
 }) {
   const insets = useSafeAreaInsets();
   const isEdit = mode.type === 'edit';
   const b      = isEdit ? mode.boulder : null;
 
-  const [name,           setName]           = useState(b?.name      ?? '');
-  const [setter,         setSetter]         = useState(b?.setter    ?? defaultSetter);
-  const [locations,      setLocations]      = useState<string[]>(b?.locations ?? []);
-  const [photo,          setPhoto]          = useState(b?.photo     ?? '');
-  const [gradeIdx,       setGradeIdx]       = useState<number | null>(null);
-  const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
-  const [badgesOpen,     setBadgesOpen]     = useState(false);
-  const [saving,         setSaving]         = useState(false);
+  const [name,               setName]               = useState(b?.name      ?? '');
+  const [boulderNumber,      setBoulderNumber]      = useState(String(isEdit ? (b?.number ?? 1) : (mode as { type: 'add'; nextNumber: number }).nextNumber));
+  const [tapeColor,          setTapeColor]          = useState(b?.tapeColor  ?? '');
+  const [tapeColorOpen,      setTapeColorOpen]      = useState(false);
+  const [newTapeColorText,   setNewTapeColorText]   = useState('');
+  const [setter,             setSetter]             = useState(b?.setter    ?? defaultSetter);
+  const [locations,          setLocations]          = useState<string[]>(b?.locations ?? []);
+  const [photo,              setPhoto]              = useState(b?.photo     ?? '');
+  const [gradeIdx,           setGradeIdx]           = useState<number | null>(b?.setterGradeVote ?? null);
+  const [selectedBadges,     setSelectedBadges]     = useState<string[]>(b?.setterBadges ?? []);
+  const [badgesOpen,         setBadgesOpen]         = useState(false);
+  const [saving,             setSaving]             = useState(false);
 
   // Comments thread
   const [comments,    setComments]    = useState<BoulderComment[]>([]);
@@ -913,12 +951,16 @@ function BoulderFormModal({
   // Re-sync when modal re-opens for a different boulder
   useEffect(() => {
     if (!visible) return;
-    setName(b?.name      ?? '');
-    setSetter(b?.setter  ?? defaultSetter);
+    setName(b?.name          ?? '');
+    setBoulderNumber(String(isEdit ? (b?.number ?? 1) : (mode as { type: 'add'; nextNumber: number }).nextNumber));
+    setTapeColor(b?.tapeColor ?? '');
+    setTapeColorOpen(false);
+    setNewTapeColorText('');
+    setSetter(b?.setter      ?? defaultSetter);
     setLocations(b?.locations ?? []);
-    setPhoto(b?.photo    ?? '');
-    setGradeIdx(null);
-    setSelectedBadges([]);
+    setPhoto(b?.photo        ?? '');
+    setGradeIdx(b?.setterGradeVote ?? null);
+    setSelectedBadges(b?.setterBadges ?? []);
     setBadgesOpen(false);
     setCommentText('');
     if (isEdit && b) {
@@ -974,77 +1016,47 @@ function BoulderFormModal({
   }
 
   async function handleSave() {
-    if (!setter.trim()) {
-      Alert.alert('Setter required', 'Please enter the setter name.');
+    if (!tapeColor.trim()) {
+      Alert.alert('Tape color required', 'Please select or add a tape color.');
+      return;
+    }
+    const parsedNumber = parseInt(boulderNumber, 10);
+    if (!boulderNumber.trim() || isNaN(parsedNumber) || parsedNumber < 1) {
+      Alert.alert('Invalid number', 'Please enter a valid boulder number.');
+      return;
+    }
+    // Duplicate check — exclude the current boulder when editing
+    const isDuplicate = existingNumbers.some(n =>
+      n === parsedNumber && (!isEdit || n !== b?.number),
+    );
+    if (isDuplicate) {
+      Alert.alert('Number taken', `Boulder #${parsedNumber} already exists this season. Choose a different number.`);
       return;
     }
     setSaving(true);
     try {
       const now = new Date().toISOString();
       if (isEdit && b) {
-        await updateBoulder(b.id, { name, setter, locations, photo, updatedAt: now });
-        // Save updated grade/badge votes as a new log entry for this user (replaces their previous vote)
-        if (gradeIdx !== null || selectedBadges.length > 0) {
-          const gradeLabel = gradeIdx !== null
-            ? KBC_GRADE_LABELS[Math.round(Math.max(0, Math.min(4, gradeIdx)))]
-            : '';
-          await addClimb({
-            uid:               userUid,
-            locationId:        'kbc',
-            boulderId:         b.id,
-            sectorId:          '',
-            timestamp:         now,
-            name:              b.name || `Boulder #${b.number}`,
-            establishedGrade:  gradeLabel,
-            personalGrade:     gradeLabel,
-            gradeVote:         gradeIdx,
-            problemInternalId: b.internalId,
-            quality:           0,
-            effort:            '',
-            type:              'ascent',
-            project:           false,
-            attempts:          1,
-            badges:            selectedBadges,
-            comment:           '',
-            createdAt:         now,
-          });
-        }
+        await updateBoulder(b.id, {
+          name, number: parsedNumber, tapeColor, setter, locations, photo,
+          setterGradeVote: gradeIdx,
+          setterBadges: selectedBadges,
+          updatedAt: now,
+        });
       } else if (mode.type === 'add') {
-        const newBoulder = await createBoulder({
+        await createBoulder({
           seasonId:  mode.seasonId,
-          number:    mode.nextNumber,
-          name, setter, setterEmail: '',
+          number:    parsedNumber,
+          name, tapeColor, setter, setterEmail: '',
+          createdByUid: userUid,
           createdAt: now,
           updatedAt: now,
           locations, photo,
           removed: false,
+          likes: [],
+          setterGradeVote: gradeIdx,
+          setterBadges: selectedBadges,
         });
-        // Setter's initial grade + badge votes become the first log entry
-        if (gradeIdx !== null || selectedBadges.length > 0) {
-          const gradeLabel = gradeIdx !== null
-            ? KBC_GRADE_LABELS[Math.round(Math.max(0, Math.min(4, gradeIdx)))]
-            : '';
-          await addClimb({
-            uid:               userUid,
-            locationId:        'kbc',
-            boulderId:         newBoulder.id,
-            sectorId:          '',
-            timestamp:         now,
-            name:              newBoulder.name || `Boulder #${newBoulder.number}`,
-            establishedGrade:  gradeLabel,
-            personalGrade:     gradeLabel,
-            gradeVote:         gradeIdx,
-            problemInternalId: newBoulder.internalId,
-            quality:           0,
-            effort:            '',
-            type:              'ascent',
-            project:           false,
-            attempts:          1,
-            badges:            selectedBadges,
-            comment:           '',
-            createdAt:         now,
-          });
-        }
       }
       onSaved();
       onClose();
@@ -1090,6 +1102,69 @@ function BoulderFormModal({
           </View>
 
           <ScrollView style={styles.formBody} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            {/* Tape Color (required) */}
+            <Text style={styles.fieldLabel}>Tape Color *</Text>
+            <TouchableOpacity
+              style={[styles.textInput, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+              onPress={() => setTapeColorOpen(o => !o)}
+              activeOpacity={0.75}
+            >
+              <Text style={{ fontSize: 14, color: tapeColor ? '#111' : '#aaa' }}>
+                {tapeColor || 'Select or add tape color…'}
+              </Text>
+              <Text style={{ color: KBC.lime }}>{tapeColorOpen ? '▲' : '▾'}</Text>
+            </TouchableOpacity>
+            {tapeColorOpen && (
+              <View style={{ marginTop: 8, gap: 10 }}>
+                {tapeColorPool.length > 0 && (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {tapeColorPool.map(c => (
+                      <TouchableOpacity
+                        key={c}
+                        style={[styles.sortPill, tapeColor === c && styles.sortPillActive]}
+                        onPress={() => { setTapeColor(c); setTapeColorOpen(false); }}
+                      >
+                        <Text style={[styles.sortPillText, tapeColor === c && styles.sortPillTextActive]}>{c}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                  <TextInput
+                    style={[styles.textInput, { flex: 1, marginTop: 0 }]}
+                    value={newTapeColorText}
+                    onChangeText={setNewTapeColorText}
+                    placeholder="Add new color…"
+                    placeholderTextColor="#aaa"
+                  />
+                  <TouchableOpacity
+                    style={[styles.saveBtn, { marginTop: 0, paddingHorizontal: 16 }]}
+                    onPress={() => {
+                      const c = newTapeColorText.trim();
+                      if (!c) return;
+                      onAddTapeColor(c);
+                      setTapeColor(c);
+                      setNewTapeColorText('');
+                      setTapeColorOpen(false);
+                    }}
+                  >
+                    <Text style={styles.saveBtnText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {/* Number */}
+            <Text style={[styles.fieldLabel, { marginTop: 16 }]}>Boulder Number</Text>
+            <TextInput
+              style={styles.textInput}
+              value={boulderNumber}
+              onChangeText={setBoulderNumber}
+              keyboardType="number-pad"
+              placeholder="e.g. 42"
+              placeholderTextColor="#aaa"
+            />
+
             {/* Name */}
             <Text style={styles.fieldLabel}>Name (optional)</Text>
             <TextInput
@@ -1101,12 +1176,12 @@ function BoulderFormModal({
             />
 
             {/* Setter */}
-            <Text style={styles.fieldLabel}>Setter</Text>
+            <Text style={styles.fieldLabel}>Setter (optional)</Text>
             <TextInput
               style={styles.textInput}
               value={setter}
               onChangeText={setSetter}
-              placeholder="Setter name"
+              placeholder="Leave blank for Unknown setter"
               placeholderTextColor="#aaa"
             />
 
@@ -1114,10 +1189,8 @@ function BoulderFormModal({
             <Text style={styles.fieldLabel}>Location</Text>
             <GymMap selected={locations} onToggle={toggleLocation} />
 
-            {/* Grade vote — available when creating or editing */}
-            <Text style={styles.fieldLabel}>
-              {isEdit ? 'Update Grade Vote' : 'Setter Grade (counts as first vote)'}
-            </Text>
+            {/* Setter grade / badges — stored directly on the boulder, not as a climb log */}
+            <Text style={styles.fieldLabel}>Setter Grade (initial community vote)</Text>
             <GradeBar
               votes={gradeIdx !== null ? { [userUid]: gradeIdx } : {}}
               userUid={userUid}
@@ -1132,7 +1205,7 @@ function BoulderFormModal({
                 <>
                   <TouchableOpacity style={styles.collapseHeader} onPress={() => setBadgesOpen(o => !o)}>
                     <Text style={styles.fieldLabel}>
-                      {isEdit ? 'Update Badges' : 'Badges'}{cnt > 0 ? `  ·  ${cnt} selected` : ''}
+                      {'Setter Badges (initial votes)'}{cnt > 0 ? `  ·  ${cnt} selected` : ''}
                     </Text>
                     <Text style={styles.collapseArrow}>{badgesOpen ? '▲' : '▼'}</Text>
                   </TouchableOpacity>
@@ -1274,6 +1347,272 @@ function BoulderFormModal({
   );
 }
 
+// ─── Boulder Overview Modal ───────────────────────────────────────────────────
+
+function BoulderOverviewModal({
+  visible, boulder, logs, uid, userName, canEdit, onEdit, onClose, canRemove,
+  likeCount, isLiked, onToggleLike, isProject, onToggleProject,
+}: {
+  visible:         boolean;
+  boulder:         Boulder;
+  logs:            PersonalClimb[];
+  uid:             string;
+  userName:        string;
+  canEdit:         boolean;
+  onEdit:          () => void;
+  onClose:         () => void;
+  canRemove:       boolean;
+  likeCount:       number;
+  isLiked:         boolean;
+  onToggleLike:    () => void;
+  isProject:       boolean;
+  onToggleProject: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+
+  // ── Vote maps derived from logs ──────────────────────────────────────────
+  const { gradeVotesMap, qualityVotesMap, badgeCounts } = useMemo(() => {
+    const gv: Record<string, number> = {};
+    const qv: Record<string, number> = {};
+    const bc: Record<string, number> = {};
+    const seen = new Set<string>();
+    for (const log of logs) {
+      if (!seen.has(log.uid)) {
+        seen.add(log.uid);
+        if (log.gradeVote !== null && log.gradeVote !== undefined) gv[log.uid] = log.gradeVote;
+        if (log.quality > 0) qv[log.uid] = log.quality;
+      }
+      for (const b of log.badges ?? []) bc[b] = (bc[b] ?? 0) + 1;
+    }
+    // Include setter's initial votes (stored on boulder, not in climb logs)
+    if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) {
+      gv['__setter'] = boulder.setterGradeVote;
+    }
+    for (const b of boulder.setterBadges ?? []) bc[b] = (bc[b] ?? 0) + 1;
+    return { gradeVotesMap: gv, qualityVotesMap: qv, badgeCounts: bc };
+  }, [logs, boulder.setterGradeVote, boulder.setterBadges]);
+
+  // All badges with at least 1 vote, sorted by count desc
+  const sortedBadges = useMemo(() =>
+    Object.entries(badgeCounts)
+      .sort(([, a], [, b]) => b - a)
+      .map(([badge, count]) => ({ badge, count })),
+  [badgeCounts]);
+
+  // ── Comments ──────────────────────────────────────────────────────────────
+  const [comments,        setComments]        = useState<BoulderComment[]>([]);
+  const [commentText,     setCommentText]     = useState('');
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [postingComment,  setPostingComment]  = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    setCommentText('');
+    setLoadingComments(true);
+    getComments(boulder.id)
+      .then(setComments)
+      .catch(() => {})
+      .finally(() => setLoadingComments(false));
+  }, [visible, boulder.id]);
+
+  async function handlePostComment() {
+    const text = commentText.trim();
+    if (!text) return;
+    setPostingComment(true);
+    try {
+      const c = await addComment(boulder.id, {
+        uid, name: userName, text, createdAt: new Date().toISOString(),
+      });
+      setComments(prev => [...prev, c]);
+      setCommentText('');
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setPostingComment(false);
+    }
+  }
+
+  async function handleDeleteComment(c: BoulderComment) {
+    Alert.alert('Delete comment?', c.text.slice(0, 60), [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteComment(boulder.id, c.id);
+            setComments(prev => prev.filter(x => x.id !== c.id));
+          } catch (e: any) { Alert.alert('Error', e.message); }
+        },
+      },
+    ]);
+  }
+
+  const qualityVoteCount = Object.keys(qualityVotesMap).length;
+  const avgQ = avgQuality(qualityVotesMap);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose} />
+      <View style={[styles.overviewSheet, { paddingBottom: insets.bottom }]}>
+
+        {/* ── Header ─────────────────────────────────────────────────────── */}
+        <View style={styles.overviewHeader}>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Text style={styles.formClose}>✕</Text>
+          </TouchableOpacity>
+          <View style={{ flex: 1 }} />
+          {canEdit && (
+            <TouchableOpacity style={styles.overviewEditBtn} onPress={onEdit}>
+              <Text style={styles.overviewEditBtnText}>✎  Edit</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+
+          {/* ── Photo ───────────────────────────────────────────────────── */}
+          {boulder.photo ? (
+            <Image source={{ uri: boulder.photo }} style={styles.overviewPhoto} contentFit="cover" />
+          ) : null}
+
+          <View style={styles.overviewBody}>
+
+            {/* ── Title block ─────────────────────────────────────────── */}
+            <View style={styles.overviewTitleRow}>
+              <View style={styles.cardNumberBadge}>
+                <Text style={styles.cardNumber}>#{boulder.number}</Text>
+              </View>
+              <Text style={styles.overviewTitle} numberOfLines={2}>
+                {[
+                  boulder.name || null,
+                  boulder.locations.slice(0, 2).join(', ') || null,
+                  boulder.tapeColor || null,
+                ].filter(Boolean).join('  |  ') || `Boulder #${boulder.number}`}
+              </Text>
+            </View>
+
+            {/* Stars + likes + setter line */}
+            <View style={styles.overviewMeta}>
+              {qualityVoteCount > 0 && (
+                <>
+                  <StarRating votes={qualityVotesMap} compact />
+                  <Text style={styles.overviewMetaText}>
+                    {avgQ?.toFixed(1)}★  ·  {qualityVoteCount} vote{qualityVoteCount !== 1 ? 's' : ''}
+                  </Text>
+                  <Text style={styles.overviewMetaDot}>·</Text>
+                </>
+              )}
+              {likeCount > 0 && (
+                <>
+                  <Text style={styles.overviewMetaLikes}>♥ {likeCount}</Text>
+                  <Text style={styles.overviewMetaDot}>·</Text>
+                </>
+              )}
+              <Text style={[styles.overviewMetaText, !boulder.setter && { color: '#aaa' }]}>
+                by {boulder.setter || 'Unknown setter'}
+              </Text>
+            </View>
+
+            {/* Action buttons: Like + Project */}
+            <View style={styles.overviewActions}>
+              <TouchableOpacity
+                style={[styles.cardLikeBtn, isLiked && styles.cardLikeBtnActive, { flex: 1 }]}
+                onPress={onToggleLike}
+              >
+                <Text style={[styles.cardLikeBtnText, isLiked && styles.cardLikeBtnTextActive]}>
+                  {isLiked ? '♥  Liked' : '♡  Like'}
+                  {likeCount > 0 ? `  (${likeCount})` : ''}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.cardProjectBtn, isProject && styles.cardProjectBtnActive, { flex: 1 }]}
+                onPress={onToggleProject}
+              >
+                <Text style={[styles.cardProjectBtnText, isProject && styles.cardProjectBtnTextActive]}>
+                  {isProject ? '− My Project' : '+ My Project'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* ── Community badges ─────────────────────────────────────── */}
+            {sortedBadges.length > 0 && (
+              <>
+                <Text style={styles.overviewSectionLabel}>Community Badges</Text>
+                <View style={styles.badgeGrid}>
+                  {sortedBadges.map(({ badge, count }) => (
+                    <BadgeIcon key={badge} label={badge} count={count} selected size="sm" />
+                  ))}
+                </View>
+              </>
+            )}
+
+            {/* ── Location ────────────────────────────────────────────── */}
+            <Text style={styles.overviewSectionLabel}>Location</Text>
+            <View pointerEvents="none">
+              <GymMap selected={boulder.locations} onToggle={() => {}} />
+            </View>
+
+            {/* ── Grade ───────────────────────────────────────────────── */}
+            <Text style={styles.overviewSectionLabel}>Community Grade</Text>
+            <GradeBar votes={gradeVotesMap} />
+
+            {/* ── Discussion ──────────────────────────────────────────── */}
+            <Text style={styles.overviewSectionLabel}>Discussion</Text>
+            {loadingComments ? (
+              <ActivityIndicator color={KBC.lime} style={{ marginVertical: 12 }} />
+            ) : comments.length === 0 ? (
+              <Text style={styles.noComments}>No comments yet — be the first!</Text>
+            ) : (
+              <View style={styles.threadList}>
+                {comments.map(c => {
+                  const mine   = c.uid === uid;
+                  const canDel = mine || canRemove;
+                  const time   = new Date(c.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' });
+                  return (
+                    <View key={c.id} style={[styles.threadItem, mine && styles.threadItemMine]}>
+                      <View style={styles.threadBubble}>
+                        <Text style={styles.threadName}>{c.name}  <Text style={styles.threadTime}>{time}</Text></Text>
+                        <Text style={styles.threadText}>{c.text}</Text>
+                      </View>
+                      {canDel && (
+                        <TouchableOpacity onPress={() => handleDeleteComment(c)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                          <Text style={styles.threadDelete}>✕</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            <View style={styles.commentInputRow}>
+              <TextInput
+                style={styles.commentInput}
+                value={commentText}
+                onChangeText={setCommentText}
+                placeholder="Add a comment…"
+                placeholderTextColor="#aaa"
+                multiline
+              />
+              <TouchableOpacity
+                style={[styles.commentSendBtn, (!commentText.trim() || postingComment) && { opacity: 0.4 }]}
+                onPress={handlePostComment}
+                disabled={!commentText.trim() || postingComment}
+              >
+                {postingComment
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={styles.commentSendText}>↑</Text>}
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ height: 40 }} />
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Season Picker Modal ──────────────────────────────────────────────────────
 
 function SeasonPickerModal({
@@ -1388,11 +1727,13 @@ function FilterModal({
   filters,
   onChange,
   onClose,
+  setterOptions,
 }: {
   visible: boolean;
   filters: FilterState;
   onChange: (f: FilterState) => void;
   onClose: () => void;
+  setterOptions: Array<{ label: string; value: string }>;
 }) {
   const insets  = useSafeAreaInsets();
   const [local,      setLocal]      = useState(filters);
@@ -1432,7 +1773,7 @@ function FilterModal({
         <ScrollView style={{ padding: 16 }} keyboardShouldPersistTaps="handled">
           {/* Projects only */}
           <TouchableOpacity
-            style={[styles.projectRow, { marginTop: 0, marginBottom: 16 }]}
+            style={[styles.projectRow, { marginTop: 0, marginBottom: 8 }]}
             onPress={() => setLocal(f => ({ ...f, projectsOnly: !f.projectsOnly }))}
           >
             <View style={[styles.checkbox, local.projectsOnly && styles.checkboxChecked]}>
@@ -1441,6 +1782,20 @@ function FilterModal({
             <View style={{ flex: 1 }}>
               <Text style={styles.projectLabel}>Projects only</Text>
               <Text style={styles.projectSub}>Show only boulders you&apos;ve marked as a project</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Liked only */}
+          <TouchableOpacity
+            style={[styles.projectRow, { marginTop: 0, marginBottom: 16 }]}
+            onPress={() => setLocal(f => ({ ...f, likedOnly: !f.likedOnly }))}
+          >
+            <View style={[styles.checkbox, local.likedOnly && { backgroundColor: '#0284c7', borderColor: '#0284c7' }]}>
+              {local.likedOnly && <Text style={styles.checkboxCheck}>✓</Text>}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.projectLabel}>Liked only</Text>
+              <Text style={styles.projectSub}>Show only boulders you&apos;ve liked</Text>
             </View>
           </TouchableOpacity>
 
@@ -1490,13 +1845,27 @@ function FilterModal({
           })()}
 
           <Text style={styles.filterSectionLabel}>Setter</Text>
-          <TextInput
-            style={styles.textInput}
-            value={local.setter}
-            onChangeText={t => setLocal(f => ({ ...f, setter: t }))}
-            placeholder="Search by setter name…"
-            placeholderTextColor="#aaa"
-          />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+            <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
+              <TouchableOpacity
+                style={[styles.sortPill, !local.setter && styles.sortPillActive]}
+                onPress={() => setLocal(f => ({ ...f, setter: '' }))}
+              >
+                <Text style={[styles.sortPillText, !local.setter && styles.sortPillTextActive]}>All</Text>
+              </TouchableOpacity>
+              {setterOptions.map(opt => (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[styles.sortPill, local.setter === opt.value && styles.sortPillActive]}
+                  onPress={() => setLocal(f => ({ ...f, setter: opt.value }))}
+                >
+                  <Text style={[styles.sortPillText, local.setter === opt.value && styles.sortPillTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 24 }}>
             <TouchableOpacity style={[styles.saveBtn, { flex: 1, marginTop: 0 }]} onPress={apply}>
@@ -2616,14 +2985,53 @@ export default function BouldersScreen() {
   const [myLocations,         setMyLocations]         = useState<ClimbLocation[]>([]);
   const [personalLocalFilter, setPersonalLocalFilter] = useState<string>('all');
   const [showLocations,       setShowLocations]       = useState(false);
+  const [tapeColorPool,       setTapeColorPool]       = useState<string[]>([]);
+  const [viewBoulder,         setViewBoulder]         = useState<Boulder | null>(null);
+  const [myProjects,          setMyProjects]          = useState<Set<string>>(new Set());
 
-  // Load saved filters once
+  // Load saved filters, tape color pool, and user's boulder projects once
   useEffect(() => {
     loadSavedFilters().then(setFilters);
+    getTapeColorPool().then(setTapeColorPool);
+    if (userUid) getBoulderProjects(userUid).then(ids => setMyProjects(new Set(ids)));
   }, []);
 
   // Save filters whenever they change
   useEffect(() => { saveFilters(filters); }, [filters]);
+
+  async function handleAddTapeColor(color: string) {
+    const trimmed = color.trim();
+    if (!trimmed || tapeColorPool.includes(trimmed)) return;
+    const newPool = [...tapeColorPool, trimmed].sort((a, b) => a.localeCompare(b));
+    setTapeColorPool(newPool);
+    try { await saveTapeColorPool(newPool); } catch {}
+  }
+
+  async function handleToggleProject(boulder: Boulder) {
+    const wasProject = myProjects.has(boulder.internalId);
+    const newSet = new Set(myProjects);
+    if (wasProject) newSet.delete(boulder.internalId);
+    else newSet.add(boulder.internalId);
+    setMyProjects(newSet);
+    try {
+      await setBoulderProject(userUid, boulder.internalId, !wasProject);
+    } catch {
+      setMyProjects(myProjects); // revert on error
+    }
+  }
+
+  function handleToggleLike(boulder: Boulder) {
+    const wasLiked = boulder.likes.includes(userUid);
+    const newLikes = wasLiked
+      ? boulder.likes.filter(u => u !== userUid)
+      : [...boulder.likes, userUid];
+    setBoulders(prev => prev.map(b => b.id === boulder.id ? { ...b, likes: newLikes } : b));
+    setViewBoulder(prev => prev?.id === boulder.id ? { ...prev, likes: newLikes } : prev);
+    toggleLike(boulder.id, userUid, wasLiked).catch(() => {
+      setBoulders(prev => prev.map(b => b.id === boulder.id ? { ...b, likes: boulder.likes } : b));
+      setViewBoulder(prev => prev?.id === boulder.id ? { ...prev, likes: boulder.likes } : prev);
+    });
+  }
 
   async function loadData(forceSeason?: BoulderSeason) {
     setLoading(true);
@@ -2713,10 +3121,38 @@ export default function BouldersScreen() {
   const boulderAggregates = useMemo(() => {
     const map: Record<string, ClimbAggregates> = {};
     for (const b of boulders) {
-      map[b.internalId] = computeAggregates(logsByProblem[b.internalId] ?? []);
+      const agg = computeAggregates(logsByProblem[b.internalId] ?? []);
+      // Include setter's initial grade vote in the community average
+      if (b.setterGradeVote !== null && b.setterGradeVote !== undefined) {
+        const logs = logsByProblem[b.internalId] ?? [];
+        const grades = logs.filter(l => l.gradeVote !== null && l.gradeVote !== undefined).map(l => l.gradeVote!);
+        grades.push(b.setterGradeVote);
+        agg.avgGrade = grades.reduce((s, v) => s + v, 0) / grades.length;
+      }
+      // Include setter's badges in topBadges
+      if (b.setterBadges?.length) {
+        const logs = logsByProblem[b.internalId] ?? [];
+        const bc: Record<string, number> = {};
+        for (const log of logs) for (const badge of log.badges ?? []) bc[badge] = (bc[badge] ?? 0) + 1;
+        for (const badge of b.setterBadges) bc[badge] = (bc[badge] ?? 0) + 1;
+        agg.topBadges = Object.entries(bc).sort((a, bx) => bx[1] - a[1]).slice(0, 5).map(([badge]) => badge);
+      }
+      map[b.internalId] = agg;
     }
     return map;
   }, [boulders, logsByProblem]);
+
+  // ── Setter options for filter dropdown (derived from boulders, sorted by count) ──
+  const setterOptions = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const b of boulders) {
+      const s = b.setter || 'Unknown setter';
+      counts[s] = (counts[s] ?? 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort(([, a], [, b]) => b - a)
+      .map(([name, count]) => ({ label: `${name} (${count})`, value: name }));
+  }, [boulders]);
 
   // ── Derived list ────────────────────────────────────────────────────────────
   const displayed = useMemo(() => {
@@ -2734,16 +3170,18 @@ export default function BouldersScreen() {
     if (filters.badges.length) {
       list = list.filter(b => {
         const logs = logsByProblem[b.internalId] ?? [];
-        return filters.badges.some(ba => logs.some(log => (log.badges ?? []).includes(ba)));
+        const inLogs   = filters.badges.some(ba => logs.some(log => (log.badges ?? []).includes(ba)));
+        const inSetter = filters.badges.some(ba => (b.setterBadges ?? []).includes(ba));
+        return inLogs || inSetter;
       });
     }
     if (filters.setter)
-      list = list.filter(b => b.setter.toLowerCase().includes(filters.setter.toLowerCase()));
+      list = list.filter(b => (b.setter || 'Unknown setter') === filters.setter);
     if (filters.projectsOnly) {
-      list = list.filter(b => {
-        const myLogs = personalLogsByProblem[b.internalId] ?? [];
-        return myLogs.some(log => log.project);
-      });
+      list = list.filter(b => myProjects.has(b.internalId));
+    }
+    if (filters.likedOnly) {
+      list = list.filter(b => b.likes.includes(userUid));
     }
 
     // Sort
@@ -2877,19 +3315,20 @@ export default function BouldersScreen() {
             <FlatList
               data={displayed}
               keyExtractor={b => b.id}
-              renderItem={({ item }) => {
-                const canEdit = isAdminUser || item.setter === defaultSetter;
-                return (
-                  <ClimbCard
-                    boulder={item}
-                    logs={logsByProblem[item.internalId] ?? []}
-                    uid={userUid}
-                    canEdit={canEdit}
-                    onPress={() => setFormMode({ type: 'edit', boulder: item })}
-                    onLog={() => setLogBoulder(item)}
-                  />
-                );
-              }}
+              renderItem={({ item }) => (
+                <ClimbCard
+                  boulder={item}
+                  logs={logsByProblem[item.internalId] ?? []}
+                  uid={userUid}
+                  onPress={() => setViewBoulder(item)}
+                  onLog={() => setLogBoulder(item)}
+                  isProject={myProjects.has(item.internalId)}
+                  onToggleProject={() => handleToggleProject(item)}
+                  likeCount={item.likes.length}
+                  isLiked={item.likes.includes(userUid)}
+                  onToggleLike={() => handleToggleLike(item)}
+                />
+              )}
               contentContainerStyle={styles.list}
             />
           )}
@@ -2954,15 +3393,44 @@ export default function BouldersScreen() {
         onClose={() => setShowSeasonPicker(false)}
       />
 
+      {viewBoulder && (
+        <BoulderOverviewModal
+          visible
+          boulder={viewBoulder}
+          logs={logsByProblem[viewBoulder.internalId] ?? []}
+          uid={userUid}
+          userName={defaultSetter}
+          canEdit={isPrivileged || viewBoulder.createdByUid === userUid}
+          canRemove={isPrivileged}
+          likeCount={viewBoulder.likes.length}
+          isLiked={viewBoulder.likes.includes(userUid)}
+          onToggleLike={() => handleToggleLike(viewBoulder)}
+          isProject={myProjects.has(viewBoulder.internalId)}
+          onToggleProject={() => handleToggleProject(viewBoulder)}
+          onEdit={() => {
+            const b = viewBoulder;
+            setViewBoulder(null);
+            setFormMode({ type: 'edit', boulder: b });
+          }}
+          onClose={() => setViewBoulder(null)}
+        />
+      )}
+
       {formMode && (
         <BoulderFormModal
           mode={formMode}
           visible
           onClose={() => setFormMode(null)}
-          onSaved={() => { if (selectedSeason) handleSelectSeason(selectedSeason); }}
+          onSaved={() => {
+            setFormMode(null);
+            if (selectedSeason) handleSelectSeason(selectedSeason);
+          }}
           userUid={userUid}
           defaultSetter={defaultSetter}
           canRemove={isPrivileged}
+          tapeColorPool={tapeColorPool}
+          onAddTapeColor={handleAddTapeColor}
+          existingNumbers={boulders.map(b => b.number)}
         />
       )}
 
@@ -2971,6 +3439,7 @@ export default function BouldersScreen() {
         filters={filters}
         onChange={setFilters}
         onClose={() => setShowFilter(false)}
+        setterOptions={setterOptions}
       />
 
       {logBoulder && (
@@ -3099,8 +3568,8 @@ const styles = StyleSheet.create({
   personalManageText: { color: '#aaa', fontSize: 13, fontWeight: '600' },
 
   // Sort bar
-  sortBar: { backgroundColor: '#f5f5f5', borderBottomWidth: 1, borderBottomColor: '#e0e0e0', maxHeight: 48 },
-  sortBarContent: { paddingHorizontal: 12, paddingVertical: 8, gap: 8, flexDirection: 'row', alignItems: 'center' },
+  sortBar: { backgroundColor: '#f5f5f5', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
+  sortBarContent: { paddingHorizontal: 12, paddingVertical: 10, gap: 8, flexDirection: 'row', alignItems: 'center' },
   sortPill: {
     paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20,
     backgroundColor: '#e8e8e8', borderWidth: 1, borderColor: '#ddd',
@@ -3191,12 +3660,27 @@ const styles = StyleSheet.create({
   },
   photoDeleteText: { fontSize: 13, color: '#dc2626', fontWeight: '600' },
 
-  // Card log / edit buttons
+  // Card action buttons
   cardLogBtn: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+    backgroundColor: KBC.purple + '22', borderWidth: 1, borderColor: KBC.purple + '88',
+  },
+  cardLogBtnText: { fontSize: 12, fontWeight: '700', color: KBC.purple },
+  cardProjectBtn: {
     paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
     backgroundColor: KBC.lime + '22', borderWidth: 1, borderColor: KBC.lime + '88',
   },
-  cardLogBtnText: { fontSize: 12, fontWeight: '700', color: '#5a8a00' },
+  cardProjectBtnActive: { backgroundColor: '#fee2e2', borderColor: '#fca5a5' },
+  cardProjectBtnText:       { fontSize: 12, fontWeight: '700', color: '#5a8a00' },
+  cardProjectBtnTextActive: { color: '#dc2626' },
+  cardLikeBtn: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+    backgroundColor: '#e0f2fe', borderWidth: 1, borderColor: '#7dd3fc',
+  },
+  cardLikeBtnActive: { backgroundColor: '#bfdbfe', borderColor: '#60a5fa' },
+  cardLikeBtnText:       { fontSize: 12, fontWeight: '700', color: '#0284c7', textAlign: 'center' },
+  cardLikeBtnTextActive: { color: '#1d4ed8' },
+  cardCountLiked:  { fontSize: 11, color: '#0284c7', fontWeight: '700' },
   cardEditBtn: {
     paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8,
     backgroundColor: '#f0f0f0', borderWidth: 1, borderColor: '#ddd',
@@ -3273,6 +3757,35 @@ const styles = StyleSheet.create({
     alignItems: 'center', elevation: 3, shadowColor: KBC.lime, shadowOpacity: 0.3, shadowRadius: 8,
   },
   addBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // Overview modal
+  overviewSheet: {
+    backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '95%',
+  },
+  overviewHeader: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 18, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
+  },
+  overviewEditBtn: {
+    borderWidth: 1, borderColor: KBC.lime, borderRadius: 8,
+    paddingHorizontal: 12, paddingVertical: 6,
+  },
+  overviewEditBtnText: { color: KBC.lime, fontSize: 13, fontWeight: '700' },
+  overviewPhoto:  { width: '100%', height: 220 },
+  overviewBody:   { padding: 16 },
+  overviewTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  overviewTitle:  { flex: 1, fontSize: 17, fontWeight: '800', color: '#111', flexShrink: 1 },
+  overviewMeta:      { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' },
+  overviewMetaText:  { fontSize: 13, color: '#555', fontWeight: '600' },
+  overviewMetaDot:   { fontSize: 13, color: '#ccc' },
+  overviewMetaLikes: { fontSize: 13, color: '#0284c7', fontWeight: '700' },
+  overviewActions:   { flexDirection: 'row', gap: 10, marginTop: 14, marginBottom: 4 },
+  overviewSectionLabel: {
+    fontSize: 11, fontWeight: '700', color: '#999',
+    textTransform: 'uppercase', letterSpacing: 0.5,
+    marginTop: 22, marginBottom: 10,
+  },
 
   // Form modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },

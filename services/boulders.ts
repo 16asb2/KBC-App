@@ -53,13 +53,18 @@ export type Boulder = {
   seasonId:    string;
   number:      number;
   name:        string;
-  setter:      string;
-  setterEmail: string;
+  tapeColor:    string;   // tape color used to mark the route (required)
+  setter:       string;   // empty string = unknown setter
+  setterEmail:  string;
+  createdByUid: string;   // uid of the member who added this boulder
   createdAt:   string;
   updatedAt:   string;
   locations:   string[];  // wall sections (Cave Right, etc.)
-  photo:       string;
-  removed:     boolean;
+  photo:           string;
+  removed:         boolean;
+  likes:           string[];  // UIDs of users who liked this boulder
+  setterGradeVote: number | null;  // setter's initial grade vote (stored on boulder, not a log)
+  setterBadges:    string[];        // setter's initial badge picks (stored on boulder, not a log)
 };
 
 export type BoulderComment = {
@@ -134,6 +139,14 @@ async function firebaseAuthHeader(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+async function fsGet(path: string): Promise<any | null> {
+  const authH = await firebaseAuthHeader();
+  const res = await fetch(`${BASE}/${path}?key=${API_KEY}`, { headers: authH });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Firestore GET ${res.status}`);
+  return res.json();
+}
+
 async function fsPatch(path: string, data: Record<string, any>, mask?: string[]) {
   let url = `${BASE}/${path}?key=${API_KEY}`;
   if (mask) url += mask.map(f => `&updateMask.fieldPaths=${encodeURIComponent(f)}`).join('');
@@ -172,6 +185,21 @@ async function fsDelete(path: string) {
   if (!res.ok && res.status !== 404) throw new Error(`Firestore DELETE ${res.status}`);
 }
 
+// ─── Tape Color Pool ─────────────────────────────────────────────────────────
+
+export async function getTapeColorPool(): Promise<string[]> {
+  try {
+    const doc = await fsGet('boulderConfig/main');
+    if (!doc) return [];
+    const d = decodeDoc(doc);
+    return Array.isArray(d.tapeColors) ? (d.tapeColors as string[]).filter(Boolean) : [];
+  } catch { return []; }
+}
+
+export async function saveTapeColorPool(colors: string[]): Promise<void> {
+  await fsPatch('boulderConfig/main', { tapeColors: colors }, ['tapeColors']);
+}
+
 // ─── Seasons ──────────────────────────────────────────────────────────────────
 
 function docToSeason(doc: any): BoulderSeason {
@@ -204,13 +232,18 @@ function docToBoulder(doc: any): Boulder {
     seasonId:    d.seasonId    ?? '',
     number:      d.number      ?? 0,
     name:        d.name        ?? '',
-    setter:      d.setter      ?? '',
-    setterEmail: d.setterEmail ?? '',
+    tapeColor:    d.tapeColor    ?? '',
+    setter:       d.setter       ?? '',
+    setterEmail:  d.setterEmail  ?? '',
+    createdByUid: d.createdByUid ?? '',
     createdAt:   d.createdAt   ?? '',
     updatedAt:   d.updatedAt   ?? '',
     locations:   Array.isArray(d.locations) ? d.locations : [],
-    photo:       d.photo       ?? '',
-    removed:     d.removed     ?? false,
+    photo:           d.photo           ?? '',
+    removed:         d.removed         ?? false,
+    likes:           Array.isArray(d.likes) ? d.likes as string[] : [],
+    setterGradeVote: typeof d.setterGradeVote === 'number' ? d.setterGradeVote : null,
+    setterBadges:    Array.isArray(d.setterBadges) ? d.setterBadges as string[] : [],
   };
 }
 
@@ -250,6 +283,33 @@ export async function removeBoulder(id: string): Promise<void> {
     { removed: true, updatedAt: new Date().toISOString() },
     ['removed', 'updatedAt'],
   );
+}
+
+export async function toggleLike(id: string, uid: string, liked: boolean): Promise<void> {
+  const doc = await fsGet(`boulders/${id}`);
+  const d = doc ? decodeDoc(doc) : {};
+  const current: string[] = Array.isArray(d.likes) ? d.likes as string[] : [];
+  const updated = liked
+    ? current.filter(u => u !== uid)
+    : [...current.filter(u => u !== uid), uid];
+  await fsPatch(`boulders/${id}`, { likes: updated, updatedAt: new Date().toISOString() }, ['likes', 'updatedAt']);
+}
+
+export async function getBoulderProjects(uid: string): Promise<string[]> {
+  try {
+    const doc = await fsGet(`userBoulderData/${uid}`);
+    if (!doc) return [];
+    const d = decodeDoc(doc);
+    return Array.isArray(d.projectIds) ? d.projectIds as string[] : [];
+  } catch { return []; }
+}
+
+export async function setBoulderProject(uid: string, internalId: string, isProject: boolean): Promise<void> {
+  const current = await getBoulderProjects(uid);
+  const updated = isProject
+    ? [...current.filter(id => id !== internalId), internalId]
+    : current.filter(id => id !== internalId);
+  await fsPatch(`userBoulderData/${uid}`, { projectIds: updated }, ['projectIds']);
 }
 
 // ─── Comments ─────────────────────────────────────────────────────────────────

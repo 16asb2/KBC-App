@@ -170,6 +170,7 @@ export default function LogBookScreen() {
   const [logs, setLogs]           = useState<LogEntry[]>([]);
   const [loading, setLoading]     = useState(true);
   const [archive, setArchive]     = useState(false);
+  const [mineOnly, setMineOnly]   = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [amending, setAmending]   = useState<LogEntry | null>(null);
   const [search, setSearch]       = useState('');
@@ -246,22 +247,30 @@ export default function LogBookScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Toggle: Recent / Archive */}
+      {/* Toggle: Recent / Archive / Mine */}
       <View style={styles.toggleBar}>
         <TouchableOpacity
-          style={[styles.toggleBtn, !archive && styles.toggleBtnActive]}
-          onPress={() => handleToggle(false)}
+          style={[styles.toggleBtn, !archive && !mineOnly && styles.toggleBtnActive]}
+          onPress={() => { setMineOnly(false); handleToggle(false); }}
         >
-          <Text style={[styles.toggleBtnText, !archive && styles.toggleBtnTextActive]}>
+          <Text style={[styles.toggleBtnText, !archive && !mineOnly && styles.toggleBtnTextActive]}>
             Last 30 Days
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.toggleBtn, archive && styles.toggleBtnActive]}
-          onPress={() => handleToggle(true)}
+          onPress={() => { setMineOnly(false); handleToggle(true); }}
         >
           <Text style={[styles.toggleBtnText, archive && styles.toggleBtnTextActive]}>
             Archive
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.toggleBtn, mineOnly && styles.toggleBtnActive]}
+          onPress={() => { setMineOnly(m => !m); if (archive) handleToggle(false); }}
+        >
+          <Text style={[styles.toggleBtnText, mineOnly && styles.toggleBtnTextActive]}>
+            My Visits
           </Text>
         </TouchableOpacity>
       </View>
@@ -299,7 +308,8 @@ export default function LogBookScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={KBC.green} />}
         >
           {(() => {
-            const base = canSeePurchases ? logs : logs.filter(l => !l.notes?.includes('Purchased:'));
+            let base = canSeePurchases ? logs : logs.filter(l => !l.notes?.includes('Purchased:'));
+            if (mineOnly) base = base.filter(l => l.userId === user?.id);
             const visible = search
               ? base.filter(l => l.userName.toLowerCase().includes(search.toLowerCase()))
               : base;
@@ -307,7 +317,7 @@ export default function LogBookScreen() {
             if (visible.length === 0) {
               return (
                 <Text style={styles.emptyText}>
-                  {search ? 'No matching sign-ins.' : archive ? 'No archived entries.' : 'No sign-ins in the last 30 days.'}
+                  {search ? 'No matching sign-ins.' : mineOnly ? 'No sign-ins found for your account.' : archive ? 'No archived entries.' : 'No sign-ins in the last 30 days.'}
                 </Text>
               );
             }

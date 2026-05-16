@@ -1,5 +1,6 @@
 import { GoogleSignin, isSuccessResponse } from '@react-native-google-signin/google-signin';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 import { registerBridge, clearBridge } from '@/services/authBridge';
 
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID;
@@ -84,8 +85,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading]   = useState(true);
 
   // Google Calendar scope tracking
-  const scopesGranted     = useRef(false);
-  const inflightToken     = useRef<Promise<string | null> | null>(null);
+  const scopesGranted        = useRef(false);
+  const inflightToken        = useRef<Promise<string | null> | null>(null);
+  const googleTokenExpiresAt = useRef<number>(0);
 
   // Firebase session — held in memory only (never written to storage)
   const firebaseIdToken   = useRef<string | null>(null);
@@ -144,6 +146,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ─── Foreground resume: proactively refresh stale tokens ──────────────────
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      if (nextState !== 'active') return;
+      if (!firebaseRefresh.current) return; // not signed in
+      // Proactively refresh Firebase token so Firestore calls don't hit an expired token.
+      // getFirebaseToken() checks expiry itself and only calls the network when needed.
+      await getFirebaseToken();
+      // Force-expire the cached Google access token so the next Calendar call fetches a fresh one.
+      googleTokenExpiresAt.current = 0;
+    });
+    return () => sub.remove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ─── Auth actions ──────────────────────────────────────────────────────────
 
   async function signIn() {
@@ -185,11 +203,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.warn('GoogleSignin.signOut error (ignored):', e);
     } finally {
       setUser(null);
-      firebaseIdToken.current   = null;
-      firebaseRefresh.current   = null;
-      firebaseExpiresAt.current = 0;
-      adminToken.current        = null;
-      adminExpiresAt.current    = 0;
+      firebaseIdToken.current    = null;
+      firebaseRefresh.current    = null;
+      firebaseExpiresAt.current  = 0;
+      adminToken.current         = null;
+      adminExpiresAt.current     = 0;
+      scopesGranted.current      = false;
+      googleTokenExpiresAt.current = 0;
       clearBridge();
     }
   }
@@ -207,10 +227,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
           if (!scopeResult) { console.warn('Calendar scope not granted.'); return null; }
           scopesGranted.current = true;
-          const { accessToken } = await GoogleSignin.getTokens();
-          await GoogleSignin.clearCachedAccessToken(accessToken);
+        }
+        // If our tracked expiry has passed, evict the cached token so getTokens() fetches a fresh one.
+        const now = Date.now();
+        if (now >= googleTokenExpiresAt.current) {
+          try {
+            const { accessToken: stale } = await GoogleSignin.getTokens();
+            await GoogleSignin.clearCachedAccessToken(stale);
+          } catch {}
         }
         const tokens = await GoogleSignin.getTokens();
+        googleTokenExpiresAt.current = now + 55 * 60 * 1000;
         return tokens.accessToken;
       } catch (e) {
         console.warn('Error getting access token:', e);

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
 import { useAuth } from '@/context/auth';
+import { AppState } from 'react-native';
 import { CalendarEvent, listUpcomingEvents } from '@/services/calendarService';
 
 type ScheduleContextType = {
@@ -16,7 +17,7 @@ type ScheduleContextType = {
 const ScheduleContext = createContext<ScheduleContextType | null>(null);
 
 export function ScheduleProvider({ children }: { children: React.ReactNode }) {
-  const { getAccessToken } = useAuth();
+  const { getAccessToken, user } = useAuth();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [allEvents, setAllEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,8 +38,17 @@ export function ScheduleProvider({ children }: { children: React.ReactNode }) {
     }
   }, [getAccessToken]);
 
-  // Load once on mount so every tab has data immediately
-  useEffect(() => { reload(); }, []);
+  // Reload on mount and whenever the signed-in user changes (covers sign-out/sign-in cycles).
+  useEffect(() => { if (user) reload(); }, [user?.id]);
+
+  // Reload when the app comes back to the foreground (covers long background periods).
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && user) reload();
+    });
+    return () => sub.remove();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   function goToToday() {
     setSelectedDate(new Date());

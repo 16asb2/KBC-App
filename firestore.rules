@@ -47,7 +47,7 @@ service cloud.firestore {
     // badge votes, updatedAt, etc.) without restriction.
     function touchesBoulderAdminFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'name', 'setter', 'setterEmail', 'number', 'seasonId',
+        'name', 'setter', 'setterEmail', 'seasonId',
         'locations', 'photo', 'removed', 'internalId', 'local', 'area',
         'permissions', 'createdAt'
       ]);
@@ -164,6 +164,19 @@ service cloud.firestore {
     match /gymStatus/{doc} {
       allow read:  if isAuthenticated();
       allow write: if isSupervisorOrAdmin();
+    }
+
+    // ── boulderConfig/{doc} ──────────────────────────────────────────────────
+    // Stores shared config (tape color pool). Read by all members; write by admins/supervisors.
+    match /boulderConfig/{doc} {
+      allow read:  if isAuthenticated();
+      allow write: if isSupervisorOrAdmin();
+    }
+
+    // ── userBoulderData/{uid} ────────────────────────────────────────────────
+    // Per-user data for KBC boulders (e.g. projectIds). Fully private to the owner.
+    match /userBoulderData/{uid} {
+      allow read, write: if isAuthenticated() && request.auth.uid == uid;
     }
   }
 }

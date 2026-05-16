@@ -373,12 +373,23 @@ function EditModal({
                 <Text style={styles.pendingDetail}>{pendingPunches} punches purchased</Text>
               </View>
               {canEditMembership && (
-                <TouchableOpacity
-                  style={styles.pendingConfirmBtn}
-                  onPress={() => onSave({ pendingPunches: null })}
-                >
-                  <Text style={styles.pendingConfirmBtnText}>Confirm ✓</Text>
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  <TouchableOpacity
+                    style={styles.pendingCancelBtn}
+                    onPress={() => onSave({
+                      pendingPunches: null,
+                      punchPassRemaining: Math.max(0, member.punchPassRemaining - (pendingPunches - 1)),
+                    })}
+                  >
+                    <Text style={styles.pendingCancelBtnText}>✕</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.pendingConfirmBtn}
+                    onPress={() => onSave({ pendingPunches: null })}
+                  >
+                    <Text style={styles.pendingConfirmBtnText}>Confirm ✓</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           )}
