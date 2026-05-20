@@ -45,8 +45,8 @@ GoogleService-Info.plist
 # internal docs
 PRODUCTION.md
 
-# Claude Code local settings
-.claude/settings.json
+# Claude Code local data
+.claude/
 
 # typescript
 *.tsbuildinfo
