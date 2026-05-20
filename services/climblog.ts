@@ -125,6 +125,7 @@ export type PersonalClimb = {
   id: string;
   uid: string;
   userName?: string;            // display name of the climber (optional; absent in older records)
+  photo?: string;               // base64 data URI or '' — optional, absent in older records
   locationId: string;
   boulderId: string;            // KBC only; '' otherwise (legacy; prefer problemInternalId)
   sectorId: string;
@@ -208,6 +209,7 @@ function docToClimb(doc: any): PersonalClimb {
     id,
     uid:               d.uid               ?? '',
     userName:          d.userName          ?? undefined,
+    photo:             d.photo             ?? '',
     locationId:        d.locationId        ?? '',
     boulderId:         d.boulderId         ?? '',
     sectorId:          d.sectorId          ?? '',

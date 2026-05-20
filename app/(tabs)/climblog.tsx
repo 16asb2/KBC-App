@@ -1,5 +1,9 @@
+import { Image } from 'expo-image';
+// expo-image-picker requires a native dev build; gracefully degrade in Expo Go
+let ImagePicker: typeof import('expo-image-picker') | null = null;
+try { ImagePicker = require('expo-image-picker'); } catch {}
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -351,14 +355,13 @@ function LogClimbModal({
   const [project,         setProject]         = useState(editingClimb?.project ?? false);
   const [badges,          setBadges]          = useState<string[]>(editingClimb?.badges ?? []);
   const [comment,         setComment]         = useState(editingClimb?.comment ?? '');
+  const [photo,           setPhoto]           = useState(editingClimb?.photo ?? '');
   const [saving,          setSaving]          = useState(false);
   const [showDate,        setShowDate]        = useState(false);
 
-  // Re-initialise when editingClimb changes (modal re-opens for a different entry or add-new)
-  const prevEditId = useRef<string | null>(null);
-  const nextId = editingClimb?.id ?? null;
-  if (nextId !== prevEditId.current) {
-    prevEditId.current = nextId;
+  // Re-initialise when editingClimb changes or modal opens — useEffect avoids concurrent-mode mutation bugs
+  useEffect(() => {
+    const defLoc = initialLocationId === 'all' ? (locations[0]?.id ?? 'kbc') : initialLocationId;
     if (editingClimb) {
       setLocationId(editingClimb.locationId);
       const editLoc = editingClimb.locationId !== 'kbc'
@@ -377,14 +380,15 @@ function LogClimbModal({
       setProject(editingClimb.project);
       setBadges(editingClimb.badges ?? []);
       setComment(editingClimb.comment);
+      setPhoto(editingClimb.photo ?? '');
     } else {
-      // Switching to "add new" mode — reset to defaults
-      setLocationId(defaultLocId);
+      setLocationId(defLoc);
       setSectorIdx(0); setLogDate(new Date()); setClimbName('');
       setEstablishedGrade(''); setPersonalGrade(''); setType('ascent');
-      setQuality(0); setEffort(null); setAttempts('1'); setProject(false); setBadges([]); setComment('');
+      setQuality(0); setEffort(null); setAttempts('1'); setProject(false); setBadges([]); setComment(''); setPhoto('');
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingClimb?.id, visible]);
 
   const activeLoc = locationId === 'kbc'
     ? null
@@ -397,7 +401,7 @@ function LogClimbModal({
     setLocationId(defaultLocId);
     setSectorIdx(0); setLogDate(new Date()); setClimbName('');
     setEstablishedGrade(''); setPersonalGrade(''); setType('ascent');
-    setQuality(0); setEffort(null); setAttempts('1'); setProject(false); setBadges([]); setComment('');
+    setQuality(0); setEffort(null); setAttempts('1'); setProject(false); setBadges([]); setComment(''); setPhoto('');
   }
 
   async function handleSave() {
@@ -420,6 +424,7 @@ function LogClimbModal({
         attempts: Math.min(99, Math.max(1, parseInt(attempts || '1', 10) || 1)),
         type, project, badges,
         comment: comment.trim(),
+        photo,
         createdAt: editingClimb?.createdAt ?? now,
       };
 
@@ -437,6 +442,21 @@ function LogClimbModal({
       Alert.alert('Error', e.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function pickPhoto() {
+    if (!ImagePicker) { Alert.alert('Not available', 'Photo picker requires a dev build.'); return; }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: false,
+      quality: 0.4,
+      base64: true,
+      exif: false,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const asset = result.assets[0];
+      setPhoto(asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri);
     }
   }
 
@@ -585,6 +605,21 @@ function LogClimbModal({
                 placeholderTextColor="#aaa"
                 multiline
               />
+
+              {/* Photo */}
+              <Text style={styles.fieldLabel}>Photo</Text>
+              {photo ? (
+                <View style={{ marginBottom: 8 }}>
+                  <Image source={{ uri: photo }} style={styles.logPhotoPreview} contentFit="cover" />
+                  <TouchableOpacity style={styles.logPhotoRemoveBtn} onPress={() => setPhoto('')}>
+                    <Text style={styles.logPhotoRemoveBtnText}>Remove Photo</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={styles.logPhotoPickBtn} onPress={pickPhoto}>
+                  <Text style={styles.logPhotoPickBtnText}>📷  Add Photo</Text>
+                </TouchableOpacity>
+              )}
 
               <TouchableOpacity
                 style={[styles.saveBtn, saving && { opacity: 0.6 }]}
@@ -1242,6 +1277,13 @@ const styles = StyleSheet.create({
   typeBtnSent: { backgroundColor: '#2ecc71', borderColor: '#2ecc71' },
   typeBtnTried: { backgroundColor: '#f39c12', borderColor: '#f39c12' },
   typeBtnText: { fontSize: 15, fontWeight: '700', color: '#555' },
+
+  // Photo picker
+  logPhotoPreview:       { width: '100%', height: 160, borderRadius: 10, marginBottom: 8 },
+  logPhotoPickBtn:       { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, alignItems: 'center', marginBottom: 8 },
+  logPhotoPickBtnText:   { fontSize: 14, color: '#555', fontWeight: '600' },
+  logPhotoRemoveBtn:     { alignItems: 'center', marginBottom: 4 },
+  logPhotoRemoveBtnText: { fontSize: 12, color: '#FF453A', fontWeight: '600' },
 
   // Save button
   saveBtn: { backgroundColor: KBC.cyan, borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 20 },

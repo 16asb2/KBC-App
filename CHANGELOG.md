@@ -4,6 +4,28 @@ All notable changes to KBC Scheduler are documented here.
 
 ---
 
+## [Unreleased] — 2026-05-20
+
+### Added
+- **Boulder List — Camera icon on cards**: a 📷 indicator appears in the top-right of any ClimbCard that has a photo stored, so photo availability is visible without opening the problem.
+- **Boulder Edit — Admin grade vote deletion**: admins and supervisors can tap ✕ next to any individual grade vote (including the setter's initial vote) to remove it. Changes apply immediately without requiring a form save.
+- **Personal Climb Log — Photo field**: the Edit Climb form now includes a photo picker and preview (base64, quality 0.4). Photos persist across app reinstalls because they are stored as base64 data URIs rather than local file paths.
+- **Boulder photos — Pinch-to-zoom**: tapping a boulder photo opens a full-screen viewer with pinch-to-zoom, pan, and double-tap-to-zoom-reset gestures (Reanimated 4 + RNGH 2). Single-tap closes the viewer.
+
+### Changed
+- **Grade bar — Community average marker**: color changed from fluorescent green to bright orange (`#FF6600`) to contrast with both the bar colors and the user's own vote marker (teal green).
+- **Boulder Overview — Photo height**: preview image height reduced from 220 px to 140 px so more of the overview card content is visible without scrolling.
+- **Boulder Edit — Field order**: form reorganized top-to-bottom as: boulder number → name → tape color → setter → location → grade bar → grade votes list → photo → badges. Discussion section removed.
+- **Boulder Edit — Badges**: badge grid is always expanded; collapsible dropdown removed.
+- **Boulder Edit — Close returns to Overview**: dismissing or saving the edit form returns to the Boulder Overview card instead of dropping back to the list.
+- **Boulder Overview — "Ascent Log" → "Personal Climb Log"**: section renamed and now shows only the current user's own entries on a white background.
+
+### Fixed
+- **Boulder photos going black**: replaced ephemeral `file://` URIs (invalidated on every EAS rebuild) with base64 data URIs stored directly in Firestore. Existing photos stored as `file://` paths display as blank; re-uploading restores them.
+- **Climb Log edit — Location field blank**: modal re-initialisation was using a render-time `useRef` mutation that is silently skipped under React New Architecture's concurrent renderer. Replaced with `useEffect([editingClimb?.id, visible])`, which reliably runs after the commit phase.
+
+---
+
 ## [Unreleased] — 2026-05-19
 
 ### Added
