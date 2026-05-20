@@ -2412,13 +2412,14 @@ function BoulderLogModal({
 // ─── Personal Log Modal ───────────────────────────────────────────────────────
 
 function PersonalLogModal({
-  visible, problem, onClose, onSaved, userUid,
+  visible, problem, onClose, onSaved, userUid, userName,
 }: {
   visible: boolean;
   problem: PersonalProblem;
   onClose: () => void;
   onSaved: (newLog: PersonalClimb) => void;
   userUid: string;
+  userName: string;
 }) {
   const insets = useSafeAreaInsets();
   const [logDate,     setLogDate]     = useState(new Date());
@@ -3698,6 +3699,7 @@ export default function BouldersScreen() {
             setLogProblem(null);
           }}
           userUid={userUid}
+          userName={userName}
         />
       )}
 
