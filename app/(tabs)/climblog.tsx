@@ -20,17 +20,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BadgeIcon } from '@/components/badge-icon';
 import { DropdownPicker, DropdownOption } from '@/components/dropdown-picker';
 import { EffortBar, effortToNumber, effortLabel } from '@/components/effort-bar';
-import { GradeBar } from '@/components/grade-bar';
 import { DatePickerModal } from '@/components/time-picker-modal';
 import { KBC } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
 import { BADGE_GROUPS } from '@/services/boulders';
 import {
-  ClimbDiscipline, ClimbLocation, GradeSystem, KBC_GRADE_LABELS, PersonalClimb, Sector,
+  ClimbDiscipline, ClimbLocation, GradeSystem, PersonalClimb, Sector,
   addClimb, createLocation, deleteClimb, deleteLocation,
   getMyLocations, getMyLogs,
-  gradesForSystem, gradeSystemsForDiscipline, updateClimb,
+  gradeSystemsForDiscipline, updateClimb,
 } from '@/services/climblog';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -57,6 +56,19 @@ function formatTimestamp(iso: string): string {
   if (isYesterday) return `Yesterday ${time}`;
   return `${d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} ${time}`;
 }
+
+function dateSectionLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  if (d.toDateString() === now.toDateString())       return 'Today';
+  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+type ListItem =
+  | { type: 'header'; key: string; label: string }
+  | { type: 'climb';  key: string; climb: PersonalClimb };
 
 // ─── StarRow (simple, non-vote, display only) ─────────────────────────────────
 
@@ -341,13 +353,6 @@ function LogClimbModal({
   const [comment,         setComment]         = useState(editingClimb?.comment ?? '');
   const [saving,          setSaving]          = useState(false);
   const [showDate,        setShowDate]        = useState(false);
-  // KBC grade stored as continuous 0-4 float; converted to label only on save
-  const [kbcGradeFloat,   setKbcGradeFloat]   = useState<number | null>(() => {
-    if (editingClimb?.locationId !== 'kbc') return null;
-    if (editingClimb.gradeVote !== null && editingClimb.gradeVote !== undefined) return editingClimb.gradeVote;
-    const idx = KBC_GRADE_LABELS.indexOf(editingClimb.personalGrade as any);
-    return idx >= 0 ? idx : null;
-  });
 
   // Re-initialise when editingClimb changes (modal re-opens for a different entry or add-new)
   const prevEditId = useRef<string | null>(null);
@@ -356,6 +361,11 @@ function LogClimbModal({
     prevEditId.current = nextId;
     if (editingClimb) {
       setLocationId(editingClimb.locationId);
+      const editLoc = editingClimb.locationId !== 'kbc'
+        ? locations.find(l => l.id === editingClimb.locationId)
+        : null;
+      const sIdx = editLoc ? editLoc.sectors.findIndex(s => s.name === editingClimb.sectorId) : -1;
+      setSectorIdx(sIdx >= 0 ? sIdx : 0);
       setLogDate(new Date(editingClimb.timestamp));
       setClimbName(editingClimb.name);
       setEstablishedGrade(editingClimb.establishedGrade);
@@ -367,21 +377,12 @@ function LogClimbModal({
       setProject(editingClimb.project);
       setBadges(editingClimb.badges ?? []);
       setComment(editingClimb.comment);
-      const kbcFloat = editingClimb.locationId === 'kbc'
-        ? (editingClimb.gradeVote !== null && editingClimb.gradeVote !== undefined
-           ? editingClimb.gradeVote
-           : (KBC_GRADE_LABELS.indexOf(editingClimb.personalGrade as any) >= 0
-              ? KBC_GRADE_LABELS.indexOf(editingClimb.personalGrade as any)
-              : null))
-        : null;
-      setKbcGradeFloat(kbcFloat);
     } else {
       // Switching to "add new" mode — reset to defaults
       setLocationId(defaultLocId);
       setSectorIdx(0); setLogDate(new Date()); setClimbName('');
       setEstablishedGrade(''); setPersonalGrade(''); setType('ascent');
       setQuality(0); setEffort(null); setAttempts('1'); setProject(false); setBadges([]); setComment('');
-      setKbcGradeFloat(null);
     }
   }
 
@@ -390,24 +391,13 @@ function LogClimbModal({
     : locations.find(l => l.id === locationId) ?? null;
   const sectors    = activeLoc?.sectors ?? [];
   const sector     = sectors[sectorIdx] ?? null;
-  const gradeSystem: GradeSystem = locationId === 'kbc' ? 'kbc' : (sector?.gradeSystem ?? 'v-scale');
-  const grades     = gradesForSystem(gradeSystem);
   const showBadges = locationId === 'kbc' || (activeLoc?.useBadges ?? false);
-
-  // KBC grade: continuous 0-4 float drives GradeBar; converted to label only on save
-  const kbcGradeVotes: Record<string, number> = kbcGradeFloat !== null ? { __self: kbcGradeFloat } : {};
-
-  function handleKbcVote(val: number) {
-    if (val < 0) { setKbcGradeFloat(null); return; }
-    setKbcGradeFloat(Math.max(0, Math.min(4, val)));
-  }
 
   function reset() {
     setLocationId(defaultLocId);
     setSectorIdx(0); setLogDate(new Date()); setClimbName('');
     setEstablishedGrade(''); setPersonalGrade(''); setType('ascent');
     setQuality(0); setEffort(null); setAttempts('1'); setProject(false); setBadges([]); setComment('');
-    setKbcGradeFloat(null);
   }
 
   async function handleSave() {
@@ -416,16 +406,14 @@ function LogClimbModal({
     try {
       const now = new Date().toISOString();
       const payload = {
-        uid, locationId,
+        uid, userName, locationId,
         boulderId:         editingClimb?.boulderId         ?? '',
         sectorId:          sector?.name                    ?? (editingClimb?.sectorId ?? ''),
         timestamp:         logDate.toISOString(),
         name:              climbName.trim(),
         establishedGrade:  locationId === 'kbc' ? '' : establishedGrade,
-        personalGrade:     locationId === 'kbc'
-          ? (kbcGradeFloat !== null ? KBC_GRADE_LABELS[Math.round(Math.max(0, Math.min(4, kbcGradeFloat)))] : '')
-          : personalGrade,
-        gradeVote:         locationId === 'kbc' ? kbcGradeFloat : (editingClimb?.gradeVote ?? null),
+        personalGrade:     editingClimb?.personalGrade ?? '',
+        gradeVote:         editingClimb?.gradeVote ?? null,
         problemInternalId: editingClimb?.problemInternalId ?? '',
         quality,
         effort: effort ?? '',
@@ -560,25 +548,6 @@ function LogClimbModal({
                 </>
               )}
 
-              {/* Personal Grade */}
-              <Text style={styles.fieldLabel}>Personal Grade</Text>
-              {gradeSystem === 'kbc' ? (
-                <GradeBar
-                  votes={kbcGradeVotes}
-                  userUid="__self"
-                  onVote={handleKbcVote}
-                  interactive
-                />
-              ) : (
-                <DropdownPicker
-                  options={[{ label: '— Not set —', value: '' }, ...grades.map(g => ({ label: g, value: g }))]}
-                  value={personalGrade}
-                  onChange={setPersonalGrade}
-                  placeholder="Select grade…"
-                  accentColor={KBC.lime}
-                />
-              )}
-
               {/* Quality */}
               <Text style={styles.fieldLabel}>Quality</Text>
               <StarRow value={quality} onChange={setQuality} />
@@ -711,12 +680,21 @@ function ClimbRow({
 
 // ─── Climb Filter ─────────────────────────────────────────────────────────────
 
+type ClimbSort = 'newest' | 'oldest' | 'name-az' | 'name-za' | 'quality';
 type ClimbFilter = {
   type: 'all' | 'sent' | 'attempted';
   projectsOnly: boolean;
-  sort: 'newest' | 'oldest';
+  sort: ClimbSort;
 };
 const DEFAULT_CLIMB_FILTER: ClimbFilter = { type: 'all', projectsOnly: false, sort: 'newest' };
+
+const SORT_OPTIONS: { key: ClimbSort; label: string }[] = [
+  { key: 'newest',  label: '↓ Date'  },
+  { key: 'oldest',  label: '↑ Date'  },
+  { key: 'name-az', label: 'A – Z'   },
+  { key: 'name-za', label: 'Z – A'   },
+  { key: 'quality', label: '★ Stars' },
+];
 
 function ClimbFilterModal({
   visible, onClose, filter, onApply,
@@ -734,7 +712,7 @@ function ClimbFilterModal({
   }
 
   function apply() { onApply(draft); onClose(); }
-  function reset()  { setDraft(DEFAULT_CLIMB_FILTER); }
+  function reset()  { setDraft(d => ({ ...DEFAULT_CLIMB_FILTER, sort: d.sort })); }
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -770,20 +748,6 @@ function ClimbFilterModal({
               <Text style={styles.checkSub}>Show only climbs marked as projects</Text>
             </View>
           </TouchableOpacity>
-
-          {/* Sort order */}
-          <Text style={styles.fieldLabel}>Sort Order</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {([['newest', 'Newest first'], ['oldest', 'Oldest first']] as const).map(([val, label]) => (
-              <TouchableOpacity
-                key={val}
-                style={[styles.miniChip, draft.sort === val && styles.miniChipActive]}
-                onPress={() => setDraft(d => ({ ...d, sort: val }))}
-              >
-                <Text style={[styles.miniChipText, draft.sort === val && { color: '#fff' }]}>{label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 24 }}>
             <TouchableOpacity
@@ -877,17 +841,39 @@ export default function ClimbLogScreen() {
     ...Object.fromEntries(locations.map(l => [l.id, l.name])),
   };
 
-  const filterCount = (filter.type !== 'all' ? 1 : 0) + (filter.projectsOnly ? 1 : 0) + (filter.sort !== 'newest' ? 1 : 0);
+  const filterCount = (filter.type !== 'all' ? 1 : 0) + (filter.projectsOnly ? 1 : 0);
 
   const displayed = useMemo(() => {
     let list = [...climbs];
     if (filter.type !== 'all') list = list.filter(c => c.type === (filter.type === 'sent' ? 'ascent' : 'attempt'));
     if (filter.projectsOnly) list = list.filter(c => c.project);
-    list.sort((a, b) => filter.sort === 'oldest'
-      ? a.timestamp.localeCompare(b.timestamp)
-      : b.timestamp.localeCompare(a.timestamp));
+    list.sort((a, b) => {
+      switch (filter.sort) {
+        case 'oldest':  return a.timestamp.localeCompare(b.timestamp);
+        case 'name-az': return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+        case 'name-za': return b.name.localeCompare(a.name, undefined, { sensitivity: 'base' });
+        case 'quality': return (b.quality || 0) - (a.quality || 0) || b.timestamp.localeCompare(a.timestamp);
+        default:        return b.timestamp.localeCompare(a.timestamp);
+      }
+    });
     return list;
   }, [climbs, filter]);
+
+  const listItems = useMemo((): ListItem[] => {
+    const byDate = filter.sort === 'newest' || filter.sort === 'oldest';
+    if (!byDate) return displayed.map(c => ({ type: 'climb', key: c.id, climb: c }));
+    const items: ListItem[] = [];
+    let lastDateKey = '';
+    for (const climb of displayed) {
+      const dateKey = climb.timestamp.slice(0, 10);
+      if (dateKey !== lastDateKey) {
+        items.push({ type: 'header', key: `h-${dateKey}`, label: dateSectionLabel(climb.timestamp) });
+        lastDateKey = dateKey;
+      }
+      items.push({ type: 'climb', key: climb.id, climb });
+    }
+    return items;
+  }, [displayed, filter.sort]);
 
   async function loadAll(silent = false) {
     if (!uid) return;
@@ -965,18 +951,47 @@ export default function ClimbLogScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* ── Sort bar ── */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.sortBar}
+        contentContainerStyle={styles.sortBarContent}
+      >
+        {SORT_OPTIONS.map(o => (
+          <TouchableOpacity
+            key={o.key}
+            style={[styles.sortChip, filter.sort === o.key && styles.sortChipActive]}
+            onPress={() => setFilter(f => ({ ...f, sort: o.key }))}
+          >
+            <Text style={[styles.sortChipText, filter.sort === o.key && styles.sortChipTextActive]}>
+              {o.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
       {/* ── Climb list ── */}
       <FlatList
-        data={displayed}
-        keyExtractor={c => c.id}
-        renderItem={({ item }) => (
-          <ClimbRow
-            climb={item}
-            locationName={locationNames[item.locationId] ?? item.locationId}
-            onPress={() => openEdit(item)}
-            onDelete={() => handleDelete(item)}
-          />
-        )}
+        data={listItems}
+        keyExtractor={item => item.key}
+        renderItem={({ item }) => {
+          if (item.type === 'header') {
+            return (
+              <View style={styles.dateHeader}>
+                <Text style={styles.dateHeaderText}>{item.label}</Text>
+              </View>
+            );
+          }
+          return (
+            <ClimbRow
+              climb={item.climb}
+              locationName={locationNames[item.climb.locationId] ?? item.climb.locationId}
+              onPress={() => openEdit(item.climb)}
+              onDelete={() => handleDelete(item.climb)}
+            />
+          );
+        }}
         contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
         refreshControl={
           <RefreshControl
@@ -1067,6 +1082,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 8,
   },
   summaryBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+
+  // Sort bar
+  sortBar: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#eee' },
+  sortBarContent: { paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', gap: 8 },
+  sortChip: {
+    borderRadius: 20, paddingHorizontal: 13, paddingVertical: 6,
+    backgroundColor: '#f0f0f0', borderWidth: 1, borderColor: '#e0e0e0',
+  },
+  sortChipActive: { backgroundColor: KBC.green, borderColor: KBC.green },
+  sortChipText: { fontSize: 12, fontWeight: '600', color: '#555' },
+  sortChipTextActive: { color: '#fff' },
+
+  // Date section header
+  dateHeader: { paddingHorizontal: 4, paddingTop: 16, paddingBottom: 4 },
+  dateHeaderText: { fontSize: 11, fontWeight: '700', color: '#999', textTransform: 'uppercase', letterSpacing: 0.8 },
 
   // FAB
   fab: {

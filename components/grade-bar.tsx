@@ -51,11 +51,16 @@ export function GradeBar({ votes, userUid, onVote, interactive = false, compact 
     });
   }
 
+  // Rendered as a sibling of the bar (outside overflow:hidden) so it can extend
+  // 2 px above and below the bar height, making it slightly taller than the bar.
   function Marker({ value, color }: { value: number; color: string }) {
     return (
-      <View style={[StyleSheet.absoluteFillObject, { flexDirection: 'row' }]} pointerEvents="none">
+      <View
+        style={[StyleSheet.absoluteFillObject, { top: -2, bottom: -2, flexDirection: 'row' }]}
+        pointerEvents="none"
+      >
         <View style={{ flex: Math.max(value, 0) }} />
-        <View style={{ width: 3, backgroundColor: color, borderRadius: 2 }} />
+        <View style={{ width: 4, backgroundColor: color, borderRadius: 2 }} />
         <View style={{ flex: Math.max(4 - value, 0) }} />
       </View>
     );
@@ -63,28 +68,31 @@ export function GradeBar({ votes, userUid, onVote, interactive = false, compact 
 
   return (
     <View>
-      <View
-        ref={barRef}
-        onLayout={onLayout}
-        style={[s.gradeBar, compact && s.gradeBarCompact]}
-        {...pan.panHandlers}
-      >
-        {GRADE_COLORS.map((color, i) => (
-          <View
-            key={i}
-            style={[
-              s.gradeSegment,
-              { backgroundColor: color },
-              i === 0 && s.gradeSegmentFirst,
-              i === GRADE_COLORS.length - 1 && s.gradeSegmentLast,
-            ]}
-          />
-        ))}
+      {/* Wrapper has no overflow:hidden so markers can extend 2 px beyond bar edges */}
+      <View style={{ position: 'relative' }}>
+        <View
+          ref={barRef}
+          onLayout={onLayout}
+          style={[s.gradeBar, compact && s.gradeBarCompact]}
+          {...pan.panHandlers}
+        >
+          {GRADE_COLORS.map((color, i) => (
+            <View
+              key={i}
+              style={[
+                s.gradeSegment,
+                { backgroundColor: color },
+                i === 0 && s.gradeSegmentFirst,
+                i === GRADE_COLORS.length - 1 && s.gradeSegmentLast,
+              ]}
+            />
+          ))}
+        </View>
 
-        {/* Red — community average */}
-        {avg !== null && <Marker value={avg} color="#FF3B30" />}
+        {/* Fluorescent green — community average */}
+        {avg !== null && <Marker value={avg} color="#AAFF00" />}
 
-        {/* Green — this user's selection */}
+        {/* Teal green — this user's vote */}
         {userVote !== null && <Marker value={userVote} color="#00e676" />}
       </View>
 
@@ -129,7 +137,7 @@ const s = StyleSheet.create({
   gradeSegment:      { flex: 1 },
   gradeSegmentFirst: { borderTopLeftRadius: 14,  borderBottomLeftRadius: 14 },
   gradeSegmentLast:  { borderTopRightRadius: 14, borderBottomRightRadius: 14 },
-  gradeLabelsRow:    { flexDirection: 'row', marginTop: 4 },
+  gradeLabelsRow:    { flexDirection: 'row', marginTop: 6 },
   gradeLabel:        { flex: 1, textAlign: 'center', fontSize: 10, color: '#999', fontWeight: '600' },
   gradeInfoRow:      { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, alignItems: 'center' },
   gradeVoteInfo:     { fontSize: 11, color: '#aaa' },

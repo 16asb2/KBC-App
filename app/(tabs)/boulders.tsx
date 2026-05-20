@@ -60,9 +60,10 @@ type FilterState = {
   setter: string;
   projectsOnly: boolean;
   likedOnly: boolean;
+  unsentOnly: boolean;
 };
 
-const DEFAULT_FILTER: FilterState = { locations: [], grades: [], badges: [], setter: '', projectsOnly: false, likedOnly: false };
+const DEFAULT_FILTER: FilterState = { locations: [], grades: [], badges: [], setter: '', projectsOnly: false, likedOnly: false, unsentOnly: false };
 const FILTER_FILE = (FileSystem.documentDirectory ?? '') + 'boulder_filters.json';
 
 async function loadSavedFilters(): Promise<FilterState> {
@@ -76,7 +77,7 @@ async function saveFilters(f: FilterState) {
 }
 
 function filterCount(f: FilterState) {
-  return f.locations.length + f.grades.length + f.badges.length + (f.setter ? 1 : 0) + (f.projectsOnly ? 1 : 0) + (f.likedOnly ? 1 : 0);
+  return f.locations.length + f.grades.length + f.badges.length + (f.setter ? 1 : 0) + (f.projectsOnly ? 1 : 0) + (f.likedOnly ? 1 : 0) + (f.unsentOnly ? 1 : 0);
 }
 
 
@@ -758,6 +759,14 @@ function ClimbCard({ boulder, logs, uid, onPress, onLog, isProject, onToggleProj
   );
   const myLog = useMemo(() => getPersonalStatus(logs, uid), [logs, uid]);
 
+  const myStats = useMemo(() => {
+    const mine = logs.filter(l => l.uid === uid);
+    return {
+      sents:    mine.filter(l => l.type === 'ascent').length,
+      attempts: mine.filter(l => l.type === 'attempt').length,
+    };
+  }, [logs, uid]);
+
   const { gradeVotesMap, qualityVotesMap, badgeCounts } = useMemo(() => {
     // Grade votes come from boulder.gradeVotes (voted on Overview screen) + setter initial vote
     const gv: Record<string, number> = { ...boulder.gradeVotes };
@@ -806,6 +815,14 @@ function ClimbCard({ boulder, logs, uid, onPress, onLog, isProject, onToggleProj
             <View style={[styles.statusPill, myLog.type === 'ascent' ? styles.statusPillSent : styles.statusPillTried]}>
               <Text style={styles.statusPillText}>{myLog.type === 'ascent' ? '✓ Sent' : '△ Tried'}</Text>
             </View>
+          )}
+          {(myStats.sents > 0 || myStats.attempts > 0) && (
+            <Text style={styles.cardMyStats}>
+              {[
+                myStats.sents    > 0 ? `✓${myStats.sents}`    : null,
+                myStats.attempts > 0 ? `△${myStats.attempts}` : null,
+              ].filter(Boolean).join('  ')}
+            </Text>
           )}
           {hasStats && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -1250,6 +1267,49 @@ function BoulderFormModal({
               </TouchableOpacity>
             ) : null}
 
+            {/* Grade votes table — edit mode only (all individual voter grades) */}
+            {isEdit && b && (() => {
+              const allVotes: Array<{ label: string; grade: number }> = [];
+              if (b.setterGradeVote !== null && b.setterGradeVote !== undefined) {
+                allVotes.push({ label: 'Setter (initial)', grade: b.setterGradeVote });
+              }
+              for (const [uid, grade] of Object.entries(b.gradeVotes ?? {})) {
+                const label = uid === userUid ? 'You' : `Member …${uid.slice(-6)}`;
+                allVotes.push({ label, grade });
+              }
+              if (allVotes.length === 0) return null;
+              return (
+                <>
+                  <Text style={styles.fieldLabel}>Grade Votes ({allVotes.length})</Text>
+                  <View style={{ borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
+                    {allVotes.map((row, i) => (
+                      <View
+                        key={i}
+                        style={{
+                          flexDirection: 'row', alignItems: 'center',
+                          backgroundColor: i % 2 === 0 ? '#1e1e1e' : '#252525',
+                          paddingHorizontal: 12, paddingVertical: 8, gap: 10,
+                        }}
+                      >
+                        <Text style={{ flex: 1, color: '#bbb', fontSize: 13 }}>{row.label}</Text>
+                        <View style={{
+                          backgroundColor: GRADE_COLORS[Math.round(Math.max(0, Math.min(4, row.grade)))],
+                          borderRadius: 6, paddingHorizontal: 10, paddingVertical: 3,
+                        }}>
+                          <Text style={{
+                            color: GRADE_TEXT[Math.round(Math.max(0, Math.min(4, row.grade)))],
+                            fontSize: 12, fontWeight: '700',
+                          }}>
+                            {GRADES[Math.round(Math.max(0, Math.min(4, row.grade)))]}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              );
+            })()}
+
             {/* Comments thread — edit mode only */}
             {isEdit && (
               <>
@@ -1402,6 +1462,21 @@ function BoulderOverviewModal({
       .map(([badge, count]) => ({ badge, count })),
   [badgeCounts]);
 
+  // ── Personal stats & comments from logs ──────────────────────────────────
+  const myLogs     = useMemo(() => logs.filter(l => l.uid === uid), [logs, uid]);
+  const myStats    = useMemo(() => ({
+    sents:    myLogs.filter(l => l.type === 'ascent').length,
+    attempts: myLogs.filter(l => l.type === 'attempt').length,
+  }), [myLogs]);
+  const totalStats = useMemo(() => ({
+    sents:    logs.filter(l => l.type === 'ascent').length,
+    attempts: logs.filter(l => l.type === 'attempt').length,
+  }), [logs]);
+  const myPersonalComments = useMemo(
+    () => myLogs.filter(l => l.comment?.trim()).sort((a, b) => b.timestamp.localeCompare(a.timestamp)),
+    [myLogs],
+  );
+
   // ── Comments ──────────────────────────────────────────────────────────────
   const [comments,        setComments]        = useState<BoulderComment[]>([]);
   const [commentText,     setCommentText]     = useState('');
@@ -1546,6 +1621,47 @@ function BoulderOverviewModal({
               </TouchableOpacity>
             </View>
 
+            {/* ── My stats vs total ───────────────────────────────────── */}
+            {(myStats.sents > 0 || myStats.attempts > 0 || totalStats.sents > 0 || totalStats.attempts > 0) && (
+              <View style={styles.statsRow}>
+                <View style={styles.statsBox}>
+                  <Text style={styles.statsBoxLabel}>My</Text>
+                  <Text style={styles.statsBoxValue}>
+                    {myStats.sents > 0    ? `✓ ${myStats.sents} sent`     : ''}
+                    {myStats.sents > 0 && myStats.attempts > 0 ? '  ' : ''}
+                    {myStats.attempts > 0 ? `△ ${myStats.attempts} tried` : ''}
+                    {myStats.sents === 0 && myStats.attempts === 0 ? '—' : ''}
+                  </Text>
+                </View>
+                <View style={styles.statsDivider} />
+                <View style={styles.statsBox}>
+                  <Text style={styles.statsBoxLabel}>Total</Text>
+                  <Text style={styles.statsBoxValue}>
+                    {totalStats.sents > 0    ? `✓ ${totalStats.sents} sent`     : ''}
+                    {totalStats.sents > 0 && totalStats.attempts > 0 ? '  ' : ''}
+                    {totalStats.attempts > 0 ? `△ ${totalStats.attempts} tried` : ''}
+                    {totalStats.sents === 0 && totalStats.attempts === 0 ? '—' : ''}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* ── Personal Comments (current user's log notes) ─────────── */}
+            {myPersonalComments.length > 0 && (
+              <>
+                <Text style={styles.overviewSectionLabel}>Personal Comments</Text>
+                {myPersonalComments.map(l => (
+                  <View key={l.id} style={styles.personalCommentCard}>
+                    <Text style={styles.personalCommentTime}>
+                      {new Date(l.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {'  ·  '}{l.type === 'ascent' ? '✓ Sent' : '△ Tried'}
+                    </Text>
+                    <Text style={styles.personalCommentText}>{l.comment}</Text>
+                  </View>
+                ))}
+              </>
+            )}
+
             {/* ── Community badges ─────────────────────────────────────── */}
             {sortedBadges.length > 0 && (
               <>
@@ -1616,6 +1732,44 @@ function BoulderOverviewModal({
                   : <Text style={styles.commentSendText}>↑</Text>}
               </TouchableOpacity>
             </View>
+
+            {/* ── Ascent log — all users' entries ──────────────────────── */}
+            {logs.length > 0 && (
+              <>
+                <Text style={styles.overviewSectionLabel}>Ascent Log</Text>
+                <View style={{ borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
+                  {[...logs]
+                    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+                    .map((l, i) => {
+                      const isMine  = l.uid === uid;
+                      const who     = isMine ? 'You' : (l.userName ?? `Member …${l.uid.slice(-4)}`);
+                      const date    = new Date(l.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+                      const typeTag = l.type === 'ascent' ? '✓ Sent' : '△ Tried';
+                      return (
+                        <View
+                          key={l.id}
+                          style={{
+                            flexDirection: 'row', alignItems: 'center',
+                            backgroundColor: i % 2 === 0 ? '#1e1e1e' : '#252525',
+                            paddingHorizontal: 12, paddingVertical: 7, gap: 8,
+                          }}
+                        >
+                          <Text style={[styles.ascentLogWho, isMine && { color: '#AAFF00' }]} numberOfLines={1}>
+                            {who}
+                          </Text>
+                          <Text style={l.type === 'ascent' ? styles.ascentLogSent : styles.ascentLogTried}>
+                            {typeTag}
+                          </Text>
+                          {l.attempts > 1 && (
+                            <Text style={styles.ascentLogAttempts}>×{l.attempts}</Text>
+                          )}
+                          <Text style={styles.ascentLogDate}>{date}</Text>
+                        </View>
+                      );
+                    })}
+                </View>
+              </>
+            )}
 
             <View style={{ height: 40 }} />
           </View>
@@ -1808,7 +1962,7 @@ function FilterModal({
 
           {/* Liked only */}
           <TouchableOpacity
-            style={[styles.projectRow, { marginTop: 0, marginBottom: 16 }]}
+            style={[styles.projectRow, { marginTop: 0, marginBottom: 8 }]}
             onPress={() => setLocal(f => ({ ...f, likedOnly: !f.likedOnly }))}
           >
             <View style={[styles.checkbox, local.likedOnly && { backgroundColor: '#0284c7', borderColor: '#0284c7' }]}>
@@ -1817,6 +1971,20 @@ function FilterModal({
             <View style={{ flex: 1 }}>
               <Text style={styles.projectLabel}>Liked only</Text>
               <Text style={styles.projectSub}>Show only boulders you&apos;ve liked</Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Unsent only */}
+          <TouchableOpacity
+            style={[styles.projectRow, { marginTop: 0, marginBottom: 16 }]}
+            onPress={() => setLocal(f => ({ ...f, unsentOnly: !f.unsentOnly }))}
+          >
+            <View style={[styles.checkbox, local.unsentOnly && { backgroundColor: '#c47c00', borderColor: '#c47c00' }]}>
+              {local.unsentOnly && <Text style={styles.checkboxCheck}>✓</Text>}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.projectLabel}>Unsent only</Text>
+              <Text style={styles.projectSub}>Hide boulders you&apos;ve already sent</Text>
             </View>
           </TouchableOpacity>
 
@@ -1987,6 +2155,7 @@ function BoulderLogModal({
 
       const entry = await addClimb({
         uid: userUid,
+        userName,
         locationId: 'kbc',
         boulderId: boulder.id,
         sectorId: '',
@@ -2279,6 +2448,7 @@ function PersonalLogModal({
       const now   = new Date().toISOString();
       const entry = await addClimb({
         uid:               userUid,
+        userName,
         locationId:        problem.local,
         boulderId:         '',
         sectorId:          problem.area,
@@ -3009,6 +3179,10 @@ export default function BouldersScreen() {
   const [viewBoulder,         setViewBoulder]         = useState<Boulder | null>(null);
   const [myProjects,          setMyProjects]          = useState<Set<string>>(new Set());
 
+  // Scroll position: saved across focus events so the list position survives tab switches
+  const flatListRef        = useRef<FlatList>(null);
+  const savedScrollOffset  = useRef(0);
+
   // Load saved filters, tape color pool, and user's boulder projects once
   useEffect(() => {
     loadSavedFilters().then(setFilters);
@@ -3205,6 +3379,12 @@ export default function BouldersScreen() {
     if (filters.likedOnly) {
       list = list.filter(b => b.likes.includes(userUid));
     }
+    if (filters.unsentOnly) {
+      list = list.filter(b => {
+        const bLogs = logsByProblem[b.internalId] ?? [];
+        return !bLogs.some(l => l.uid === userUid && l.type === 'ascent');
+      });
+    }
 
     // Sort
     const dir = sortDir === 'asc' ? 1 : -1;
@@ -3311,7 +3491,7 @@ export default function BouldersScreen() {
       )}
 
       {/* Content */}
-      {loading ? (
+      {loading && boulders.length === 0 ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={KBC.lime} />
         </View>
@@ -3339,8 +3519,16 @@ export default function BouldersScreen() {
             </View>
           ) : (
             <FlatList
+              ref={flatListRef}
               data={displayed}
               keyExtractor={b => b.id}
+              onScroll={e => { savedScrollOffset.current = e.nativeEvent.contentOffset.y; }}
+              scrollEventThrottle={100}
+              onContentSizeChange={() => {
+                if (savedScrollOffset.current > 0) {
+                  flatListRef.current?.scrollToOffset({ offset: savedScrollOffset.current, animated: false });
+                }
+              }}
               renderItem={({ item }) => (
                 <ClimbCard
                   boulder={item}
@@ -3669,6 +3857,7 @@ const styles = StyleSheet.create({
   },
 
   cardSetter:     { fontSize: 11, color: '#aaa', fontWeight: '500' },
+  cardMyStats:    { fontSize: 11, color: '#AAFF00', fontWeight: '700' },
   cardCountSent:  { fontSize: 11, color: '#2ecc71', fontWeight: '700' },
   cardCountTried: { fontSize: 11, color: '#f39c12', fontWeight: '700' },
 
@@ -3825,6 +4014,31 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 0.5,
     marginTop: 22, marginBottom: 10,
   },
+
+  // My vs total stats banner
+  statsRow: {
+    flexDirection: 'row', backgroundColor: '#f5f5f5',
+    borderRadius: 12, marginTop: 14, overflow: 'hidden',
+  },
+  statsBox:      { flex: 1, alignItems: 'center', paddingVertical: 10 },
+  statsDivider:  { width: 1, backgroundColor: '#ddd', marginVertical: 8 },
+  statsBoxLabel: { fontSize: 10, fontWeight: '700', color: '#999', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
+  statsBoxValue: { fontSize: 13, fontWeight: '700', color: '#222' },
+
+  // Personal comments from climb logs
+  personalCommentCard: {
+    backgroundColor: '#f9f9f9', borderRadius: 10, padding: 12,
+    marginBottom: 8, borderLeftWidth: 3, borderLeftColor: '#AAFF00',
+  },
+  personalCommentTime: { fontSize: 11, color: '#999', fontWeight: '600', marginBottom: 4 },
+  personalCommentText: { fontSize: 14, color: '#333' },
+
+  // Ascent log table
+  ascentLogWho:      { flex: 1, fontSize: 13, fontWeight: '600', color: '#555' },
+  ascentLogSent:     { fontSize: 12, fontWeight: '700', color: '#2ecc71' },
+  ascentLogTried:    { fontSize: 12, fontWeight: '700', color: '#f39c12' },
+  ascentLogAttempts: { fontSize: 12, color: '#aaa' },
+  ascentLogDate:     { fontSize: 12, color: '#aaa' },
 
   // Form modal
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },

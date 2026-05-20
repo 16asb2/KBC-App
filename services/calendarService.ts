@@ -116,6 +116,24 @@ function buildTitle(participants: CalendarParticipant[]): string {
     .join(' + ');
 }
 
+/**
+ * Reconstruct a participants list from a legacy event title that predates extendedProperties tracking.
+ * Handles both "(sup)" and "(super)" suffixes.
+ * Synthetic UIDs are assigned so these entries can be identified later.
+ */
+function reconstructParticipantsFromTitle(summary: string): CalendarParticipant[] {
+  return summary.split(' + ').map((part, i) => {
+    const trimmed = part.trim();
+    const isSup   = /\(sup(er)?\)$/i.test(trimmed);
+    const name    = trimmed.replace(/\s*\(sup(er)?\)$/i, '').trim();
+    return {
+      uid:  `legacy_${i}_${name.toLowerCase().replace(/\s+/g, '_')}`,
+      name,
+      role: isSup ? 'supervisor' : ('member' as CalendarParticipant['role']),
+    };
+  });
+}
+
 // ─── Private helpers ─────────────────────────────────────────────────────────
 
 function isSupervisorEventSummary(summary: string | undefined): boolean {
@@ -424,11 +442,15 @@ export async function joinSession(
   if (!fetchRes.ok) throw new Error(`Failed to fetch event ${fetchRes.status}`);
   const existing: CalendarEvent = await fetchRes.json();
 
-  // Parse and update participants
-  const participants = parseParticipants(existing);
+  // Parse participants — fall back to reconstructing from title for legacy events
+  let participants = parseParticipants(existing);
+  if (participants.length === 0 && existing.summary) {
+    participants = reconstructParticipantsFromTitle(existing.summary);
+  }
 
-  // Idempotent — don't add twice
-  if (participants.some(p => p.uid === joiningUser.uid)) {
+  // Idempotent — don't add twice (match by UID or name)
+  const joinerName = joiningUser.name.toLowerCase();
+  if (participants.some(p => p.uid === joiningUser.uid || p.name.toLowerCase() === joinerName)) {
     return existingEventId;
   }
 
@@ -484,16 +506,24 @@ export async function leaveSession(
   if (!fetchRes.ok) throw new Error(`Failed to fetch event ${fetchRes.status}`);
   const existing: CalendarEvent = await fetchRes.json();
 
-  const participants = parseParticipants(existing);
+  // Parse participants — fall back to reconstructing from title for legacy events
+  let participants = parseParticipants(existing);
+  if (participants.length === 0 && existing.summary) {
+    participants = reconstructParticipantsFromTitle(existing.summary);
+  }
 
   if (participants.length === 0) {
     throw new Error('Cannot leave this session — participant data is unavailable.');
   }
 
-  const updatedParticipants = participants.filter(p => p.uid !== leavingUser.uid);
+  const leaverName = leavingUser.name.toLowerCase();
+  // Match by UID (tracked entries) or by name (legacy reconstructed entries)
+  const updatedParticipants = participants.filter(
+    p => p.uid !== leavingUser.uid && p.name.toLowerCase() !== leaverName,
+  );
 
   if (updatedParticipants.length === participants.length) {
-    // User wasn't tracked — nothing to do
+    // User wasn't found in participant list — nothing to remove
     return existingEventId;
   }
 

@@ -138,8 +138,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (e) {
         console.warn('Error restoring session:', e);
       } finally {
-        setLoading(false);
         registerBridge(getFirebaseToken, getAdminCalendarToken);
+        setLoading(false);
       }
     }
     restoreSession();
@@ -282,10 +282,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           }
         } catch {}
-        return null;
+        // All refresh paths failed. Fall back to the cached token — it might still be valid
+        // (we proactively evict at 55 min but Firebase tokens live for 60 min). Better to let
+        // the server reject an expired token than to send an unauthenticated request.
+        return firebaseIdToken.current;
       } catch (e) {
         console.warn('Error getting Firebase token:', e);
-        return null;
+        return firebaseIdToken.current;
       } finally {
         inflightFbToken.current = null;
       }
