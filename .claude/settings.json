@@ -35,7 +35,12 @@
       "Bash(git -C \"d:\\\\Dev\\\\KBC-App\" log --oneline -5)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git -C d:\\\\Dev\\\\KBC-App log --oneline -5)",
+      "Read(//d/Dev/KBC-App/**)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(p.version, p.name\\)\")",
+      "PowerShell(git -C \"d:\\\\Dev\\\\KBC-App\" status)",
+      "PowerShell(git -C \"d:\\\\Dev\\\\KBC-App\" add CHANGELOG.md \"app/\\(tabs\\)/boulders.tsx\" \"app/\\(tabs\\)/climblog.tsx\" \"components/grade-bar.tsx\" \"context/auth.tsx\" \"services/calendarService.ts\" \"services/climblog.ts\")"
     ]
   }
 }
