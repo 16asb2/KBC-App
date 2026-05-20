@@ -3699,7 +3699,7 @@ export default function BouldersScreen() {
             setLogProblem(null);
           }}
           userUid={userUid}
-          userName={userName}
+          userName={defaultSetter}
         />
       )}
 
