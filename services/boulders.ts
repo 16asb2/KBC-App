@@ -12,7 +12,7 @@ export const LOCATIONS = [
 export type Location = typeof LOCATIONS[number];
 
 export const GRADES       = ['White', 'Blue', 'Purple', 'Pink', 'Black'] as const;
-export const GRADE_COLORS = ['#e8e8e8', '#00b4d8', '#9b5de5', '#c0005a', '#1a1a1a'];
+export const GRADE_COLORS = ['#e8e8e8', '#00b4d8', '#9b5de5', '#e8559a', '#1a1a1a'];
 export const GRADE_TEXT   = ['#555',    '#fff',     '#fff',    '#fff',   '#fff'  ];
 export type Grade = typeof GRADES[number];
 
