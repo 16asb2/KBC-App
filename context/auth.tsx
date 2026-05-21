@@ -138,7 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (e) {
         console.warn('Error restoring session:', e);
       } finally {
-        registerBridge(getFirebaseToken, getAdminCalendarToken);
+        registerBridge(getFirebaseToken, getAdminCalendarToken, clearFirebaseTokenCache);
         setLoading(false);
       }
     }
@@ -152,8 +152,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const sub = AppState.addEventListener('change', async (nextState) => {
       if (nextState !== 'active') return;
       if (!firebaseRefresh.current) return; // not signed in
-      // Proactively refresh Firebase token so Firestore calls don't hit an expired token.
-      // getFirebaseToken() checks expiry itself and only calls the network when needed.
+      // Always force-refresh the Firebase token on every foreground transition.
+      // Clearing the expiry bypasses the 55-min cache check so getFirebaseToken()
+      // always calls the refresh endpoint, regardless of when the token was last issued.
+      // This prevents stale tokens from being used after the app sits in the background.
+      firebaseExpiresAt.current = 0;
       await getFirebaseToken();
       // Force-expire the cached Google access token so the next Calendar call fetches a fresh one.
       googleTokenExpiresAt.current = 0;
@@ -186,7 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       firebaseRefresh.current   = fb.refreshToken;
       firebaseExpiresAt.current = Date.now() + 55 * 60 * 1000;
       console.log('[Auth] signIn: Firebase token acquired successfully — setting user');
-      registerBridge(getFirebaseToken, getAdminCalendarToken);
+      registerBridge(getFirebaseToken, getAdminCalendarToken, clearFirebaseTokenCache);
       setUser({
         id: fb.uid, name: response.data.user.name,
         email: response.data.user.email, photo: response.data.user.photo,
@@ -215,6 +218,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   // ─── Token getters ────────────────────────────────────────────────────────
+
+  /** Forces the next getFirebaseToken() call to bypass the cache and refresh. */
+  function clearFirebaseTokenCache(): void {
+    firebaseExpiresAt.current = 0;
+  }
 
   /** Google access token — used for Calendar read operations. */
   async function getAccessToken(): Promise<string | null> {

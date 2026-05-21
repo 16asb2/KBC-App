@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 // expo-image-picker requires a native dev build; gracefully degrade in Expo Go
 let ImagePicker: typeof import('expo-image-picker') | null = null;
 try { ImagePicker = require('expo-image-picker'); } catch {}
@@ -1253,13 +1254,21 @@ function BoulderFormModal({
                   const result = await ImagePicker!.launchImageLibraryAsync({
                     mediaTypes: ['images'],
                     allowsEditing: false,
-                    quality: 0.4,
-                    base64: true,
+                    quality: 1,
+                    base64: false,
                     exif: false,
                   });
                   if (!result.canceled && result.assets[0]) {
-                    const asset = result.assets[0];
-                    setPhoto(asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri);
+                    try {
+                      const compressed = await manipulateAsync(
+                        result.assets[0].uri,
+                        [{ resize: { width: 1080 } }],
+                        { compress: 0.7, format: SaveFormat.JPEG, base64: true },
+                      );
+                      if (compressed.base64) setPhoto(`data:image/jpeg;base64,${compressed.base64}`);
+                    } catch {
+                      Alert.alert('Photo error', 'Could not process the image. Please try a different one.');
+                    }
                   }
                 }}
               >

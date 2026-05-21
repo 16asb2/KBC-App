@@ -1,4 +1,4 @@
-import { getFirebaseToken } from '@/services/authBridge';
+import { fetchWithAuth } from '@/services/authBridge';
 
 const PROJECT_ID = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID!;
 const API_KEY    = process.env.EXPO_PUBLIC_FIREBASE_API_KEY!;
@@ -6,11 +6,6 @@ const BASE       = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/d
 const QUERY_URL  = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents:runQuery?key=${API_KEY}`;
 
 // ─── Firestore REST helpers ───────────────────────────────────────────────────
-
-async function firebaseAuthHeader(): Promise<Record<string, string>> {
-  const token = await getFirebaseToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 function encodeVal(val: any): any {
   if (val === null || val === undefined) return { nullValue: null };
@@ -58,10 +53,9 @@ function decodeDoc(doc: any): Record<string, any> {
 async function fsPatch(path: string, data: Record<string, any>, mask?: string[]) {
   let url = `${BASE}/${path}?key=${API_KEY}`;
   if (mask) url += mask.map(f => `&updateMask.fieldPaths=${encodeURIComponent(f)}`).join('');
-  const authH = await firebaseAuthHeader();
-  const res = await fetch(url, {
+  const res = await fetchWithAuth(url, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...authH },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(encodeDoc(data)),
   });
   if (!res.ok) throw new Error(`Firestore PATCH ${res.status}`);
@@ -69,10 +63,9 @@ async function fsPatch(path: string, data: Record<string, any>, mask?: string[])
 }
 
 async function fsPost(col: string, data: Record<string, any>) {
-  const authH = await firebaseAuthHeader();
-  const res = await fetch(`${BASE}/${col}?key=${API_KEY}`, {
+  const res = await fetchWithAuth(`${BASE}/${col}?key=${API_KEY}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authH },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(encodeDoc(data)),
   });
   if (!res.ok) throw new Error(`Firestore POST ${res.status}`);
@@ -80,10 +73,9 @@ async function fsPost(col: string, data: Record<string, any>) {
 }
 
 async function fsQuery(query: any): Promise<any[]> {
-  const authH = await firebaseAuthHeader();
-  const res = await fetch(QUERY_URL, {
+  const res = await fetchWithAuth(QUERY_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authH },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ structuredQuery: query }),
   });
   if (!res.ok) throw new Error(`Firestore query ${res.status}`);
@@ -92,8 +84,7 @@ async function fsQuery(query: any): Promise<any[]> {
 }
 
 async function fsDelete(path: string) {
-  const authH = await firebaseAuthHeader();
-  const res = await fetch(`${BASE}/${path}?key=${API_KEY}`, { method: 'DELETE', headers: authH });
+  const res = await fetchWithAuth(`${BASE}/${path}?key=${API_KEY}`, { method: 'DELETE' });
   if (!res.ok && res.status !== 404) throw new Error(`Firestore DELETE ${res.status}`);
 }
 
