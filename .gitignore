@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# Firebase CLI cache
+.firebase/
+
 # Expo
 .expo/
 dist/
