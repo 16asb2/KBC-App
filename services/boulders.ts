@@ -12,7 +12,7 @@ export const LOCATIONS = [
 export type Location = typeof LOCATIONS[number];
 
 export const GRADES       = ['White', 'Blue', 'Purple', 'Pink', 'Black'] as const;
-export const GRADE_COLORS = ['#e8e8e8', '#00b4d8', '#9b5de5', '#e8559a', '#1a1a1a'];
+export const GRADE_COLORS = ['#e8e8e8', '#00b4d8', '#9b5de5', '#f5a5c9', '#1a1a1a'];
 export const GRADE_TEXT   = ['#555',    '#fff',     '#fff',    '#fff',   '#fff'  ];
 export type Grade = typeof GRADES[number];
 
@@ -66,6 +66,7 @@ export type Boulder = {
   setterGradeVote: number | null;  // setter's initial grade vote (stored on boulder, not a log)
   setterBadges:    string[];        // setter's initial badge picks (stored on boulder, not a log)
   gradeVotes:      Record<string, number>;  // community grade votes; key=uid, value=grade index 0-4
+  qualityVotes:    Record<string, number>;  // community quality votes; key=uid, value=1-3 stars
 };
 
 export type BoulderComment = {
@@ -238,6 +239,9 @@ function docToBoulder(doc: any): Boulder {
     gradeVotes:      (typeof d.gradeVotes === 'object' && d.gradeVotes !== null && !Array.isArray(d.gradeVotes))
                        ? d.gradeVotes as Record<string, number>
                        : {},
+    qualityVotes:    (typeof d.qualityVotes === 'object' && d.qualityVotes !== null && !Array.isArray(d.qualityVotes))
+                       ? d.qualityVotes as Record<string, number>
+                       : {},
   };
 }
 
@@ -287,6 +291,12 @@ export async function toggleLike(id: string, uid: string, liked: boolean): Promi
     ? current.filter(u => u !== uid)
     : [...current.filter(u => u !== uid), uid];
   await fsPatch(`boulders/${id}`, { likes: updated, updatedAt: new Date().toISOString() }, ['likes', 'updatedAt']);
+}
+
+export async function setQualityVote(id: string, uid: string, stars: number, currentVotes: Record<string, number>): Promise<void> {
+  const updated = { ...currentVotes };
+  if (stars <= 0) delete updated[uid]; else updated[uid] = stars;
+  await fsPatch(`boulders/${id}`, { qualityVotes: updated, updatedAt: new Date().toISOString() }, ['qualityVotes', 'updatedAt']);
 }
 
 export async function getBoulderProjects(uid: string): Promise<string[]> {

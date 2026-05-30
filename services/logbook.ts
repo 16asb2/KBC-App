@@ -79,6 +79,7 @@ export type AccessOption = {
   detail?: string;
   months?: number;   // if membership
   punches?: number;  // if punch pass
+  isVoucher?: boolean;
 };
 
 export const ACCESS_OPTIONS: AccessOption[] = [
@@ -89,6 +90,7 @@ export const ACCESS_OPTIONS: AccessOption[] = [
   { id: 'mem8m',       label: '8-months pass',           price: '$350 ($44/m)',   months: 8  },
   { id: 'mem12m',      label: 'Annual Pass',             price: '$450 ($38/m)',   months: 12 },
   { id: 'student12m',  label: 'Student annual pass',     price: '$350 ($44/m)',   months: 12 },
+  { id: 'voucher',     label: 'Voucher',                 price: '—',              isVoucher: true },
 ];
 
 // ─── Public API ──────────────────────────────────────────────────────────────

@@ -41,7 +41,7 @@ import {
   addComment, createBoulder, createSeason, deleteComment,
   getBouldersForSeason, getComments, getNextBoulderNumber, getSeasons,
   getTapeColorPool, saveTapeColorPool,
-  removeBoulder, updateBoulder, toggleLike,
+  removeBoulder, updateBoulder, toggleLike, setQualityVote,
   getBoulderProjects, setBoulderProject,
 } from '@/services/boulders';
 import { addClimb, ClimbDiscipline, ClimbLocation, GradeSystem, Sector, getKBCLogs, getMyLocations, getMyLogs, gradesForSystem, createLocation, updateLocation, deleteLocation, KBC_GRADE_LABELS, PersonalClimb } from '@/services/climblog';
@@ -776,20 +776,15 @@ function ClimbCard({ boulder, logs, uid, onPress, onLog, isProject, onToggleProj
     if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) {
       gv['__setter'] = boulder.setterGradeVote;
     }
-    // Quality votes and badges still come from personal logs
-    const qv: Record<string, number> = {};
+    // Quality votes come from boulder.qualityVotes (1x per user, voted on Overview screen)
+    const qv: Record<string, number> = { ...(boulder.qualityVotes ?? {}) };
     const bc: Record<string, number> = {};
-    const seen = new Set<string>();
     for (const log of logs) {
-      if (!seen.has(log.uid)) {
-        seen.add(log.uid);
-        if (log.quality > 0) qv[log.uid] = log.quality;
-      }
       for (const b of log.badges ?? []) bc[b] = (bc[b] ?? 0) + 1;
     }
     for (const b of boulder.setterBadges ?? []) bc[b] = (bc[b] ?? 0) + 1;
     return { gradeVotesMap: gv, qualityVotesMap: qv, badgeCounts: bc };
-  }, [logs, boulder.gradeVotes, boulder.setterGradeVote, boulder.setterBadges]);
+  }, [logs, boulder.gradeVotes, boulder.setterGradeVote, boulder.setterBadges, boulder.qualityVotes]);
 
   const hasStats = Object.keys(qualityVotesMap).length > 0 || likeCount > 0 || agg.sendCount > 0 || agg.attemptCount > 0;
 
@@ -1057,6 +1052,7 @@ function BoulderFormModal({
           setterGradeVote: gradeIdx,
           setterBadges: selectedBadges,
           gradeVotes: {},
+          qualityVotes: {},
         });
         onSaved();
       }
@@ -1386,7 +1382,7 @@ function ZoomableFullScreenPhoto({ uri, onClose }: { uri: string; onClose: () =>
 
 function BoulderOverviewModal({
   visible, boulder, logs, uid, userName, canEdit, onEdit, onClose, canRemove,
-  likeCount, isLiked, onToggleLike, isProject, onToggleProject, onLog, onVoteGrade,
+  likeCount, isLiked, onToggleLike, isProject, onToggleProject, onLog, onVoteGrade, onVoteQuality,
 }: {
   visible:         boolean;
   boulder:         Boulder;
@@ -1404,12 +1400,15 @@ function BoulderOverviewModal({
   onToggleProject: () => void;
   onLog:           () => void;
   onVoteGrade:     (grade: number) => void;
+  onVoteQuality?:  (stars: number) => void;
 }) {
   const insets = useSafeAreaInsets();
 
   // ── Local grade votes state (boulder.gradeVotes + setter; interactive in overview) ──
-  const [localGradeVotes, setLocalGradeVotes] = useState<Record<string, number>>({});
-  const voteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [localGradeVotes,   setLocalGradeVotes]   = useState<Record<string, number>>({});
+  const [localQualityVotes, setLocalQualityVotes] = useState<Record<string, number>>({});
+  const voteTimerRef        = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const qualityTimerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -1418,6 +1417,7 @@ function BoulderOverviewModal({
       merged['__setter'] = boulder.setterGradeVote;
     }
     setLocalGradeVotes(merged);
+    setLocalQualityVotes(boulder.qualityVotes ?? {});
   }, [visible, boulder.id]);
 
   function handleGradeVote(g: number) {
@@ -1430,20 +1430,24 @@ function BoulderOverviewModal({
     voteTimerRef.current = setTimeout(() => onVoteGrade(g), 500);
   }
 
-  // ── Quality votes and badges still derived from logs ──────────────────────
-  const { qualityVotesMap, badgeCounts } = useMemo(() => {
-    const qv: Record<string, number> = {};
+  function handleQualityVote(stars: number) {
+    setLocalQualityVotes(prev => {
+      const next = { ...prev };
+      if (stars <= 0) delete next[uid]; else next[uid] = stars;
+      return next;
+    });
+    if (qualityTimerRef.current) clearTimeout(qualityTimerRef.current);
+    qualityTimerRef.current = setTimeout(() => onVoteQuality?.(stars), 500);
+  }
+
+  // ── Badges derived from logs; quality votes come from boulder.qualityVotes ─
+  const { badgeCounts } = useMemo(() => {
     const bc: Record<string, number> = {};
-    const seen = new Set<string>();
     for (const log of logs) {
-      if (!seen.has(log.uid)) {
-        seen.add(log.uid);
-        if (log.quality > 0) qv[log.uid] = log.quality;
-      }
       for (const b of log.badges ?? []) bc[b] = (bc[b] ?? 0) + 1;
     }
     for (const b of boulder.setterBadges ?? []) bc[b] = (bc[b] ?? 0) + 1;
-    return { qualityVotesMap: qv, badgeCounts: bc };
+    return { badgeCounts: bc };
   }, [logs, boulder.setterBadges]);
 
   // All badges with at least 1 vote, sorted by count desc
@@ -1517,8 +1521,8 @@ function BoulderOverviewModal({
     ]);
   }
 
-  const qualityVoteCount = Object.keys(qualityVotesMap).length;
-  const avgQ = avgQuality(qualityVotesMap);
+  const qualityVoteCount = Object.keys(localQualityVotes).length;
+  const avgQ = avgQuality(localQualityVotes);
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -1567,7 +1571,7 @@ function BoulderOverviewModal({
             <View style={styles.overviewMeta}>
               {qualityVoteCount > 0 && (
                 <>
-                  <StarRating votes={qualityVotesMap} compact />
+                  <StarRating votes={localQualityVotes} compact />
                   <Text style={styles.overviewMetaText}>
                     {avgQ?.toFixed(1)}★  ·  {qualityVoteCount} vote{qualityVoteCount !== 1 ? 's' : ''}
                   </Text>
@@ -1637,21 +1641,9 @@ function BoulderOverviewModal({
               </View>
             )}
 
-            {/* ── Personal Comments (current user's log notes) ─────────── */}
-            {myPersonalComments.length > 0 && (
-              <>
-                <Text style={styles.overviewSectionLabel}>Personal Comments</Text>
-                {myPersonalComments.map(l => (
-                  <View key={l.id} style={styles.personalCommentCard}>
-                    <Text style={styles.personalCommentTime}>
-                      {new Date(l.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
-                      {'  ·  '}{l.type === 'ascent' ? '✓ Sent' : '△ Tried'}
-                    </Text>
-                    <Text style={styles.personalCommentText}>{l.comment}</Text>
-                  </View>
-                ))}
-              </>
-            )}
+            {/* ── Quality Rating ───────────────────────────────────────── */}
+            <Text style={styles.overviewSectionLabel}>Quality</Text>
+            <StarRating votes={localQualityVotes} userUid={uid} onVote={handleQualityVote} />
 
             {/* ── Community badges ─────────────────────────────────────── */}
             {sortedBadges.length > 0 && (
@@ -1757,6 +1749,22 @@ function BoulderOverviewModal({
                       );
                     })}
                 </View>
+              </>
+            )}
+
+            {/* ── Personal Comments (current user's log notes) ─────────── */}
+            {myPersonalComments.length > 0 && (
+              <>
+                <Text style={styles.overviewSectionLabel}>Personal Comments</Text>
+                {myPersonalComments.map(l => (
+                  <View key={l.id} style={styles.personalCommentCard}>
+                    <Text style={styles.personalCommentTime}>
+                      {new Date(l.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                      {'  ·  '}{l.type === 'ascent' ? '✓ Sent' : '△ Tried'}
+                    </Text>
+                    <Text style={styles.personalCommentText}>{l.comment}</Text>
+                  </View>
+                ))}
               </>
             )}
 
@@ -2086,7 +2094,6 @@ function BoulderLogModal({
   const [logDate,          setLogDate]          = useState(new Date());
   const [type,             setType]             = useState<'ascent' | 'attempt'>('ascent');
   const [personalGradeIdx, setPersonalGradeIdx] = useState<number>(-1);
-  const [qualityVotes,     setQualityVotes]     = useState<Record<string, number>>({});
   const [selectedBadges,   setSelectedBadges]   = useState<string[]>([]);
   const [badgesOpen,       setBadgesOpen]       = useState(false);
   const [effort,           setEffort]           = useState<number | null>(null);
@@ -2109,7 +2116,6 @@ function BoulderLogModal({
       }
       const avg = avgGrade(allVotes);
       setPersonalGradeIdx(avg !== null ? Math.round(Math.max(0, Math.min(4, avg))) : -1);
-      setQualityVotes({});
       setSelectedBadges([]);
       setBadgesOpen(false);
       setEffort(null);
@@ -2123,8 +2129,7 @@ function BoulderLogModal({
   async function handleSave() {
     setSaving(true);
     try {
-      const quality = userUid in qualityVotes ? qualityVotes[userUid] : 0;
-      const now     = new Date().toISOString();
+      const now = new Date().toISOString();
       const ts      = logDate.toISOString();
 
       // Established grade = community avg from boulder.gradeVotes + setter
@@ -2152,7 +2157,7 @@ function BoulderLogModal({
         personalGrade,
         gradeVote: personalGradeIdx >= 0 ? personalGradeIdx : null,
         problemInternalId: boulder.internalId,
-        quality,
+        quality: 0,
         effort: effort ?? '',
         type,
         project,
@@ -2275,18 +2280,6 @@ function BoulderLogModal({
                   </TouchableOpacity>
                 ))}
               </View>
-
-              {/* Quality */}
-              <Text style={styles.fieldLabel}>Quality</Text>
-              <StarRating
-                votes={qualityVotes}
-                userUid={userUid}
-                onVote={stars => setQualityVotes(prev => {
-                  const next = { ...prev };
-                  if (stars === 0) delete next[userUid]; else next[userUid] = stars;
-                  return next;
-                })}
-              />
 
               {/* Effort */}
               <Text style={styles.fieldLabel}>Effort</Text>
@@ -3229,6 +3222,20 @@ export default function BouldersScreen() {
     }
   }
 
+  async function handleVoteQuality(boulder: Boulder, stars: number) {
+    const oldVotes = boulder.qualityVotes ?? {};
+    const updated: Record<string, number> = { ...oldVotes };
+    if (stars <= 0) delete updated[userUid]; else updated[userUid] = stars;
+    setBoulders(prev => prev.map(b => b.id === boulder.id ? { ...b, qualityVotes: updated } : b));
+    setViewBoulder(prev => prev?.id === boulder.id ? { ...prev, qualityVotes: updated } : prev);
+    try {
+      await setQualityVote(boulder.id, userUid, stars, oldVotes);
+    } catch {
+      setBoulders(prev => prev.map(b => b.id === boulder.id ? { ...b, qualityVotes: oldVotes } : b));
+      setViewBoulder(prev => prev?.id === boulder.id ? { ...prev, qualityVotes: oldVotes } : prev);
+    }
+  }
+
   async function loadData(forceSeason?: BoulderSeason) {
     setLoading(true);
     try {
@@ -3621,6 +3628,7 @@ export default function BouldersScreen() {
           onToggleProject={() => handleToggleProject(viewBoulder)}
           onLog={() => { setViewBoulder(null); setLogBoulder(viewBoulder); }}
           onVoteGrade={grade => handleVoteGrade(viewBoulder, grade)}
+          onVoteQuality={stars => handleVoteQuality(viewBoulder, stars)}
           onEdit={() => {
             const b = viewBoulder;
             setViewBoulder(null);

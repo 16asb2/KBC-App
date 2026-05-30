@@ -66,32 +66,36 @@ export function EffortBar({ value, onChange, interactive = true }: Props) {
         <Text style={styles.labelRight}>Hard</Text>
       </View>
 
-      {/* Track */}
-      <View
-        ref={trackRef}
-        style={styles.track}
-        onLayout={e => { trackWidth.current = e.nativeEvent.layout.width; }}
-        {...(interactive ? panResponder.panHandlers : {})}
-      >
-        {/* Gradient segments */}
-        {Array.from({ length: 100 }).map((_, i) => {
-          const r = Math.round(50 + (i / 99) * 180);
-          const g = Math.round(200 - (i / 99) * 150);
-          return (
-            <View
-              key={i}
-              style={{ flex: 1, backgroundColor: `rgb(${r},${g},80)` }}
-            />
-          );
-        })}
+      {/* Track + marker wrapper — marker sits outside the track so it can extend 2 px beyond edges */}
+      <View style={{ position: 'relative' }}>
+        <View
+          ref={trackRef}
+          style={styles.track}
+          onLayout={e => { trackWidth.current = e.nativeEvent.layout.width; }}
+          {...(interactive ? panResponder.panHandlers : {})}
+        >
+          {/* Gradient segments */}
+          {Array.from({ length: 100 }).map((_, i) => {
+            const r = Math.round(50 + (i / 99) * 180);
+            const g = Math.round(200 - (i / 99) * 150);
+            return (
+              <View
+                key={i}
+                style={{ flex: 1, backgroundColor: `rgb(${r},${g},80)` }}
+              />
+            );
+          })}
+        </View>
 
-        {/* Vertical marker */}
+        {/* Marker — sibling of track so it extends 2 px above/below, matching grade bar style */}
         {hasValue && (
           <View
-            style={[styles.markerWrap, { left: `${pct}%` as any }]}
+            style={[StyleSheet.absoluteFillObject, { top: -2, bottom: -2, flexDirection: 'row' }]}
             pointerEvents="none"
           >
+            <View style={{ flex: Math.max(pct, 0) }} />
             <View style={styles.marker} />
+            <View style={{ flex: Math.max(100 - pct, 0) }} />
           </View>
         )}
       </View>
@@ -119,16 +123,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
   },
-  markerWrap: {
-    position: 'absolute',
-    top: -4,
-    marginLeft: -(MARKER_W / 2),
-    width: MARKER_W,
-    height: TRACK_HEIGHT + 8,
-  },
   marker: {
     width: MARKER_W,
-    height: TRACK_HEIGHT + 8,
     borderRadius: MARKER_W / 2,
     backgroundColor: '#FFE600',
     shadowColor: '#000',

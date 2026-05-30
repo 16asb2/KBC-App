@@ -4,6 +4,28 @@ All notable changes to KBC Scheduler are documented here.
 
 ---
 
+## [0.2.3] — 2026-05-29
+
+### Added
+- **Admin web app** (`admin-web/`): standalone admin tool hosted at `kbc-admin.web.app`. Accessible only to members with `isAdmin` or `isSupervisor` set on their Firestore profile. Sections:
+  - **Logbook** — date-range table of sign-in entries; export as CSV, PDF, or save PDF to Google Drive.
+  - **Members** — full member directory with status filter; export as PDF or save to Drive.
+  - **Waivers** — lists all members with a signed liability waiver; generate individual PDFs or save all to Drive at once.
+  - **Receipts** — filters logbook for purchase events (entries with "Purchased:" or "Voucher code:" in notes); generate a PDF receipt per entry.
+  - **Backup** — full JSON snapshot of Firestore (members, logs, boulders); download locally or save to Drive.
+  - **Google Drive integration** — "☁ Drive" button in the header triggers a one-time OAuth consent (GIS token client, `drive.file` scope). On first use, a `KBC Admin/` folder structure is created automatically in the signed-in user's Drive (`Logbook Exports`, `Member Reports`, `Waivers`, `Receipts`, `Backups`). Folder IDs are cached in `localStorage` to avoid redundant API calls.
+- **Access Passes — Voucher option**: new "Voucher" entry in the access pass list. Selecting it shows a text input for the voucher number (confirm button disabled until filled). Logs `accessType: Voucher` and `notes: Voucher code: <code>` in the sign-in book; only updates `lastSignInAt` on the member profile (no membership fields changed).
+- **Boulder quality votes — standalone field**: `boulder.qualityVotes: Record<uid, number>` replaces per-log quality storage. One vote per user, voted from the Boulder Overview modal (same pattern as grade votes and likes). The `setQualityVote()` service function handles optimistic updates and Firestore persistence.
+
+### Changed
+- **KBC grade bar — pink color**: lightened from `#e8559a` to `#f5a5c9` for better visual balance across the 5-color grade spectrum.
+- **KBC grade bar — community average marker**: changed from orange (`#FF6600`) to solid yellow (`#FFE600`), matching the effort bar marker color.
+- **Effort bar marker**: restructured from inside the track (clipped by `overflow: hidden`) to a sibling View using the same flex-based absolute positioning as the grade bar marker. Marker now extends 2 px above and below the track on both ends.
+- **Boulder Overview — Personal Comments position**: moved to the bottom of the overview modal, after the Personal Climb Log section (previously appeared before community badges).
+- **Boulder Overview — Quality votes source**: star rating in the overview now reads from `boulder.qualityVotes` directly with local optimistic state; log-entry quality data is no longer used for community display. Quality input removed from the log entry modal entirely.
+
+---
+
 ## [Unreleased] — 2026-05-20
 
 ### Added

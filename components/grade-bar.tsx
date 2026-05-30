@@ -89,8 +89,8 @@ export function GradeBar({ votes, userUid, onVote, interactive = false, compact 
           ))}
         </View>
 
-        {/* Bright orange — community average */}
-        {avg !== null && <Marker value={avg} color="#FF6600" />}
+        {/* Solid yellow — community average */}
+        {avg !== null && <Marker value={avg} color="#FFE600" />}
 
         {/* Teal green — this user's vote */}
         {userVote !== null && <Marker value={userVote} color="#00e676" />}

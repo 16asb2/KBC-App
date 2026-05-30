@@ -121,22 +121,26 @@ function AccessModal({
   onClose,
   isPrivileged,
 }: {
-  onComplete: (option: AccessOption) => void;
+  onComplete: (option: AccessOption, voucherCode?: string) => void;
   onOtherPunch: () => void;
   onClose: () => void;
   isPrivileged: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  const [step, setStep]         = useState<ModalStep>('choose');
-  const [selected, setSelected] = useState<AccessOption | null>(null);
+  const [step,          setStep]          = useState<ModalStep>('choose');
+  const [selected,      setSelected]      = useState<AccessOption | null>(null);
+  const [voucherNumber, setVoucherNumber] = useState('');
 
   function handleChoose(opt: AccessOption) {
     setSelected(opt);
+    setVoucherNumber('');
     setStep('confirm');
   }
 
   function handleDone() {
-    if (selected) onComplete(selected);
+    if (!selected) return;
+    if (selected.isVoucher && !voucherNumber.trim()) return;
+    onComplete(selected, selected.isVoucher ? voucherNumber.trim() : undefined);
   }
 
   return (
@@ -181,7 +185,7 @@ function AccessModal({
         {step === 'confirm' && selected && (
           <>
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Confirm Payment</Text>
+              <Text style={styles.sheetTitle}>{selected.isVoucher ? 'Redeem Voucher' : 'Confirm Payment'}</Text>
               <TouchableOpacity onPress={() => setStep('choose')}>
                 <Text style={styles.sheetCancel}>Back</Text>
               </TouchableOpacity>
@@ -189,21 +193,45 @@ function AccessModal({
             <View style={styles.sheetBody}>
               <View style={styles.confirmCard}>
                 <Text style={styles.confirmOption}>{selected.label}</Text>
-                <Text style={styles.confirmPrice}>{selected.price}</Text>
+                {!selected.isVoucher && <Text style={styles.confirmPrice}>{selected.price}</Text>}
                 {selected.detail && <Text style={styles.confirmDetail} textBreakStrategy="simple">{selected.detail}</Text>}
               </View>
-              <Text style={styles.paymentInstructions}>
-                Please pay the supervisor on duty in cash, or e-transfer the amount to{' '}
-                <Text
-                  style={styles.paymentEmail}
-                  onPress={() => Share.share({ message: 'climb.kbc@gmail.com' })}
-                >
-                  climb.kbc@gmail.com
-                </Text>
-              </Text>
-              <TouchableOpacity style={styles.confirmBtn} onPress={handleDone}>
-                <Text style={styles.confirmBtnText}>I&apos;ve paid and confirmed with the supervisor</Text>
-              </TouchableOpacity>
+              {selected.isVoucher ? (
+                <>
+                  <Text style={styles.paymentInstructions}>Enter your voucher number:</Text>
+                  <TextInput
+                    style={styles.voucherInput}
+                    value={voucherNumber}
+                    onChangeText={setVoucherNumber}
+                    placeholder="Voucher number…"
+                    placeholderTextColor="#aaa"
+                    autoFocus
+                    autoCapitalize="characters"
+                  />
+                  <TouchableOpacity
+                    style={[styles.confirmBtn, !voucherNumber.trim() && { opacity: 0.4 }]}
+                    onPress={handleDone}
+                    disabled={!voucherNumber.trim()}
+                  >
+                    <Text style={styles.confirmBtnText}>Redeem Voucher</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.paymentInstructions}>
+                    Please pay the supervisor on duty in cash, or e-transfer the amount to{' '}
+                    <Text
+                      style={styles.paymentEmail}
+                      onPress={() => Share.share({ message: 'climb.kbc@gmail.com' })}
+                    >
+                      climb.kbc@gmail.com
+                    </Text>
+                  </Text>
+                  <TouchableOpacity style={styles.confirmBtn} onPress={handleDone}>
+                    <Text style={styles.confirmBtnText}>I&apos;ve paid and confirmed with the supervisor</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           </>
         )}
@@ -755,7 +783,7 @@ export default function HomeScreen() {
     processSignIn(member, false);
   }
 
-  async function handleAccessSelected(option: AccessOption) {
+  async function handleAccessSelected(option: AccessOption, voucherCode?: string) {
     if (!user) return;
     // accessTarget is set when supervisor buys access for someone else
     const target  = accessTarget ?? profile;
@@ -799,6 +827,9 @@ export default function HomeScreen() {
         });
         accessType = 'Active Member';
         notes += ` — expires ${expiry.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`;
+      } else if (option.isVoucher) {
+        accessType = 'Voucher';
+        notes = voucherCode ? `Voucher code: ${voucherCode}` : 'Voucher';
       }
 
       profileUpdates.lastSignInAt = now.toISOString();
@@ -1097,6 +1128,12 @@ const styles = StyleSheet.create({
     backgroundColor: KBC.green, borderRadius: 12, padding: 16, alignItems: 'center',
   },
   confirmBtnText: { color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  voucherInput: {
+    borderWidth: 1.5, borderColor: KBC.cyan, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10,
+    fontSize: 16, color: KBC.black, marginBottom: 16,
+    letterSpacing: 1.5,
+  },
 
   // NewMemberModal
   sheetTall: { maxHeight: '92%' },
