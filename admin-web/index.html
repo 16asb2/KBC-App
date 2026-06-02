@@ -337,7 +337,7 @@ auth.onAuthStateChanged(async (user) => {
     profile = doc.exists ? doc.data() : null;
   } catch (e) { console.error('Profile fetch failed', e); }
 
-  const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
+  const isSuperAdmin = SUPER_ADMIN_EMAILS.includes(user.email);
   if (!isSuperAdmin && (!profile || (!profile.isAdmin && !profile.isSupervisor))) {
     show('denied-screen');
     return;
