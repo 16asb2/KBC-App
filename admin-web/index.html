@@ -290,7 +290,8 @@ const FIREBASE_CONFIG = {
   messagingSenderId: '451887190936',
   appId:             '1:451887190936:web:f03973ef0ac016cfd551ed',
 };
-const WEB_CLIENT_ID = '451887190936-inusdgb37bg3n59n5unp9dobtf4lmqt7.apps.googleusercontent.com';
+const WEB_CLIENT_ID    = '451887190936-inusdgb37bg3n59n5unp9dobtf4lmqt7.apps.googleusercontent.com';
+const SUPER_ADMIN_EMAIL = 'kingstonboulderingcooperative@gmail.com';
 const DRIVE_ROOT    = 'KBC Admin';
 const SUBFOLDERS    = { logbook: 'Logbook Exports', members: 'Member Reports', waivers: 'Waivers', receipts: 'Receipts', backup: 'Backups' };
 
@@ -336,7 +337,8 @@ auth.onAuthStateChanged(async (user) => {
     profile = doc.exists ? doc.data() : null;
   } catch (e) { console.error('Profile fetch failed', e); }
 
-  if (!profile || (!profile.isAdmin && !profile.isSupervisor)) {
+  const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
+  if (!isSuperAdmin && (!profile || (!profile.isAdmin && !profile.isSupervisor))) {
     show('denied-screen');
     return;
   }

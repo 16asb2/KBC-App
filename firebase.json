@@ -3,7 +3,7 @@
     "rules": "firestore.rules"
   },
   "hosting": {
-    "site": "kbc-admin",
+    "site": "kbc-app-admin",
     "public": "admin-web",
     "ignore": [
       "firebase.json",
