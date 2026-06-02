@@ -4,6 +4,53 @@ All notable changes to KBC Scheduler are documented here.
 
 ---
 
+## [Infrastructure] — 2026-06-02
+
+### Migration: personal account → KBC-owned accounts
+
+Migrated all project infrastructure from personal account (`16asb2@gmail.com`) to
+the KBC gym account (`kingstonboulderingcooperative@gmail.com`).
+
+#### Firebase
+- New Firebase project: `kbc-app-3307b` (project number `451887190936`)
+- Registered Android app with package `com.kbc.app`
+- Registered iOS app with bundle ID `com.kbc.app`
+- Registered Web app (`kbc-app-admin`) for admin-web hosting
+- Firestore security rules redeployed; `isSuperAdmin()` updated to KBC email
+- `.firebaserc` updated to point to `kbc-app-3307b`
+
+#### Google Cloud Console (`kbc-app-3307b`)
+- Web OAuth 2.0 client: `451887190936-inusdgb37bg3n59n5unp9dobtf4lmqt7`
+- iOS OAuth 2.0 client: `451887190936-1lk1q56has03h02fgjm9lliso5384blc`
+- Desktop OAuth 2.0 client created for admin token script (one-time use)
+- Admin refresh token re-obtained for `kingstonboulderingcooperative@gmail.com` via `scripts/get-admin-token.js`
+
+#### Expo / EAS
+- New Expo account: `kbc-climb`
+- New EAS project: `kbc-climb/kbc` (ID `695c47fa-5eb2-4e32-a1c8-e789ddd3defc`)
+- All `EXPO_PUBLIC_*` environment variables added to Expo dashboard
+
+#### app.json
+- Package name: `com.kbcscheduler.app` → `com.kbc.app`
+- Slug: `kbc-scheduler` → `kbc`
+- Scheme: `volunteerscheduler` → `kbc`
+- iOS bundle identifier: `com.kbc.app` (added)
+- iOS URL scheme: updated to new OAuth client
+- EAS project ID: updated to new project
+
+#### Cloudflare Worker (`kbc-admin-token`)
+- Worker re-deployed under KBC Cloudflare account
+- Worker URL: `https://kbc-admin-token.kingstonboulderingcooperative.workers.dev`
+- Secrets set: `GOOGLE_ADMIN_CLIENT_ID`, `GOOGLE_ADMIN_CLIENT_SECRET`, `GOOGLE_ADMIN_REFRESH_TOKEN`
+- `wrangler.toml`: `FIREBASE_PROJECT_ID` updated to `kbc-app-3307b`
+
+#### Admin web (`admin-web/`)
+- Firebase config updated to new project
+- `WEB_CLIENT_ID` updated to new OAuth client
+- `KBC_ADMIN_EMAIL` updated to `kingstonboulderingcooperative@gmail.com`
+
+---
+
 ## [0.2.3] — 2026-05-29
 
 ### Added
