@@ -5,9 +5,7 @@
 import { WaiverSection } from '@/constants/waivers';
 import { WaiverRecord } from '@/services/firestore';
 
-// TODO (EAS build): change to 'kbc.climb@gmail.com' and upload directly to KBC's shared Google Drive
-// instead of the user's personal Drive — use a service account or Drive shared folder approach.
-const KBC_ADMIN_EMAIL = '16asb2@gmail.com';
+const KBC_ADMIN_EMAIL = 'kingstonboulderingcooperative@gmail.com';
 
 // ─── HTML builder ────────────────────────────────────────────────────────────
 

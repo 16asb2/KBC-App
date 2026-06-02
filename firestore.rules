@@ -21,7 +21,7 @@ service cloud.firestore {
     function isSuperAdmin() {
       // Keep in sync with EXPO_PUBLIC_SUPER_ADMIN_EMAIL in your .env / EAS vars
       return isAuthenticated() &&
-        request.auth.token.email == '16asb2@gmail.com';
+        request.auth.token.email == 'kingstonboulderingcooperative@gmail.com';
     }
 
     function memberDoc() {

@@ -1,21 +1,22 @@
 {
   "expo": {
     "name": "KBC Scheduler",
-    "slug": "kbc-scheduler",
+    "slug": "kbc",
     "version": "0.2.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "volunteerscheduler",
+    "scheme": "kbc",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.kbc.app",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "KBC needs access to your photo library to add photos to boulder problems."
       }
     },
     "android": {
-      "package": "com.kbcscheduler.app",
+      "package": "com.kbc.app",
       "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -25,7 +26,10 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "permissions": ["android.permission.READ_MEDIA_IMAGES", "android.permission.READ_EXTERNAL_STORAGE"]
+      "permissions": [
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "output": "static",
@@ -49,7 +53,7 @@
         "@react-native-google-signin/google-signin",
         {
           "googleServicesFile": "./google-services.json",
-          "iosUrlScheme": "com.googleusercontent.apps.743058786289-0r8a9rvp6a0ajvthogetlu0d0djv1ce1"
+          "iosUrlScheme": "com.googleusercontent.apps.451887190936-1lk1q56has03h02fgjm9lliso5384blc"
         }
       ]
     ],
@@ -60,8 +64,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "2a2e15b6-8d54-41da-8a65-905904af9084"
+        "projectId": "695c47fa-5eb2-4e32-a1c8-e789ddd3defc"
       }
-    }
+    },
+    "owner": "kbc-climb"
   }
 }

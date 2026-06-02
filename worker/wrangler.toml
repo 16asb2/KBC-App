@@ -4,7 +4,7 @@ compatibility_date = "2024-09-23"
 
 # Non-secret config — safe to commit
 [vars]
-FIREBASE_PROJECT_ID = "kbc-app-dev"
+FIREBASE_PROJECT_ID = "kbc-app-3307b"
 
 # Secrets — set via CLI, never committed:
 #   wrangler secret put FIREBASE_API_KEY
