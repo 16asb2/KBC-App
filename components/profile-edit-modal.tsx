@@ -200,7 +200,7 @@ export function ProfileEditModal({ profile, onSave, onClose, canEditLegalName = 
 
             {/* ── Display Name ── */}
             <Text style={styles.sectionHeader}>Display Name</Text>
-            <LockedField label="Google Account Name" value={profile.name} />
+            <LockedField label="Legal Name" value={profile.name} />
             <FieldLabel text="Preferred Name (shown in app)" />
             <TextInput
               style={styles.input}

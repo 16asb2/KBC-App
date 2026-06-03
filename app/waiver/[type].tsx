@@ -34,11 +34,13 @@ function formatSignedDate(iso: string) {
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 export default function WaiverScreen() {
-  const { type, targetUid, targetName } = useLocalSearchParams<{
+  const { type, targetUid, targetName, fromOnboarding } = useLocalSearchParams<{
     type: string;
     targetUid?: string;
     targetName?: string;
+    fromOnboarding?: string;
   }>();
+  const isOnboarding = fromOnboarding === 'true';
   const config = WAIVER_META[type as WaiverType];
 
   const { user, getAccessToken } = useAuth();
@@ -124,7 +126,11 @@ export default function WaiverScreen() {
 
       // Only reload own profile
       if (!isForOther) await reloadProfile();
-      router.back();
+      if (isOnboarding) {
+        router.replace('/(tabs)/home');
+      } else {
+        router.back();
+      }
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -150,14 +156,16 @@ export default function WaiverScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={88}
     >
-      {/* Override the back arrow with a proper Cancel button for other-climber flow */}
+      {/* In onboarding mode the waiver is mandatory — suppress back navigation */}
       <Stack.Screen
         options={{
-          headerLeft: () => (
-            <TouchableOpacity onPress={handleCancel} style={{ paddingHorizontal: 4 }}>
-              <Text style={{ color: KBC.pink, fontSize: 16, fontWeight: '600' }}>Cancel</Text>
-            </TouchableOpacity>
-          ),
+          headerLeft: isOnboarding
+            ? () => null
+            : () => (
+                <TouchableOpacity onPress={handleCancel} style={{ paddingHorizontal: 4 }}>
+                  <Text style={{ color: KBC.pink, fontSize: 16, fontWeight: '600' }}>Cancel</Text>
+                </TouchableOpacity>
+              ),
         }}
       />
       <ScrollView

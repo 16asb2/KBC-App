@@ -144,21 +144,26 @@ async function findProfileByEmail(email: string): Promise<UserProfile | null> {
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
-export async function getOrCreateProfile(
+/**
+ * Looks up an existing member profile by Firebase UID, or links an email-matched
+ * manually-created profile to the Firebase UID on first Google sign-in.
+ * Returns null for brand-new users who have never completed setup.
+ */
+export async function findOrLinkProfile(
   uid: string,
   name: string,
   email: string,
   photo: string | null,
-): Promise<UserProfile> {
+): Promise<UserProfile | null> {
   const doc = await fsGet(`users/${uid}`);
   if (doc) return { uid, ...decodeDoc(doc) } as UserProfile;
 
-  // Check for an existing profile by email (e.g., manually created before first Google sign-in)
+  // Check for an existing profile by email (manually created before first Google sign-in)
   let existing: UserProfile | null = null;
   try {
     existing = await findProfileByEmail(email);
   } catch (e) {
-    console.warn('[Profile] Email lookup failed, creating fresh profile:', e);
+    console.warn('[Profile] Email lookup failed:', e);
   }
 
   if (existing) {
@@ -169,18 +174,40 @@ export async function getOrCreateProfile(
     return { uid, ...linked };
   }
 
-  // Brand-new user — create as inactive member pending admin review
+  // Brand-new user — profile is created when they complete the setup form
+  return null;
+}
+
+/**
+ * Creates a full member profile during self-registration (new member setup screen).
+ * Called once after the user completes the onboarding form.
+ */
+export async function createSelfRegisteredProfile(
+  uid: string,
+  name: string,
+  email: string,
+  photo: string | null,
+  legalName: string,
+  emergencyContact: EmergencyContact,
+  preferredName?: string,
+  phone?: string,
+): Promise<UserProfile> {
+  const now = new Date().toISOString();
   const fresh: Omit<UserProfile, 'uid'> = {
     name,
+    legalName,
     email,
     photo,
     membershipStatus: 'inactive',
     isAdmin: false,
     isSupervisor: false,
     punchPassRemaining: 0,
-    memberSince: new Date().toISOString(),
+    memberSince: now,
     membershipStart: null,
     membershipExpiry: null,
+    emergencyContact: JSON.stringify(emergencyContact),
+    ...(preferredName ? { preferredName } : {}),
+    ...(phone ? { phone } : {}),
   };
   await fsPatch(`users/${uid}`, fresh);
   return { uid, ...fresh };

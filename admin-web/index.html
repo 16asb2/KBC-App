@@ -7,6 +7,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
   <script src="https://accounts.google.com/gsi/client" async></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
@@ -98,6 +99,33 @@
     .badge-grid{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:2px}
     .badge-toggle{padding:3px 9px;border-radius:12px;border:1.5px solid;background:transparent;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s}
     .badge-toggle.selected{color:#fff!important}
+
+    /* ── Grade bar (boulder form) ───────────────────────────────────────── */
+    .grade-pill{display:flex;height:28px;border-radius:14px;overflow:visible;position:relative}
+    .gs{flex:1;cursor:pointer;transition:filter .12s}
+    .gs:first-child{border-radius:14px 0 0 14px}
+    .gs:last-child{border-radius:0 14px 14px 0}
+    .gs:hover{filter:brightness(1.15)}
+    .grade-pin{position:absolute;top:-4px;bottom:-4px;width:4px;background:#00e676;border-radius:3px;pointer-events:none;display:none;box-shadow:0 0 8px rgba(0,230,118,.8);transition:left .15s ease}
+    .grade-bar-labels{display:flex;margin-top:6px}
+    .grade-bar-labels span{flex:1;text-align:center;font-size:10px;color:#999}
+
+    /* ── Badge icon discs (boulder form) ────────────────────────────────── */
+    .badge-disc{display:inline-flex;flex-direction:column;align-items:center;gap:3px;background:none;border:none;cursor:pointer;padding:4px;border-radius:8px;opacity:.45;transition:opacity .12s,transform .1s;width:54px}
+    .badge-disc:hover{opacity:.8;transform:scale(1.05)}
+    .badge-disc.selected{opacity:1}
+    .badge-disc .disc{width:36px;height:36px;border-radius:50%;border:2px solid var(--bc);background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .12s}
+    .badge-disc.selected .disc{background:var(--bc)}
+    .badge-disc .disc svg{display:block;color:var(--bc)}
+    .badge-disc.selected .disc svg{color:#fff}
+    .badge-disc .bl{font-size:9px;font-weight:700;color:#666;text-align:center;line-height:1.2;max-width:52px;word-break:break-word}
+    .badge-disc.selected .bl{color:var(--bc);font-weight:800}
+
+    /* ── Gym map (boulder form) ──────────────────────────────────────────── */
+    .gym-map-wrap{position:relative;border-radius:8px;overflow:hidden}
+    .gym-map-svg{width:100%;display:block;border-radius:8px}
+    .gym-chip{position:absolute;cursor:pointer;padding:2px 7px;border-radius:5px;font-size:9.5px;font-weight:800;background:rgba(255,255,255,.92);border-width:1.5px;border-style:solid;letter-spacing:.2px;white-space:nowrap;transition:background .12s,color .12s;line-height:1.5}
+    .gym-chip.selected{color:#fff!important}
 
     /* Modals */
     .modal-backdrop{position:fixed;inset:0;z-index:1000;display:none}
@@ -206,9 +234,8 @@
         </div>
 
         <div class="controls">
-          <label>From <input type="date" id="log-from"></label>
-          <label>To   <input type="date" id="log-to"></label>
-          <button class="btn btn-primary" onclick="loadLogbook()">Load</button>
+          <label>From <input type="date" id="log-from" onchange="loadLogbook()"></label>
+          <label>To   <input type="date" id="log-to" onchange="loadLogbook()"></label>
           <button class="btn btn-outline" id="btn-log-csv"   onclick="exportLogCSV()"   disabled>⬇ CSV</button>
           <button class="btn btn-outline" id="btn-log-pdf"   onclick="exportLogPDF()"   disabled>⬇ PDF</button>
           <button class="btn btn-green"   id="btn-log-drive" onclick="saveLogToDrive()" disabled>☁ Drive</button>
@@ -232,14 +259,22 @@
             <div class="form-field"><label>Legal Name *</label><input type="text" id="new-legal" placeholder="Full legal name"></div>
             <div class="form-field"><label>Preferred Name</label><input type="text" id="new-preferred" placeholder="(if different)"></div>
             <div class="form-field"><label>Email *</label><input type="email" id="new-email" placeholder="jane@example.com"></div>
+            <div class="form-field"><label>Phone</label><input type="text" id="new-phone" placeholder="613-555-0123"></div>
             <div class="form-field">
-              <label>Status</label>
+              <label>Access Pass Status</label>
               <select id="new-status">
+                <option value="inactive">Inactive</option>
                 <option value="pending">Pending</option>
                 <option value="active">Active</option>
-                <option value="inactive">Inactive</option>
               </select>
             </div>
+            <div class="form-field"><label>Access Pass Start</label><input type="date" id="new-access-start"></div>
+            <div class="form-field"><label>Access Pass End</label><input type="date" id="new-access-end"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Emergency Contact Name</label><input type="text" id="new-ec-name" placeholder="Name"></div>
+            <div class="form-field"><label>Relationship</label><input type="text" id="new-ec-rel" placeholder="e.g. Spouse, Parent"></div>
+            <div class="form-field"><label>Emergency Phone</label><input type="text" id="new-ec-phone" placeholder="613-555-0123"></div>
           </div>
           <div class="check-row">
             <label><input type="checkbox" id="new-supervisor"> Supervisor</label>
@@ -252,13 +287,6 @@
         </div>
 
         <div class="controls">
-          <select id="member-filter">
-            <option value="all">All members</option>
-            <option value="active">Active</option>
-            <option value="pending">Pending</option>
-            <option value="inactive">Inactive</option>
-          </select>
-          <button class="btn btn-primary" onclick="loadMembers()">Load</button>
           <button class="btn btn-outline" id="btn-mem-pdf"   onclick="exportMembersPDF()"   disabled>⬇ PDF</button>
           <button class="btn btn-green"   id="btn-mem-drive" onclick="saveMembersToDrive()" disabled>☁ Drive</button>
         </div>
@@ -272,10 +300,13 @@
       <div class="card">
         <div class="card-title">
           <span>KBC Climbs</span>
-          <button class="btn btn-primary btn-sm" onclick="openBoulderModal()">＋ Add Boulder</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-outline btn-sm" onclick="openSeasonsModal()">📅 Seasons</button>
+            <button class="btn btn-primary btn-sm" onclick="openBoulderModal()">＋ Add Boulder</button>
+          </div>
         </div>
         <div class="controls">
-          <select id="climbs-grade">
+          <select id="climbs-grade" onchange="loadBoulders()">
             <option value="all">All grades</option>
             <option value="0">White</option>
             <option value="1">Blue</option>
@@ -283,7 +314,6 @@
             <option value="3">Pink</option>
             <option value="4">Black</option>
           </select>
-          <button class="btn btn-primary" onclick="loadBoulders()">Load</button>
           <button class="btn btn-outline" id="btn-climbs-csv"   onclick="exportBouldersCSV()"   disabled>⬇ CSV</button>
           <button class="btn btn-green"   id="btn-climbs-drive" onclick="saveClimbsToDrive()" disabled>☁ Drive</button>
         </div>
@@ -315,12 +345,7 @@
                 <option value="mem8m">8-months pass ($350)</option>
                 <option value="mem12m">Annual Pass ($450)</option>
                 <option value="student12m">Student Annual ($350)</option>
-                <option value="voucher">Voucher</option>
               </select>
-            </div>
-            <div class="form-field" id="pur-voucher-wrap" style="display:none">
-              <label>Voucher Code *</label>
-              <input type="text" id="pur-voucher" placeholder="e.g. KBC-2024">
             </div>
             <div class="form-field wide"><label>Notes (override)</label><input type="text" id="pur-notes" placeholder="auto-filled from purchase type"></div>
           </div>
@@ -331,12 +356,11 @@
         </div>
 
         <div class="controls">
-          <label>From <input type="date" id="rec-from"></label>
-          <label>To   <input type="date" id="rec-to"></label>
-          <button class="btn btn-primary" onclick="loadReceipts()">Load</button>
+          <label>From <input type="date" id="rec-from" onchange="loadReceipts()"></label>
+          <label>To   <input type="date" id="rec-to" onchange="loadReceipts()"></label>
           <button class="btn btn-outline" id="btn-rec-csv" onclick="exportReceiptsCSV()" disabled>⬇ CSV</button>
         </div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">All access pass purchases and voucher redemptions.</p>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">All access pass purchases. Voucher redemptions are recorded in the Sign-In Book.</p>
         <div id="rec-table" class="table-wrap"></div>
       </div>
     </div>
@@ -347,26 +371,75 @@
 <!-- EDIT MEMBER MODAL -->
 <div class="modal-backdrop" id="edit-modal">
   <div class="modal-overlay" onclick="closeEditModal()"></div>
-  <div class="modal-card">
+  <div class="modal-card modal-lg">
     <div class="modal-title" id="edit-modal-name">Edit Member</div>
-    <div class="modal-field"><label>Membership Status</label>
-      <select id="edit-status">
-        <option value="pending">Pending</option>
-        <option value="active">Active</option>
-        <option value="inactive">Inactive</option>
-      </select>
+
+    <div class="modal-section-title" style="margin-bottom:12px;font-size:13px;font-weight:700">Personal Information</div>
+    <div class="modal-row">
+      <div class="modal-field"><label>Legal Name</label><input type="text" id="edit-legal"></div>
+      <div class="modal-field"><label>Preferred Name</label><input type="text" id="edit-preferred"></div>
     </div>
     <div class="modal-row">
-      <div class="modal-field"><label>Membership Expiry</label><input type="date" id="edit-expiry"></div>
-      <div class="modal-field"><label>Punch Passes Remaining</label><input type="number" id="edit-punches" min="0"></div>
+      <div class="modal-field"><label>Email</label><input type="email" id="edit-email" readonly style="background:#f5f5f5;color:var(--muted)"></div>
+      <div class="modal-field"><label>Phone</label><input type="text" id="edit-phone" placeholder="613-555-0123"></div>
     </div>
-    <div class="modal-checks">
-      <label><input type="checkbox" id="edit-sup"> Supervisor</label>
-      <label><input type="checkbox" id="edit-adm"> Admin</label>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Access Pass</div>
+      <div class="modal-field"><label>Access Pass Status</label>
+        <select id="edit-status">
+          <option value="inactive">Inactive</option>
+          <option value="pending">Pending</option>
+          <option value="active">Active</option>
+        </select>
+      </div>
+      <div class="modal-row">
+        <div class="modal-field"><label>Access Pass Start</label><input type="date" id="edit-access-start"></div>
+        <div class="modal-field"><label>Access Pass End Date</label><input type="date" id="edit-expiry"></div>
+        <div class="modal-field"><label>Punch Passes Remaining</label><input type="number" id="edit-punches" min="0"></div>
+      </div>
+      <div class="modal-checks">
+        <label><input type="checkbox" id="edit-sup"> Supervisor</label>
+        <label><input type="checkbox" id="edit-adm"> Admin</label>
+      </div>
     </div>
-    <div class="modal-actions">
+
+    <div class="modal-section">
+      <div class="modal-section-title">Emergency Contact</div>
+      <div class="modal-row">
+        <div class="modal-field"><label>Name</label><input type="text" id="edit-ec-name" placeholder="Contact name"></div>
+        <div class="modal-field"><label>Relationship</label><input type="text" id="edit-ec-rel" placeholder="e.g. Spouse, Parent"></div>
+        <div class="modal-field"><label>Phone</label><input type="text" id="edit-ec-phone" placeholder="613-555-0123"></div>
+      </div>
+    </div>
+
+    <div class="modal-section" id="edit-waiver-section">
+      <div class="modal-section-title">Waiver</div>
+      <div id="edit-waiver-digital" style="display:none;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px">Digital — signed in app</div>
+        <div id="edit-waiver-info" style="font-size:13px;color:#333;line-height:1.9;margin-bottom:8px"></div>
+        <button class="btn btn-outline btn-sm" id="edit-waiver-pdf-btn">⬇ Download PDF</button>
+      </div>
+      <div id="edit-waiver-pdf-uploaded" style="display:none;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px">Physical PDF on file</div>
+        <a id="edit-waiver-pdf-link" href="#" target="_blank" class="btn btn-outline btn-sm">👁 View PDF</a>
+      </div>
+      <div id="edit-waiver-none" style="font-size:13px;color:var(--muted);margin-bottom:10px">No waiver on file.</div>
+      <div style="padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:6px">Upload physical waiver PDF</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="file" id="edit-waiver-file" accept=".pdf" style="font-size:12px;flex:1;min-width:0">
+          <button class="btn btn-primary btn-sm" onclick="uploadEditWaiver()">Upload</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-actions" style="margin-top:18px">
       <button class="btn btn-outline" onclick="closeEditModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveEdit()">Save Changes</button>
+    </div>
+    <div style="border-top:1px solid var(--border);margin-top:18px;padding-top:14px">
+      <button class="btn btn-danger" onclick="deleteMemberFromModal()" style="width:100%">⚠ Permanently Delete Member</button>
     </div>
   </div>
 </div>
@@ -383,34 +456,57 @@
       <div class="modal-field"><label>Tape Color *</label><input type="text" id="b-tape" placeholder="e.g. Blue, Red/White"></div>
     </div>
     <div class="modal-row">
-      <div class="modal-field"><label>Setter *</label><input type="text" id="b-setter" placeholder="Setter name"></div>
-      <div class="modal-field"><label>Setter Email</label><input type="email" id="b-setter-email" placeholder="setter@email.com"></div>
-      <div class="modal-field"><label>Season</label>
-        <select id="b-season"><option value="">— No season —</option></select>
+      <div class="modal-field"><label>Setter <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input type="text" id="b-setter" placeholder="Setter name"></div>
+      <div class="modal-field"><label>Season *</label>
+        <select id="b-season"><option value="">— Select season —</option></select>
       </div>
     </div>
 
     <div class="modal-section">
       <div class="modal-section-title">Wall Location(s)</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px" id="b-locations">
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" value="Cave Right"> Cave Right</label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" value="Cave Middle"> Cave Middle</label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" value="Cave Left"> Cave Left</label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" value="Green Wall"> Green Wall</label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" value="Blue Wall"> Blue Wall</label>
-        <label style="display:flex;align-items:center;gap:5px;font-size:13px"><input type="checkbox" value="Yellow Wall"> Yellow Wall</label>
+      <div class="gym-map-wrap" style="margin-bottom:4px">
+        <svg class="gym-map-svg" viewBox="0 0 100 62" xmlns="http://www.w3.org/2000/svg">
+          <rect width="100" height="62" fill="#f0f0f0"/>
+          <!-- Wall shapes: positions scaled from app GYM_WALLS fractions (sx,sy→×100; sw,sh→×100 for x/w, ×62 for y/h) -->
+          <rect x="1.2" y="1.7" width="2.1" height="33.5" fill="#b8a800" rx="0.8"/>
+          <rect x="3.3" y="1.7" width="35.2" height="6.6" fill="#0095bb" rx="0.8"/>
+          <rect x="38.0" y="1.7" width="1.9" height="42.2" fill="#2ea829" rx="0.8"/>
+          <rect x="39.6" y="9.8" width="2.8" height="33.8" fill="#8b1a1a" rx="0.8" transform="rotate(6,41.0,26.7)"/>
+          <rect x="43.2" y="9.8" width="55.2" height="6.6" fill="#8b1a1a" rx="0.8"/>
+          <rect x="97.5" y="9.8" width="2.1" height="41.9" fill="#8b1a1a" rx="0.8"/>
+          <!-- Floor elements -->
+          <rect x="1.2" y="38.4" width="6.8" height="22.0" fill="#fff" stroke="#aaa" stroke-width="0.4" rx="0.5"/>
+          <text font-size="2.0" fill="#888" text-anchor="middle" font-family="sans-serif" transform="rotate(-90,4.6,49.4)"><tspan x="4.6" y="49.4">Tension Board 2</tspan></text>
+          <rect x="38.0" y="54.3" width="43.8" height="5.9" fill="#fff" stroke="#888" stroke-width="0.3" rx="0.5"/>
+          <text x="59.9" y="58.2" font-size="2.1" fill="#777" text-anchor="middle" font-family="sans-serif">Garage Door</text>
+          <rect x="83.1" y="54.3" width="14.3" height="5.9" fill="#fff" stroke="#888" stroke-width="0.3" rx="0.5"/>
+          <text x="90.25" y="58.2" font-size="2.1" fill="#777" text-anchor="middle" font-family="sans-serif">Door</text>
+        </svg>
+        <button type="button" class="gym-chip" data-wall="Yellow Wall"  style="left:4%;top:34%;border-color:#b8a800;color:#b8a800;transform:translate(-50%,-50%) rotate(-90deg)" onclick="toggleGymWall('Yellow Wall',this)">Yellow Wall</button>
+        <button type="button" class="gym-chip" data-wall="Blue Wall"    style="left:16%;top:12%;border-color:#0095bb;color:#0095bb;transform:translate(-50%,-50%)" onclick="toggleGymWall('Blue Wall',this)">Blue Wall</button>
+        <button type="button" class="gym-chip" data-wall="Green Wall"   style="left:27%;top:38%;border-color:#2ea829;color:#2ea829;transform:translate(-50%,-50%) rotate(-90deg)" onclick="toggleGymWall('Green Wall',this)">Green Wall</button>
+        <button type="button" class="gym-chip" data-wall="Cave Left"    style="left:42%;top:46%;border-color:#8b1a1a;color:#8b1a1a;transform:translate(-50%,-50%) rotate(-84deg)" onclick="toggleGymWall('Cave Left',this)">Cave Left</button>
+        <button type="button" class="gym-chip" data-wall="Cave Middle"  style="left:65%;top:26%;border-color:#8b1a1a;color:#8b1a1a;transform:translate(-50%,-50%)" onclick="toggleGymWall('Cave Middle',this)">Cave Middle</button>
+        <button type="button" class="gym-chip" data-wall="Cave Right"   style="left:85%;top:55%;border-color:#8b1a1a;color:#8b1a1a;transform:translate(-50%,-50%) rotate(90deg)" onclick="toggleGymWall('Cave Right',this)">Cave Right</button>
       </div>
     </div>
 
     <div class="modal-section">
       <div class="modal-section-title">Setter Grade</div>
-      <div class="grade-selector" id="b-grade-selector">
-        <button type="button" class="grade-btn" data-g="0" style="background:#ddd;color:#333;border-color:#bbb" onclick="selectBoulderGrade(0)">White</button>
-        <button type="button" class="grade-btn" data-g="1" style="background:#4a90d9;color:#fff;border-color:#357abd" onclick="selectBoulderGrade(1)">Blue</button>
-        <button type="button" class="grade-btn" data-g="2" style="background:#8e44ad;color:#fff;border-color:#7d3d99" onclick="selectBoulderGrade(2)">Purple</button>
-        <button type="button" class="grade-btn" data-g="3" style="background:#e8559a;color:#fff;border-color:#d4488a" onclick="selectBoulderGrade(3)">Pink</button>
-        <button type="button" class="grade-btn" data-g="4" style="background:#1a1a1a;color:#fff;border-color:#444" onclick="selectBoulderGrade(4)">Black</button>
+      <div style="position:relative">
+        <div class="grade-pill" id="b-grade-pill" style="cursor:grab">
+          <div class="gs" data-g="0" style="background:#ddd" title="White"></div>
+          <div class="gs" data-g="1" style="background:#4a90d9" title="Blue"></div>
+          <div class="gs" data-g="2" style="background:#8e44ad" title="Purple"></div>
+          <div class="gs" data-g="3" style="background:#e8559a" title="Pink"></div>
+          <div class="gs" data-g="4" style="background:#1a1a1a" title="Black"></div>
+          <div class="grade-pin" id="b-grade-pin"></div>
+        </div>
+        <div class="grade-bar-labels">
+          <span>White</span><span>Blue</span><span>Purple</span><span>Pink</span><span>Black</span>
+        </div>
       </div>
+      <div id="b-grade-info" style="font-size:12px;font-weight:700;margin-top:8px;min-height:18px"></div>
     </div>
 
     <div class="modal-section">
@@ -430,6 +526,22 @@
         <button class="btn btn-outline" onclick="closeBoulderModal()">Cancel</button>
         <button class="btn btn-primary" onclick="saveBoulder()">Add Boulder</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- SEASONS MODAL -->
+<div class="modal-backdrop" id="seasons-modal">
+  <div class="modal-overlay" onclick="closeSeasonsModal()"></div>
+  <div class="modal-card">
+    <div class="modal-title">Manage Seasons</div>
+    <div id="seasons-list" style="margin-bottom:16px;min-height:32px"></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="new-season-name" placeholder="Season name (e.g. Winter 2026)" style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+      <button class="btn btn-primary" onclick="addSeason()">Add</button>
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-outline" onclick="closeSeasonsModal()">Close</button>
     </div>
   </div>
 </div>
@@ -455,6 +567,57 @@ const SUBFOLDERS = { logbook:'Logbook Exports', members:'Member Reports', waiver
 const KBC_GRADES   = ['White','Blue','Purple','Pink','Black'];
 const KBC_GRADE_BG = ['#ddd','#4a90d9','#8e44ad','#e8559a','#1a1a1a'];
 const KBC_GRADE_FG = ['#333','#fff','#fff','#fff','#fff'];
+
+const BADGE_ICONS = {
+  // Hold Types
+  'Jugs':`<path d="M4 4L4 16L10 16Q17 16 17 10Q17 4 10 4Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>`,
+  'Crimps':`<rect x="3" y="5.5" width="14" height="3.5" rx="1.5" fill="currentColor"/><rect x="3" y="11.5" width="14" height="3.5" rx="1.5" fill="currentColor"/>`,
+  'Slopers':`<path d="M2 17Q2 5 10 5Q18 5 18 17" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>`,
+  'Pinches':`<rect x="2.5" y="4" width="5" height="12" rx="2.5" fill="currentColor"/><rect x="12.5" y="4" width="5" height="12" rx="2.5" fill="currentColor"/>`,
+  'Pockets':`<circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="2.5"/>`,
+  'Underclings':`<path d="M2 3Q2 15 10 15Q18 15 18 3" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>`,
+  'Side Pulls':`<line x1="10" y1="3" x2="10" y2="17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M10 10L17 10L15 7 M17 10L15 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`,
+  'Gaston':`<path d="M4 7L2 10L4 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M16 7L18 10L16 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`,
+  'Crack':`<line x1="7" y1="3" x2="7" y2="17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="13" y1="3" x2="13" y2="17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>`,
+  'Small-feet':`<polygon points="10,5 4,16 16,16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>`,
+  'Slippery-feet':`<path d="M2 12Q5.5 8 9 12Q12.5 16 16 12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="5" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="2,2"/>`,
+  // Technique
+  'Balancing':`<circle cx="10" cy="4" r="2.5" fill="currentColor"/><line x1="10" y1="7" x2="10" y2="13" stroke="currentColor" stroke-width="2"/><line x1="4" y1="10" x2="16" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="13" x2="7" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="13" x2="13" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Drop Knee':`<circle cx="10" cy="4" r="2.5" fill="currentColor"/><path d="M10 7L7 12L11 16L16 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="7" y1="12" x2="4" y2="16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Flagging':`<circle cx="10" cy="4" r="2.5" fill="currentColor"/><line x1="10" y1="7" x2="10" y2="14" stroke="currentColor" stroke-width="2"/><line x1="4" y1="9" x2="16" y2="9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="14" x2="7" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="14" x2="16" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Heel Hook':`<path d="M16 4Q4 4 4 10Q4 16 10 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M10 16L14 18 M10 16L14 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Toe Hook':`<path d="M4 4Q16 4 16 10Q16 16 10 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M10 16L6 18 M10 16L6 14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Bicycle':`<circle cx="6" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="14" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 13L10 6L14 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>`,
+  'Deadpoint':`<circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="1.5" fill="currentColor"/>`,
+  'Compression':`<path d="M2 5Q7 9 2 14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M18 5Q13 9 18 14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>`,
+  'Dyno':`<line x1="10" y1="17" x2="10" y2="4" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="M5 9L10 4L15 9" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`,
+  'Double Dyno':`<line x1="7" y1="17" x2="7" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M4 9L7 5L10 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="13" y1="17" x2="13" y2="5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M10 9L13 5L16 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`,
+  'Campus':`<line x1="5" y1="3" x2="5" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="15" y1="3" x2="15" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="5" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="5" y1="11" x2="15" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="5" y1="15" x2="15" y2="15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Bat Hang':`<circle cx="10" cy="4" r="2.5" fill="currentColor"/><path d="M2 8Q6 6 10 8Q14 6 18 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="6" x2="10" y2="14" stroke="currentColor" stroke-width="2"/><path d="M7 14Q8.5 18 10 14Q11.5 18 13 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+  'Hand-Jam':`<line x1="7" y1="2" x2="7" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="13" y1="2" x2="13" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="7.5" y="8" width="5" height="6" rx="1" fill="currentColor"/>`,
+  'Finger-Jam':`<line x1="8" y1="2" x2="8" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="2" x2="12" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="8.5" y="9" width="3" height="5" rx="1" fill="currentColor"/>`,
+  'Foot-Jam':`<line x1="7" y1="2" x2="7" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="13" y1="2" x2="13" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><rect x="4" y="13" width="12" height="4" rx="2" fill="currentColor"/>`,
+  // Body Dependent
+  'Flexibility':`<circle cx="10" cy="4" r="2.5" fill="currentColor"/><line x1="10" y1="7" x2="10" y2="12" stroke="currentColor" stroke-width="2"/><line x1="10" y1="12" x2="4" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="12" x2="16" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Reachy':`<circle cx="8" cy="15" r="2.5" fill="currentColor"/><path d="M8 12L8 7L14 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><line x1="4" y1="10" x2="12" y2="10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="15" x2="6" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="8" y1="15" x2="10" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Shouldery':`<circle cx="10" cy="3" r="2.5" fill="currentColor"/><path d="M2 14Q2 5 10 5Q18 5 18 14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>`,
+  'Body Tension':`<circle cx="10" cy="4" r="2.5" fill="currentColor"/><line x1="10" y1="7" x2="10" y2="14" stroke="currentColor" stroke-width="2"/><line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><line x1="10" y1="14" x2="7" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="14" x2="13" y2="18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Contortionism':`<path d="M5 5Q15 5 15 10Q15 15 5 15Q5 10 10 10Q10 13 13 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Small-fit':`<rect x="5" y="5" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="5" y1="5" x2="15" y2="15" stroke="currentColor" stroke-width="1.5"/><line x1="15" y1="5" x2="5" y2="15" stroke="currentColor" stroke-width="1.5"/>`,
+  // Others
+  'Joy':`<circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 12Q10 16 14 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="8" r="1.2" fill="currentColor"/><circle cx="13" cy="8" r="1.2" fill="currentColor"/>`,
+  'Peaceful':`<circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 10Q8 8 10 10Q12 12 14 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="8" r="1.2" fill="currentColor"/><circle cx="13" cy="8" r="1.2" fill="currentColor"/>`,
+  'Pain':`<circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 13Q8 11 10 13Q12 11 14 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 7L8 8 M15 7L12 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Cry':`<circle cx="10" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 11Q10 9 13 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="7.5" cy="7" r="1.2" fill="currentColor"/><circle cx="12.5" cy="7" r="1.2" fill="currentColor"/><path d="M8 16Q7.5 18.5 8 19.5 M12 16Q12.5 18.5 12 19.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+  'Anger':`<circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 13Q10 11 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 6L9 8 M15 6L11 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Ego-Breaker':`<polygon points="10,2 12.2,7.5 18,7.5 13.5,11.5 15.5,17 10,13.5 4.5,17 6.5,11.5 2,7.5 7.8,7.5" fill="currentColor"/>`,
+  'Joke':`<path d="M7 7Q7 4 10 4Q13 4 13 7Q13 10 10 11.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><circle cx="10" cy="15" r="1.8" fill="currentColor"/>`,
+  'Outrageous':`<line x1="10" y1="3" x2="10" y2="13" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><circle cx="10" cy="17" r="2" fill="currentColor"/><path d="M2 2L4 5 M18 2L16 5 M1 9L4 9 M19 9L16 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+  'OMG':`<circle cx="10" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="2"/><ellipse cx="10" cy="13.5" rx="3" ry="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="7" cy="7" r="1.2" fill="currentColor"/><circle cx="13" cy="7" r="1.2" fill="currentColor"/>`,
+  'Love it':`<path d="M10 16Q3 11 3 7Q3 4 6.5 4Q8.5 4 10 6.5Q11.5 4 13.5 4Q17 4 17 7Q17 11 10 16Z" fill="currentColor"/>`,
+  'Hate it':`<path d="M10 16Q3 11 3 7Q3 4 6.5 4Q8.5 4 10 6.5Q11.5 4 13.5 4Q17 4 17 7Q17 11 10 16Z" fill="none" stroke="currentColor" stroke-width="2"/><line x1="7" y1="7" x2="13" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="13" y1="7" x2="7" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`,
+  'Suffer':`<circle cx="10" cy="9" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M7 12Q8.5 10 10 12Q11.5 10 13 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="7" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="11" y1="7" x2="13" y2="7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M15 1Q17 4 15 7 M17 2Q18.5 5 17 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>`,
+};
 
 const BADGE_GROUPS = [
   { id:'holds',     title:'Hold Types',         badges:['Jugs','Crimps','Slopers','Pinches','Pockets','Underclings','Side Pulls','Gaston','Crack','Small-feet','Slippery-feet'] },
@@ -484,13 +647,37 @@ const ACCESS_OPTIONS = [
   { id:'mem8m',      label:'8-months pass',      accessType:'Active Member', notes:'Purchased: 8-month Membership ($350)', months:8 },
   { id:'mem12m',     label:'Annual Pass',        accessType:'Active Member', notes:'Purchased: Annual Membership ($450)', months:12 },
   { id:'student12m', label:'Student Annual',     accessType:'Active Member', notes:'Purchased: Student Annual Membership ($350)', months:12 },
-  { id:'voucher',    label:'Voucher',            accessType:'Voucher',    notes:'Voucher code: ', isVoucher:true },
 ];
 
 // ── FIREBASE ──────────────────────────────────────────────────────────────────
 firebase.initializeApp(FIREBASE_CONFIG);
-const auth = firebase.auth();
-const db   = firebase.firestore();
+const auth    = firebase.auth();
+const db      = firebase.firestore();
+const storage = firebase.storage();
+
+// ── SORT ──────────────────────────────────────────────────────────────────────
+const SORT = {
+  log:      { col:'timestamp',    dir:-1 },
+  members:  { col:'legalName',    dir:1  },
+  boulders: { col:'name',         dir:1  },
+  receipts: { col:'timestamp',    dir:-1 },
+};
+function sortIcon(tbl, col) {
+  const s=SORT[tbl]; if(s.col!==col) return ' <span style="opacity:.2">⇅</span>';
+  return s.dir===1?' <span style="color:var(--cyan)">▲</span>':' <span style="color:var(--cyan)">▼</span>';
+}
+function applySort(arr, tbl, getVal) {
+  const {col,dir}=SORT[tbl];
+  arr.sort((a,b)=>{
+    const va=getVal?getVal(a,col):(a[col]??''), vb=getVal?getVal(b,col):(b[col]??'');
+    if(typeof va==='number'&&typeof vb==='number') return dir*(va-vb);
+    return dir*String(va).toLowerCase().localeCompare(String(vb).toLowerCase());
+  });
+}
+function clickSort(tbl,col) {
+  const s=SORT[tbl]; if(s.col===col)s.dir*=-1;else{s.col=col;s.dir=1;}
+  ({log:renderLogTable,members:renderMembersTable,boulders:renderBouldersTable,receipts:renderReceiptsTable})[tbl]();
+}
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let currentUser   = null;
@@ -524,6 +711,7 @@ auth.onAuthStateChanged(async (user) => {
   setDefaultDates();
   loadLogbook();
   buildBadgeGrids();
+  initGradeBar();
 });
 
 // ── DRIVE ─────────────────────────────────────────────────────────────────────
@@ -620,7 +808,9 @@ function showSection(name, btn) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('section-'+name).classList.add('active');
   if (btn) btn.classList.add('active');
-  if (name === 'climbs' && !seasonList.length) loadSeasons();
+  if (name === 'climbs') { if (!seasonList.length) loadSeasons(); loadBoulders(); }
+  else if (name === 'members') loadMembers();
+  else if (name === 'purchases') loadReceipts();
 }
 function statusBadge(s) {
   const cls = { active:'badge-green', pending:'badge-orange', inactive:'badge-grey' };
@@ -681,25 +871,32 @@ async function loadLogbook() {
       .where('timestamp','>=',new Date(from).toISOString())
       .where('timestamp','<',toEnd.toISOString())
       .limit(1000).get();
-    logEntries = snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>b.timestamp.localeCompare(a.timestamp));
-    const tbl = document.getElementById('log-table');
-    if (!logEntries.length) { tbl.innerHTML = '<p style="padding:16px;color:var(--muted)">No entries in this date range.</p>'; }
-    else {
-      tbl.innerHTML = `<table><thead><tr><th>Date / Time</th><th>Member</th><th>Access Type</th><th>Notes</th><th>Amended</th><th></th></tr></thead>
-      <tbody>${logEntries.map((e,i)=>`<tr>
-        <td style="white-space:nowrap">${fmt(e.timestamp)}</td>
-        <td><strong>${e.userName||'—'}</strong></td>
-        <td>${e.accessType||'—'}</td>
-        <td style="font-size:11px;color:var(--muted);max-width:180px">${e.notes||''}</td>
-        <td style="font-size:11px;color:var(--muted)">${e.amendedBy&&e.amendedBy!==currentUser?.email?e.amendedBy+'<br>'+fmtDate(e.amendedAt):''}</td>
-        <td><button class="btn btn-danger btn-sm" onclick="deleteLogEntry(${i})">Delete</button></td>
-      </tr>`).join('')}</tbody></table>`;
-    }
+    logEntries = snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderLogTable();
     const uniq = new Set(logEntries.map(e=>e.userId).filter(Boolean)).size;
     const st = document.getElementById('log-stats'); st.style.display='flex';
     st.innerHTML=`<div class="stat-card"><div class="stat-num">${logEntries.length}</div><div class="stat-label">Entries</div></div><div class="stat-card"><div class="stat-num">${uniq}</div><div class="stat-label">Unique Members</div></div>`;
     ['btn-log-csv','btn-log-pdf','btn-log-drive'].forEach(id=>document.getElementById(id).disabled=false);
   } catch(e) { document.getElementById('log-table').innerHTML=`<p style="color:red;padding:16px">Error: ${e.message}</p>`; }
+}
+function renderLogTable() {
+  applySort(logEntries,'log');
+  const tbl=document.getElementById('log-table');
+  if (!logEntries.length) { tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No entries in this date range.</p>'; return; }
+  const sh=col=>`onclick="clickSort('log','${col}')" style="cursor:pointer;user-select:none"`;
+  tbl.innerHTML=`<table><thead><tr>
+    <th ${sh('timestamp')}>Date / Time${sortIcon('log','timestamp')}</th>
+    <th ${sh('userName')}>Member${sortIcon('log','userName')}</th>
+    <th ${sh('accessType')}>Access Type${sortIcon('log','accessType')}</th>
+    <th>Notes</th><th>Amended</th><th></th>
+  </tr></thead><tbody>${logEntries.map((e,i)=>`<tr>
+    <td style="white-space:nowrap">${fmt(e.timestamp)}</td>
+    <td><strong>${e.userName||'—'}</strong></td>
+    <td>${e.accessType||'—'}</td>
+    <td style="font-size:11px;color:var(--muted);max-width:180px">${e.notes||''}</td>
+    <td style="font-size:11px;color:var(--muted)">${e.amendedBy&&e.amendedBy!==currentUser?.email?e.amendedBy+'<br>'+fmtDate(e.amendedAt):''}</td>
+    <td><button class="btn btn-danger btn-sm" onclick="deleteLogEntry(${i})">Delete</button></td>
+  </tr>`).join('')}</tbody></table>`;
 }
 
 function exportLogCSV() {
@@ -717,22 +914,34 @@ async function saveLogToDrive() { try { toast('Generating PDF…'); const b=awai
 // ── MEMBERS ───────────────────────────────────────────────────────────────────
 function toggleAddForm() {
   const f=document.getElementById('add-form'); f.classList.toggle('open');
-  if (!f.classList.contains('open')) { ['new-legal','new-preferred','new-email'].forEach(id=>document.getElementById(id).value=''); document.getElementById('new-status').value='pending'; document.getElementById('new-supervisor').checked=false; document.getElementById('new-admin').checked=false; }
+  if (!f.classList.contains('open')) { ['new-legal','new-preferred','new-email','new-phone','new-ec-name','new-ec-rel','new-ec-phone','new-access-start','new-access-end'].forEach(id=>document.getElementById(id).value=''); document.getElementById('new-status').value='inactive'; document.getElementById('new-supervisor').checked=false; document.getElementById('new-admin').checked=false; }
 }
 
 async function addMember() {
   const legal     = document.getElementById('new-legal').value.trim();
   const preferred = document.getElementById('new-preferred').value.trim();
   const email     = document.getElementById('new-email').value.trim();
+  const phone     = document.getElementById('new-phone').value.trim();
+  const ecName    = document.getElementById('new-ec-name').value.trim();
+  const ecRel     = document.getElementById('new-ec-rel').value.trim();
+  const ecPhone   = document.getElementById('new-ec-phone').value.trim();
   if (!legal || !email) { toast('Legal name and email are required', true); return; }
-  const status = document.getElementById('new-status').value;
+  const status      = document.getElementById('new-status').value;
+  const accessStart = document.getElementById('new-access-start').value;
+  const accessEnd   = document.getElementById('new-access-end').value;
   const isSup  = document.getElementById('new-supervisor').checked;
   const isAdm  = document.getElementById('new-admin').checked;
+  const ecObj  = (ecName||ecRel||ecPhone) ? JSON.stringify({name:ecName,relationship:ecRel,phone:ecPhone}) : null;
   try {
     await db.collection('users').add({
       legalName: legal, name: preferred || legal,
       ...(preferred && { preferredName: preferred }),
-      email, membershipStatus: status, isSupervisor: isSup, isAdmin: isAdm,
+      email, ...(phone && { phone }),
+      ...(ecObj && { emergencyContact: ecObj }),
+      membershipStatus: status,
+      ...(accessStart && { accessPassStart: new Date(accessStart).toISOString() }),
+      ...(accessEnd   && { membershipExpiry: new Date(accessEnd).toISOString() }),
+      isSupervisor: isSup, isAdmin: isAdm,
       memberSince: new Date().toISOString(), createdAt: new Date().toISOString(), createdBy: currentUser.email,
     });
     toast(`${legal} added!`);
@@ -742,54 +951,120 @@ async function addMember() {
 }
 
 async function loadMembers() {
-  const filter=document.getElementById('member-filter').value;
   setLoading('mem-table');
   try {
-    let q=db.collection('users').limit(500);
-    if (filter!=='all') q=q.where('membershipStatus','==',filter);
-    const snap=await q.get();
-    memberList=snap.docs.map(d=>({uid:d.id,...d.data()})).sort((a,b)=>(a.legalName||a.name||'').localeCompare(b.legalName||b.name||''));
-    const tbl=document.getElementById('mem-table');
-    if (!memberList.length) { tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No members found.</p>'; }
-    else {
-      tbl.innerHTML=`<table><thead><tr><th>Legal Name</th><th>Preferred Name</th><th>Email</th><th>Status</th><th>Expiry</th><th>Punches</th><th>Waiver</th><th>Roles</th><th style="text-align:right">Actions</th></tr></thead>
-      <tbody>${memberList.map((m,i)=>`<tr>
-        <td><strong>${m.legalName||m.name||'—'}</strong></td>
-        <td style="font-size:12px;color:var(--muted)">${m.preferredName&&m.preferredName!==(m.legalName||m.name)?m.preferredName:'—'}</td>
-        <td style="font-size:12px">${m.email||'—'}</td>
-        <td>${statusBadge(m.membershipStatus)}</td>
-        <td style="font-size:12px">${fmtDate(m.membershipExpiry)}</td>
-        <td>${(m.punchPassRemaining||0)>0?`<span class="badge badge-blue">${m.punchPassRemaining}</span>`:'—'}</td>
-        <td>${m.waiverLiability?`<button class="btn btn-outline btn-sm" onclick="dlWaiverPDF(${i})">✅ PDF</button>`:'<span style="color:var(--muted);font-size:12px">—</span>'}</td>
-        <td>${m.isSupervisor?'<span class="badge badge-blue" style="margin-right:3px">SUP</span>':''}${m.isAdmin?'<span class="badge badge-red">ADMIN</span>':''}</td>
-        <td style="text-align:right;white-space:nowrap">
-          <button class="btn btn-outline btn-sm" onclick="openEditModal(${i})">Edit</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteMember(${i})">Delete</button>
-        </td>
-      </tr>`).join('')}</tbody></table>`;
-    }
+    const snap=await db.collection('users').limit(500).get();
+    memberList=snap.docs.map(d=>({uid:d.id,...d.data()}));
+    renderMembersTable();
     const counts={active:0,pending:0,inactive:0};
-    memberList.forEach(m=>{ if (m.membershipStatus in counts) counts[m.membershipStatus]++; });
+    memberList.forEach(m=>{ if(m.membershipStatus in counts)counts[m.membershipStatus]++; });
     const st=document.getElementById('mem-stats'); st.style.display='flex';
-    st.innerHTML=`<div class="stat-card"><div class="stat-num">${memberList.length}</div><div class="stat-label">Shown</div></div><div class="stat-card"><div class="stat-num" style="color:var(--green)">${counts.active}</div><div class="stat-label">Active</div></div><div class="stat-card"><div class="stat-num" style="color:var(--orange)">${counts.pending}</div><div class="stat-label">Pending</div></div><div class="stat-card"><div class="stat-num" style="color:var(--muted)">${counts.inactive}</div><div class="stat-label">Inactive</div></div><div class="stat-card"><div class="stat-num" style="color:var(--cyan)">${memberList.filter(m=>!!m.waiverLiability).length}</div><div class="stat-label">Waivers</div></div>`;
+    st.innerHTML=`<div class="stat-card"><div class="stat-num">${memberList.length}</div><div class="stat-label">Total</div></div><div class="stat-card"><div class="stat-num" style="color:var(--green)">${counts.active}</div><div class="stat-label">Active</div></div><div class="stat-card"><div class="stat-num" style="color:var(--orange)">${counts.pending}</div><div class="stat-label">Pending</div></div><div class="stat-card"><div class="stat-num" style="color:var(--muted)">${counts.inactive}</div><div class="stat-label">Inactive</div></div><div class="stat-card"><div class="stat-num" style="color:var(--cyan)">${memberList.filter(m=>!!(m.waiverLiability||m.waiverPdfUrl)).length}</div><div class="stat-label">Waivers</div></div>`;
     ['btn-mem-pdf','btn-mem-drive'].forEach(id=>document.getElementById(id).disabled=false);
   } catch(e) { document.getElementById('mem-table').innerHTML=`<p style="color:red;padding:16px">Error: ${e.message}</p>`; }
+}
+function renderMembersTable() {
+  const getVal=(m,col)=>{
+    if(col==='legalName')return m.legalName||m.name||'';
+    if(col==='waiver')return(m.waiverLiability||m.waiverPdfUrl)?'1':'0';
+    return m[col]??'';
+  };
+  applySort(memberList,'members',getVal);
+  const tbl=document.getElementById('mem-table');
+  if(!memberList.length){tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No members found.</p>';return;}
+  const sh=col=>`onclick="clickSort('members','${col}')" style="cursor:pointer;user-select:none"`;
+  tbl.innerHTML=`<table><thead><tr>
+    <th ${sh('legalName')}>Legal Name${sortIcon('members','legalName')}</th>
+    <th ${sh('preferredName')}>Preferred Name${sortIcon('members','preferredName')}</th>
+    <th ${sh('email')}>Email${sortIcon('members','email')}</th>
+    <th ${sh('phone')}>Phone${sortIcon('members','phone')}</th>
+    <th ${sh('membershipStatus')}>Access Pass${sortIcon('members','membershipStatus')}</th>
+    <th ${sh('membershipExpiry')}>End Date${sortIcon('members','membershipExpiry')}</th>
+    <th ${sh('punchPassRemaining')}>Punches${sortIcon('members','punchPassRemaining')}</th>
+    <th ${sh('memberSince')}>Member Since${sortIcon('members','memberSince')}</th>
+    <th ${sh('waiver')}>Waiver${sortIcon('members','waiver')}</th>
+    <th style="text-align:center">SUP</th>
+    <th style="text-align:center">ADM</th>
+    <th style="text-align:right">Actions</th>
+  </tr></thead><tbody>${memberList.map((m,i)=>`<tr>
+    <td style="white-space:nowrap"><strong>${m.legalName||m.name||'—'}</strong></td>
+    <td style="font-size:12px;color:var(--muted)">${m.preferredName&&m.preferredName!==(m.legalName||m.name)?m.preferredName:'—'}</td>
+    <td style="font-size:12px">${m.email||'—'}</td>
+    <td style="font-size:12px;white-space:nowrap">${m.phone||'—'}</td>
+    <td>${statusBadge(m.membershipStatus)}</td>
+    <td style="font-size:12px;white-space:nowrap">${fmtDate(m.membershipExpiry)}</td>
+    <td>${(m.punchPassRemaining||0)>0?`<span class="badge badge-blue">${m.punchPassRemaining}</span>`:'—'}</td>
+    <td style="font-size:12px;white-space:nowrap">${fmtDate(m.memberSince)}</td>
+    <td>${(m.waiverLiability||m.waiverPdfUrl)?`<button class="btn btn-outline btn-sm" onclick="openEditModal(${i})">✅ View</button>`:'<span style="color:var(--muted);font-size:12px">—</span>'}</td>
+    <td style="text-align:center">${m.isSupervisor?'<span class="badge badge-blue">SUP</span>':'<span style="color:#ddd">—</span>'}</td>
+    <td style="text-align:center">${m.isAdmin?'<span class="badge badge-red">ADM</span>':'<span style="color:#ddd">—</span>'}</td>
+    <td style="text-align:right;white-space:nowrap">
+      <button class="btn btn-outline btn-sm" onclick="openEditModal(${i})">Edit</button>
+    </td>
+  </tr>`).join('')}</tbody></table>`;
 }
 
 function openEditModal(i) {
   editingMember=memberList[i];
-  document.getElementById('edit-modal-name').textContent=editingMember.legalName||editingMember.name||'Edit Member';
-  document.getElementById('edit-status').value=editingMember.membershipStatus||'inactive';
-  document.getElementById('edit-expiry').value=editingMember.membershipExpiry?editingMember.membershipExpiry.slice(0,10):'';
-  document.getElementById('edit-punches').value=editingMember.punchPassRemaining??0;
-  document.getElementById('edit-sup').checked=!!editingMember.isSupervisor;
-  document.getElementById('edit-adm').checked=!!editingMember.isAdmin;
-  document.getElementById('edit-modal').style.display='';
+  const m=editingMember;
+  document.getElementById('edit-modal-name').textContent=m.legalName||m.name||'Edit Member';
+  document.getElementById('edit-legal').value=m.legalName||m.name||'';
+  document.getElementById('edit-preferred').value=m.preferredName||'';
+  document.getElementById('edit-email').value=m.email||'';
+  document.getElementById('edit-phone').value=m.phone||'';
+  document.getElementById('edit-status').value=m.membershipStatus||'inactive';
+  document.getElementById('edit-access-start').value=(m.accessPassStart||m.memberSince)?((m.accessPassStart||m.memberSince).slice(0,10)):'';
+  document.getElementById('edit-expiry').value=m.membershipExpiry?m.membershipExpiry.slice(0,10):'';
+  document.getElementById('edit-punches').value=m.punchPassRemaining??0;
+  document.getElementById('edit-sup').checked=!!m.isSupervisor;
+  document.getElementById('edit-adm').checked=!!m.isAdmin;
+  let ec={};
+  try { ec=JSON.parse(m.emergencyContact||'{}'); } catch {}
+  document.getElementById('edit-ec-name').value=ec.name||'';
+  document.getElementById('edit-ec-rel').value=ec.relationship||'';
+  document.getElementById('edit-ec-phone').value=ec.phone||'';
+  // Waiver — digital
+  const digitalDiv=document.getElementById('edit-waiver-digital');
+  if(m.waiverLiability){
+    let w={}; try{w=JSON.parse(m.waiverLiability);}catch{}
+    document.getElementById('edit-waiver-info').innerHTML=
+      `<div><strong>Signed by:</strong> ${w.signedBy||'—'}</div>`+
+      `<div><strong>Date:</strong> ${fmt(w.signedAt)}</div>`+
+      (w.guardian?`<div><strong>Guardian:</strong> ${w.guardian}</div>`:'');
+    document.getElementById('edit-waiver-pdf-btn').onclick=()=>dlWaiverPDF(i);
+    digitalDiv.style.display='block';
+  } else { digitalDiv.style.display='none'; }
+  // Waiver — uploaded PDF
+  const pdfDiv=document.getElementById('edit-waiver-pdf-uploaded');
+  if(m.waiverPdfUrl){
+    document.getElementById('edit-waiver-pdf-link').href=m.waiverPdfUrl;
+    pdfDiv.style.display='block';
+  } else { pdfDiv.style.display='none'; }
+  document.getElementById('edit-waiver-none').style.display=(m.waiverLiability||m.waiverPdfUrl)?'none':'block';
+  document.getElementById('edit-waiver-file').value='';
+  document.getElementById('edit-modal').style.display='block';
 }
 function closeEditModal() { editingMember=null; document.getElementById('edit-modal').style.display='none'; }
 async function saveEdit() {
   if (!editingMember) return;
-  const updates={ membershipStatus:document.getElementById('edit-status').value, isSupervisor:document.getElementById('edit-sup').checked, isAdmin:document.getElementById('edit-adm').checked, amendedBy:currentUser.email, amendedAt:new Date().toISOString() };
+  const ecName=document.getElementById('edit-ec-name').value.trim();
+  const ecRel=document.getElementById('edit-ec-rel').value.trim();
+  const ecPhone=document.getElementById('edit-ec-phone').value.trim();
+  const ecObj=(ecName||ecRel||ecPhone)?JSON.stringify({name:ecName,relationship:ecRel,phone:ecPhone}):null;
+  const legalName=document.getElementById('edit-legal').value.trim()||editingMember.legalName||editingMember.name;
+  const preferredName=document.getElementById('edit-preferred').value.trim();
+  const phone=document.getElementById('edit-phone').value.trim();
+  const updates={
+    legalName, name: preferredName||legalName,
+    ...(preferredName && { preferredName }),
+    ...(phone && { phone }),
+    ...(ecObj && { emergencyContact: ecObj }),
+    membershipStatus:document.getElementById('edit-status').value,
+    isSupervisor:document.getElementById('edit-sup').checked,
+    isAdmin:document.getElementById('edit-adm').checked,
+    amendedBy:currentUser.email, amendedAt:new Date().toISOString()
+  };
+  const accessStart=document.getElementById('edit-access-start').value; if (accessStart) updates.accessPassStart=new Date(accessStart).toISOString();
   const expiry=document.getElementById('edit-expiry').value; if (expiry) updates.membershipExpiry=new Date(expiry).toISOString();
   const punches=parseInt(document.getElementById('edit-punches').value); if (!isNaN(punches)) updates.punchPassRemaining=punches;
   try { await db.collection('users').doc(editingMember.uid).update(updates); toast('Member updated'); closeEditModal(); loadMembers(); }
@@ -801,11 +1076,21 @@ async function deleteMember(i) {
   try { await db.collection('users').doc(m.uid).delete(); toast(`${name} removed`); loadMembers(); }
   catch(e) { toast('Error: '+e.message,true); }
 }
+async function deleteMemberFromModal() {
+  if (!editingMember) return;
+  const name=editingMember.legalName||editingMember.name||'this member';
+  if (!confirm(`Permanently delete "${name}"?\n\nThis CANNOT be undone. All their data will be removed.`)) return;
+  try {
+    await db.collection('users').doc(editingMember.uid).delete();
+    toast(`${name} removed`);
+    closeEditModal();
+    loadMembers();
+  } catch(e) { toast('Error: '+e.message,true); }
+}
 
 async function buildMembersPDF() {
-  const filter=document.getElementById('member-filter').value;
-  const rows=memberList.map(m=>`<tr><td>${m.legalName||m.name||'—'}</td><td>${m.preferredName||'—'}</td><td>${m.email||'—'}</td><td>${m.membershipStatus||'—'}</td><td>${fmtDate(m.membershipExpiry)}</td><td>${(m.punchPassRemaining||0)>0?m.punchPassRemaining:'—'}</td><td>${m.waiverLiability?'Signed':'—'}</td><td>${fmtDate(m.memberSince)}</td></tr>`).join('');
-  return htmlToBlob(PDF_CSS+kbcHead('Member Directory',`Filter: ${filter} · ${memberList.length} members · ${fmt(new Date().toISOString())}`)+`<table><thead><tr><th>Legal Name</th><th>Preferred</th><th>Email</th><th>Status</th><th>Expiry</th><th>Punches</th><th>Waiver</th><th>Member Since</th></tr></thead><tbody>${rows}</tbody></table><div class="foot">KBC Admin · Confidential</div>`,`KBC_Members_${today()}.pdf`);
+  const rows=memberList.map(m=>`<tr><td>${m.legalName||m.name||'—'}</td><td>${m.preferredName||'—'}</td><td>${m.email||'—'}</td><td>${m.phone||'—'}</td><td>${m.membershipStatus||'—'}</td><td>${fmtDate(m.membershipExpiry)}</td><td>${(m.punchPassRemaining||0)>0?m.punchPassRemaining:'—'}</td><td>${m.waiverLiability?'Digital':m.waiverPdfUrl?'PDF':''}</td><td>${fmtDate(m.memberSince)}</td></tr>`).join('');
+  return htmlToBlob(PDF_CSS+kbcHead('Member Directory',`${memberList.length} members · ${fmt(new Date().toISOString())}`)+`<table><thead><tr><th>Legal Name</th><th>Preferred</th><th>Email</th><th>Phone</th><th>Status</th><th>Expiry</th><th>Punches</th><th>Waiver</th><th>Member Since</th></tr></thead><tbody>${rows}</tbody></table><div class="foot">KBC Admin · Confidential</div>`,`KBC_Members_${today()}.pdf`);
 }
 async function exportMembersPDF() { toast('Generating PDF…'); try { dlBlob(await buildMembersPDF(),`KBC_Members_${today()}.pdf`); } catch(e) { toast('Error: '+e.message,true); } }
 async function saveMembersToDrive() { try { toast('Generating PDF…'); const b=await buildMembersPDF(); toast('Uploading…'); await uploadToDrive(`KBC_Members_${today()}.pdf`,b,'application/pdf','members'); toast('Saved to Drive!'); } catch(e) { toast('Error: '+e.message,true); } }
@@ -829,6 +1114,27 @@ async function dlWaiverPDF(i) {
   try { const m=memberList[i],fn=`KBC_Waiver_${(m.legalName||m.name||'member').replace(/\s+/g,'_')}.pdf`; dlBlob(await htmlToBlob(buildWaiverHTML(m),fn),fn); }
   catch(e) { toast('Error: '+e.message,true); }
 }
+async function uploadEditWaiver() {
+  if(!editingMember){toast('No member selected',true);return;}
+  const file=document.getElementById('edit-waiver-file').files[0];
+  if(!file){toast('Select a PDF file first',true);return;}
+  if(file.type!=='application/pdf'){toast('File must be a PDF',true);return;}
+  toast('Uploading…');
+  try {
+    const ref=storage.ref('waivers/'+editingMember.uid+'.pdf');
+    await ref.put(file,{contentType:'application/pdf'});
+    const url=await ref.getDownloadURL();
+    await db.collection('users').doc(editingMember.uid).update({waiverPdfUrl:url,waiverPdfUploadedAt:new Date().toISOString(),amendedBy:currentUser.email,amendedAt:new Date().toISOString()});
+    editingMember.waiverPdfUrl=url;
+    document.getElementById('edit-waiver-pdf-link').href=url;
+    document.getElementById('edit-waiver-pdf-uploaded').style.display='block';
+    document.getElementById('edit-waiver-none').style.display='none';
+    document.getElementById('edit-waiver-file').value='';
+    const idx=memberList.findIndex(m=>m.uid===editingMember.uid);
+    if(idx>=0){memberList[idx].waiverPdfUrl=url; renderMembersTable();}
+    toast('Waiver PDF uploaded!');
+  } catch(e){toast('Upload error: '+e.message+'. Check Firebase Storage rules.',true);}
+}
 
 // ── KBC CLIMBS ────────────────────────────────────────────────────────────────
 async function loadSeasons() {
@@ -836,6 +1142,8 @@ async function loadSeasons() {
     const snap=await db.collection('boulderSeasons').limit(50).get();
     seasonList=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
     const sel=document.getElementById('b-season');
+    // Reset to just the placeholder option
+    while(sel.options.length>1) sel.remove(1);
     seasonList.forEach(s=>{ const o=document.createElement('option'); o.value=s.id; o.textContent=s.name||s.id; sel.appendChild(o); });
   } catch {}
 }
@@ -846,14 +1154,15 @@ function buildBadgeGrids() {
     if (!container) return;
     g.badges.forEach(badge => {
       const color = BADGE_COLORS[badge] || '#888';
+      const icon = BADGE_ICONS[badge] || `<circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="2"/>`;
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'badge-toggle';
+      btn.className = 'badge-disc';
       btn.dataset.badge = badge;
-      btn.textContent = badge;
-      btn.style.color = color;
-      btn.style.borderColor = color;
-      btn.onclick = () => toggleBoulderBadge(badge, btn, color);
+      btn.title = badge;
+      btn.style.setProperty('--bc', color);
+      btn.innerHTML = `<div class="disc"><svg viewBox="0 0 20 20" width="20" height="20">${icon}</svg></div><span class="bl">${badge}</span>`;
+      btn.onclick = () => toggleBoulderBadge(badge, btn);
       container.appendChild(btn);
     });
   });
@@ -861,24 +1170,102 @@ function buildBadgeGrids() {
 
 function selectBoulderGrade(idx) {
   boulderGrade = idx;
-  document.querySelectorAll('.grade-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector(`.grade-btn[data-g="${idx}"]`)?.classList.add('active');
+  const pin=document.getElementById('b-grade-pin');
+  pin.style.display='block';
+  pin.style.left=`calc(${idx*20+10}% - 2px)`;
+  const info=document.getElementById('b-grade-info');
+  info.textContent='Grade: '+KBC_GRADES[idx];
+  info.style.color=idx===0?'#999':KBC_GRADE_BG[idx];
 }
 
-function toggleBoulderBadge(badge, btn, color) {
-  if (boulderBadges.has(badge)) { boulderBadges.delete(badge); btn.classList.remove('selected'); btn.style.background=''; }
-  else { boulderBadges.add(badge); btn.classList.add('selected'); btn.style.background=color; }
+function toggleBoulderBadge(badge, btn) {
+  if (boulderBadges.has(badge)) { boulderBadges.delete(badge); btn.classList.remove('selected'); }
+  else { boulderBadges.add(badge); btn.classList.add('selected'); }
+}
+
+function toggleGymWall(wall, btn) {
+  const C={'Yellow Wall':'#b8a800','Blue Wall':'#0095bb','Green Wall':'#2ea829','Cave Left':'#8b1a1a','Cave Middle':'#8b1a1a','Cave Right':'#8b1a1a'};
+  btn.classList.toggle('selected');
+  btn.style.background=btn.classList.contains('selected')?C[wall]:'rgba(255,255,255,.92)';
+}
+
+function initGradeBar() {
+  const pill=document.getElementById('b-grade-pill');
+  if (!pill) return;
+  let dragging=false;
+  function gradeFromEvent(e) {
+    const rect=pill.getBoundingClientRect();
+    const clientX=e.touches?e.touches[0].clientX:e.clientX;
+    const frac=Math.max(0,Math.min(1,(clientX-rect.left)/rect.width));
+    return { frac, idx:Math.min(4,Math.floor(frac*5)) };
+  }
+  function applyGrade(e) {
+    const {frac,idx}=gradeFromEvent(e);
+    boulderGrade=idx;
+    const pin=document.getElementById('b-grade-pin');
+    pin.style.display='block';
+    pin.style.left=`calc(${frac*100}% - 2px)`;
+    const info=document.getElementById('b-grade-info');
+    info.textContent='Grade: '+KBC_GRADES[idx];
+    info.style.color=idx===0?'#999':KBC_GRADE_BG[idx];
+  }
+  pill.addEventListener('mousedown',(e)=>{ dragging=true; applyGrade(e); pill.style.cursor='grabbing'; e.preventDefault(); });
+  window.addEventListener('mousemove',(e)=>{ if(dragging) applyGrade(e); });
+  window.addEventListener('mouseup',()=>{ dragging=false; pill.style.cursor='grab'; });
+  pill.addEventListener('touchstart',(e)=>{ applyGrade(e); e.preventDefault(); },{passive:false});
+  pill.addEventListener('touchmove',(e)=>{ applyGrade(e); e.preventDefault(); },{passive:false});
+}
+
+// ── SEASONS ───────────────────────────────────────────────────────────────────
+function openSeasonsModal() {
+  renderSeasonsList();
+  document.getElementById('new-season-name').value='';
+  document.getElementById('seasons-modal').style.display='block';
+}
+function closeSeasonsModal() { document.getElementById('seasons-modal').style.display='none'; }
+function renderSeasonsList() {
+  const el=document.getElementById('seasons-list');
+  if (!seasonList.length) { el.innerHTML='<p style="color:var(--muted);font-size:13px;padding:4px 0">No seasons yet. Add one below.</p>'; return; }
+  el.innerHTML=seasonList.map((s,i)=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border)"><span style="font-size:14px;font-weight:600">${s.name||s.id}</span><button class="btn btn-danger btn-sm" onclick="removeSeason(${i})">Remove</button></div>`).join('');
+}
+async function addSeason() {
+  const name=document.getElementById('new-season-name').value.trim();
+  if (!name) { toast('Season name is required',true); return; }
+  try {
+    const ref=await db.collection('boulderSeasons').add({name,createdAt:new Date().toISOString(),createdBy:currentUser.email});
+    const s={id:ref.id,name,createdAt:new Date().toISOString()};
+    seasonList.unshift(s);
+    const sel=document.getElementById('b-season');
+    const opt=document.createElement('option'); opt.value=ref.id; opt.textContent=name;
+    sel.insertBefore(opt,sel.options[1]);
+    document.getElementById('new-season-name').value='';
+    renderSeasonsList();
+    toast(`Season "${name}" added!`);
+  } catch(e) { toast('Error: '+e.message,true); }
+}
+async function removeSeason(i) {
+  const s=seasonList[i];
+  if (!confirm(`Remove season "${s.name||s.id}"?\n\nExisting boulders in this season are not affected.`)) return;
+  try {
+    await db.collection('boulderSeasons').doc(s.id).delete();
+    seasonList.splice(i,1);
+    const sel=document.getElementById('b-season');
+    for (let j=0;j<sel.options.length;j++) { if(sel.options[j].value===s.id){sel.remove(j);break;} }
+    renderSeasonsList();
+    toast(`Season removed`);
+  } catch(e) { toast('Error: '+e.message,true); }
 }
 
 function openBoulderModal() {
   boulderGrade = null; boulderBadges.clear();
-  document.querySelectorAll('.grade-btn').forEach(b=>b.classList.remove('active'));
-  document.querySelectorAll('.badge-toggle').forEach(b=>{ b.classList.remove('selected'); b.style.background=''; });
-  document.querySelectorAll('#b-locations input').forEach(c=>c.checked=false);
-  ['b-name','b-tape','b-setter','b-setter-email'].forEach(id=>document.getElementById(id).value='');
+  document.querySelectorAll('.badge-disc').forEach(b=>b.classList.remove('selected'));
+  document.querySelectorAll('.gym-chip').forEach(c=>{c.classList.remove('selected');c.style.background='rgba(255,255,255,.92)';});
+  const pin=document.getElementById('b-grade-pin'); if(pin){pin.style.display='none';}
+  const info=document.getElementById('b-grade-info'); if(info){info.textContent='';}
+  ['b-name','b-tape','b-setter'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('b-number').value='';
   document.getElementById('b-season').value='';
-  document.getElementById('boulder-modal').style.display='';
+  document.getElementById('boulder-modal').style.display='block';
 }
 function closeBoulderModal() { document.getElementById('boulder-modal').style.display='none'; }
 
@@ -886,12 +1273,12 @@ async function saveBoulder() {
   const name   = document.getElementById('b-name').value.trim();
   const tape   = document.getElementById('b-tape').value.trim();
   const setter = document.getElementById('b-setter').value.trim();
-  if (!name || !tape || !setter) { toast('Name, tape color and setter are required', true); return; }
+  const seasonId = document.getElementById('b-season').value;
+  if (!name || !tape) { toast('Name and tape color are required', true); return; }
+  if (!seasonId) { toast('Season is required', true); return; }
 
   const number = parseInt(document.getElementById('b-number').value)||null;
-  const setterEmail = document.getElementById('b-setter-email').value.trim();
-  const seasonId    = document.getElementById('b-season').value;
-  const locations   = Array.from(document.querySelectorAll('#b-locations input:checked')).map(c=>c.value);
+  const locations   = Array.from(document.querySelectorAll('.gym-chip.selected')).map(c=>c.dataset.wall);
   const now = new Date().toISOString();
   const internalId = makeBoulderId();
 
@@ -901,7 +1288,7 @@ async function saveBoulder() {
 
   try {
     await db.collection('boulders').doc(internalId).set({
-      internalId, name, tapeColor: tape, setter, setterEmail, seasonId,
+      internalId, name, tapeColor: tape, ...(setter && { setter }), seasonId,
       locations, area:'Boulders', local:'KBC',
       number: number||0,
       gradeVotes, setterGradeVote, setterBadges,
@@ -921,29 +1308,47 @@ async function loadBoulders() {
   const gradeFilter=document.getElementById('climbs-grade').value;
   try {
     const snap=await db.collection('boulders').limit(1000).get();
-    let list=snap.docs.map(d=>({id:d.id,...d.data()})).filter(b=>!b.removed).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-    if (gradeFilter!=='all') { const gIdx=parseInt(gradeFilter); list=list.filter(b=>avgGrade(b.gradeVotes)===gIdx); }
+    let list=snap.docs.map(d=>({id:d.id,...d.data()})).filter(b=>!b.removed);
+    if(gradeFilter!=='all'){const gIdx=parseInt(gradeFilter);list=list.filter(b=>avgGrade(b.gradeVotes)===gIdx);}
     boulderList=list;
-    const tbl=document.getElementById('climbs-table');
-    if (!list.length) { tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No boulders found.</p>'; }
-    else {
-      tbl.innerHTML=`<table><thead><tr><th>#</th><th>Name</th><th>Setter</th><th>Avg Grade</th><th>Tape</th><th>Area / Location</th><th>Ascents</th><th>Avg Quality</th><th></th></tr></thead>
-      <tbody>${list.map((b,i)=>{const grade=avgGrade(b.gradeVotes),quality=avgQuality(b.qualityVotes);return`<tr>
-        <td style="font-size:11px;color:var(--muted)">${b.number||b.internalId||''}</td>
-        <td><strong>${b.name||'—'}</strong></td>
-        <td style="font-size:12px">${b.setter||'—'}</td>
-        <td>${gradeChip(grade)}</td>
-        <td style="font-size:12px">${b.tapeColor||'—'}</td>
-        <td style="font-size:12px">${(b.locations||[]).join(', ')||b.area||'—'}</td>
-        <td style="text-align:center">${b.ascentCount||0}</td>
-        <td style="text-align:center;font-size:12px">${quality?'★ '+quality:'—'}</td>
-        <td><button class="btn btn-danger btn-sm" onclick="deleteBoulder(${i})">Remove</button></td>
-      </tr>`;}).join('')}</tbody></table>`;
-    }
+    renderBouldersTable();
     const st=document.getElementById('climbs-stats'); st.style.display='flex';
     st.innerHTML=`<div class="stat-card"><div class="stat-num">${list.length}</div><div class="stat-label">Problems</div></div><div class="stat-card"><div class="stat-num">${list.reduce((s,b)=>s+(b.ascentCount||0),0)}</div><div class="stat-label">Total Ascents</div></div>`;
     ['btn-climbs-csv','btn-climbs-drive'].forEach(id=>document.getElementById(id).disabled=false);
   } catch(e) { document.getElementById('climbs-table').innerHTML=`<p style="color:red;padding:16px">Error: ${e.message}</p>`; }
+}
+function renderBouldersTable() {
+  const getVal=(b,col)=>{
+    if(col==='avgGrade')return avgGrade(b.gradeVotes)??-1;
+    if(col==='avgQuality')return parseFloat(avgQuality(b.qualityVotes))||0;
+    if(col==='locations')return(b.locations||[]).join(', ');
+    return b[col]??'';
+  };
+  applySort(boulderList,'boulders',getVal);
+  const tbl=document.getElementById('climbs-table');
+  if(!boulderList.length){tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No boulders found.</p>';return;}
+  const sh=col=>`onclick="clickSort('boulders','${col}')" style="cursor:pointer;user-select:none"`;
+  tbl.innerHTML=`<table><thead><tr>
+    <th ${sh('number')}>#${sortIcon('boulders','number')}</th>
+    <th ${sh('name')}>Name${sortIcon('boulders','name')}</th>
+    <th ${sh('setter')}>Setter${sortIcon('boulders','setter')}</th>
+    <th ${sh('avgGrade')}>Avg Grade${sortIcon('boulders','avgGrade')}</th>
+    <th ${sh('tapeColor')}>Tape${sortIcon('boulders','tapeColor')}</th>
+    <th ${sh('locations')}>Area / Location${sortIcon('boulders','locations')}</th>
+    <th ${sh('ascentCount')}>Ascents${sortIcon('boulders','ascentCount')}</th>
+    <th ${sh('avgQuality')}>Avg Quality${sortIcon('boulders','avgQuality')}</th>
+    <th></th>
+  </tr></thead><tbody>${boulderList.map((b,i)=>{const grade=avgGrade(b.gradeVotes),quality=avgQuality(b.qualityVotes);return`<tr>
+    <td style="font-size:11px;color:var(--muted)">${b.number||b.internalId||''}</td>
+    <td><strong>${b.name||'—'}</strong></td>
+    <td style="font-size:12px">${b.setter||'—'}</td>
+    <td>${gradeChip(grade)}</td>
+    <td style="font-size:12px">${b.tapeColor||'—'}</td>
+    <td style="font-size:12px">${(b.locations||[]).join(', ')||b.area||'—'}</td>
+    <td style="text-align:center">${b.ascentCount||0}</td>
+    <td style="text-align:center;font-size:12px">${quality?'★ '+quality:'—'}</td>
+    <td><button class="btn btn-danger btn-sm" onclick="deleteBoulder(${i})">Remove</button></td>
+  </tr>`;}).join('')}</tbody></table>`;
 }
 
 async function deleteBoulder(i) {
@@ -969,10 +1374,8 @@ function togglePurchaseAddForm() {
 function onPurchaseTypeChange() {
   const type=document.getElementById('pur-type').value;
   const opt=ACCESS_OPTIONS.find(o=>o.id===type)||ACCESS_OPTIONS[0];
-  const isVoucher=opt.isVoucher;
-  document.getElementById('pur-voucher-wrap').style.display=isVoucher?'':'none';
   const notesEl=document.getElementById('pur-notes');
-  if (!notesEl.dataset.manual) notesEl.value=isVoucher?'':opt.notes;
+  if (!notesEl.dataset.manual) notesEl.value=opt.notes;
   notesEl.dataset.manual='';
 }
 
@@ -983,11 +1386,6 @@ async function submitPurchase() {
   const type   = document.getElementById('pur-type').value;
   const opt    = ACCESS_OPTIONS.find(o=>o.id===type)||ACCESS_OPTIONS[0];
   let notes    = document.getElementById('pur-notes').value.trim();
-  if (opt.isVoucher) {
-    const code=document.getElementById('pur-voucher').value.trim();
-    if (!code) { toast('Voucher code is required', true); return; }
-    notes=notes||`Voucher code: ${code}`;
-  }
   if (!notes) notes=opt.notes;
   const timestamp=new Date(tsRaw).toISOString();
   try {
@@ -1014,25 +1412,33 @@ async function loadReceipts() {
   try {
     const toEnd=new Date(to); toEnd.setDate(toEnd.getDate()+1);
     const snap=await db.collection('logs').where('timestamp','>=',new Date(from).toISOString()).where('timestamp','<',toEnd.toISOString()).limit(1000).get();
-    receiptList=snap.docs.map(d=>({id:d.id,...d.data()})).filter(e=>e.notes&&(e.notes.includes('Purchased:')||e.notes.includes('Voucher code:'))).sort((a,b)=>b.timestamp.localeCompare(a.timestamp));
-    const tbl=document.getElementById('rec-table');
-    if (!receiptList.length) { tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No purchase records in this date range.</p>'; }
-    else {
-      tbl.innerHTML=`<table><thead><tr><th>Date</th><th>Member</th><th>Access Type</th><th>Details</th><th></th></tr></thead>
-      <tbody>${receiptList.map((e,i)=>`<tr>
-        <td style="white-space:nowrap">${fmt(e.timestamp)}</td>
-        <td><strong>${e.userName||'—'}</strong></td>
-        <td>${e.accessType||'—'}</td>
-        <td style="font-size:11px;color:var(--muted)">${e.notes||''}</td>
-        <td style="white-space:nowrap">
-          <button class="btn btn-outline btn-sm" onclick="dlReceiptPDF(${i})">⬇ PDF</button>
-          <button class="btn btn-green   btn-sm" onclick="driveReceiptPDF(${i})">☁ Drive</button>
-          <button class="btn btn-danger  btn-sm" onclick="deletePurchase(${i})">Delete</button>
-        </td>
-      </tr>`).join('')}</tbody></table>`;
-    }
+    receiptList=snap.docs.map(d=>({id:d.id,...d.data()})).filter(e=>e.notes&&e.notes.includes('Purchased:'));
+    renderReceiptsTable();
     document.getElementById('btn-rec-csv').disabled=!receiptList.length;
   } catch(e) { document.getElementById('rec-table').innerHTML=`<p style="color:red;padding:16px">Error: ${e.message}</p>`; }
+}
+function renderReceiptsTable() {
+  applySort(receiptList,'receipts');
+  const tbl=document.getElementById('rec-table');
+  if(!receiptList.length){tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No purchase records in this date range.</p>';return;}
+  const sh=col=>`onclick="clickSort('receipts','${col}')" style="cursor:pointer;user-select:none"`;
+  tbl.innerHTML=`<table><thead><tr>
+    <th ${sh('timestamp')}>Date${sortIcon('receipts','timestamp')}</th>
+    <th ${sh('userName')}>Member${sortIcon('receipts','userName')}</th>
+    <th ${sh('accessType')}>Access Type${sortIcon('receipts','accessType')}</th>
+    <th ${sh('notes')}>Details${sortIcon('receipts','notes')}</th>
+    <th></th>
+  </tr></thead><tbody>${receiptList.map((e,i)=>`<tr>
+    <td style="white-space:nowrap">${fmt(e.timestamp)}</td>
+    <td><strong>${e.userName||'—'}</strong></td>
+    <td>${e.accessType||'—'}</td>
+    <td style="font-size:11px;color:var(--muted)">${e.notes||''}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-outline btn-sm" onclick="dlReceiptPDF(${i})">⬇ PDF</button>
+      <button class="btn btn-green   btn-sm" onclick="driveReceiptPDF(${i})">☁ Drive</button>
+      <button class="btn btn-danger  btn-sm" onclick="deletePurchase(${i})">Delete</button>
+    </td>
+  </tr>`).join('')}</tbody></table>`;
 }
 
 function exportReceiptsCSV() { dlBlob(new Blob([toCSV([['Date/Time','Member','Access Type','Details'],...receiptList.map(e=>[fmt(e.timestamp),e.userName,e.accessType,e.notes])])],{type:'text/csv'}),`KBC_Purchases_${today()}.csv`); }
@@ -1075,7 +1481,7 @@ async function backupAllToDrive() {
     await uploadToDrive(`KBC_Climbs_${today()}.csv`,buildBouldersCSVBlob(boulders),'text/csv','climbs');
 
     toast('Saving purchases CSV… (5/5)');
-    const purchases=logs.filter(e=>e.notes&&(e.notes.includes('Purchased:')||e.notes.includes('Voucher code:')));
+    const purchases=logs.filter(e=>e.notes&&e.notes.includes('Purchased:'));
     await uploadToDrive(`KBC_Purchases_${today()}.csv`,new Blob([toCSV([['Date/Time','Member','Access Type','Details'],...purchases.map(e=>[fmt(e.timestamp),e.userName,e.accessType,e.notes])])],{type:'text/csv'}),'text/csv','receipts');
 
     toast('✓ Backup complete — 5 files saved to Drive!');
