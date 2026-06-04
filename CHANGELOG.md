@@ -4,6 +4,36 @@ All notable changes to KBC Scheduler are documented here.
 
 ---
 
+## [Unreleased] — 2026-06-04
+
+### Added
+- **New member onboarding gate**: first-time Google sign-in (no existing Firestore profile) routes to a mandatory setup form (`/new-member-setup`) before entering the app. The form collects Legal Name*, Preferred Name, Phone, and Emergency Contact (Name*, Relationship*, Phone*). Email is locked to the Google account. The Firestore profile is created only on form completion — no document is written on sign-in alone.
+- **Waiver gate on sign-in**: after the member setup step, users who have not signed the liability waiver are redirected to the waiver screen before reaching Home. Both onboarding steps use `router.replace` so back navigation is impossible during the mandatory flow.
+- **Sign-in confirmation workflow — Pending sign-ins**: non-supervisor members' session sign-ins now create a `status: 'pending'` log entry. Supervisor-initiated sign-ins (their own or signing in others) bypass pending and are immediately confirmed.
+- **Sign-in confirmation workflow — Supervisor ✓/✕ actions**: pending entries in the Sign-In Book show an orange "Pending" pill and present ✓ (confirm) and ✕ (deny) action buttons to supervisors/admins in place of the usual Edit/Delete buttons. Confirming writes `status: 'verified'`, `verifiedBy`, and `verifiedAt` to the log entry. Denying deletes the entry.
+- **Verified sign-in label**: confirmed entries display a small green "✓ verified by [supervisor name]" line beneath the member name.
+- **Daily sign-in limit**: one session sign-in per member per calendar day (resets at midnight local time). A second sign-in attempt for the same day shows an alert; no duplicate entry is created.
+- **Daily limit reset on delete/deny**: deleting a sign-in entry or denying a pending one resets `lastSignInAt` on the member profile (if that was their only sign-in entry today), allowing them to sign in again.
+- **Log Climb button — top of screen (Log Book tab)**: the floating "Log Climb" button has been moved from the bottom FAB to the top bar, alongside the location picker, filter, and summary icons. This reduces the vertical footprint of the header area.
+- **Log Climb button — top of Climbs tab**: a "Log Climb" button now appears in the top bar of the Climbs (boulders) screen in both KBC and Personal modes. In Personal mode it opens the add-problem flow; in KBC mode it navigates to the Log Book tab.
+- **Effort bar — Neutral label**: the effort bar now shows "Neutral" as a centered label between "Easy" and "Hard".
+- **Token-expiry forced re-sign-in**: if the app has been in the background for ≥ 2 hours, it now forces the user back to the sign-in screen on resume to avoid stale-token Firestore errors. Additionally, if all token-refresh paths fail (expired refresh token + Google silent sign-in failure), the session is cleared immediately and the user is returned to login.
+
+### Changed
+- **Profile creation — deferred to onboarding form**: `getOrCreateProfile` replaced with `findOrLinkProfile` (returns `null` for brand-new users) + `createSelfRegisteredProfile` (called only when the onboarding form is submitted). Existing email-matched profiles (manually created before first Google sign-in) are still linked to the Firebase UID on first sign-in.
+- **Member field rename — "Google Account Name" → "Legal Name"**: the locked `profile.name` field in the profile edit modal is now labelled "Legal Name" instead of "Google Account Name".
+- **Delete sign-in — calendar-day reset logic**: the `lastSignInAt` reset after a delete now uses the calendar day (midnight boundary) instead of a rolling 24-hour window.
+- **Calendar — Special Events on Home**: the Home screen now only shows events that were explicitly created as "Special Events" through the app (via the supervisor/admin add-event flow). Regular Google Calendar entries and supervisor climb sessions no longer appear in the "Special Events Today" section. Heading changed to "★ Special Events Today".
+- **Default effort level**: effort defaults to the midpoint (Neutral / 50 %) instead of unset in both the KBC boulder log modal and the personal climb log modal.
+- **KBC boulder log — Personal Grade removed**: the "Personal Grade" selector has been removed from the KBC boulder log modal. The established grade is still derived from the community average grade and stored internally.
+
+### Removed
+- **Boulder badges — "Others" category**: the emoji-themed badge group ("Joy", "Peaceful", "Pain", "Cry", "Anger", "Ego-Breaker", "Joke", "Outrageous", "OMG", "Love it", "Hate it", "Suffer") has been removed from both the app and the admin web interface.
+- **Members — Remove Member**: the "Remove Member" button and its delete flow have been removed from the app. Member deletion can only be performed from the admin web panel.
+- **Members — Admin Management**: the "Admin Management" button (linking to the `/admin-management` screen) has been removed from the Members tab in the app.
+
+---
+
 ## [Infrastructure] — 2026-06-02
 
 ### Migration: personal account → KBC-owned accounts
