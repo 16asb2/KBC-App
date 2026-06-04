@@ -20,7 +20,7 @@ import { KBC } from '@/constants/theme';
 import { isAdmin } from '@/constants/admins';
 import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
-import { LogEntry, getRecentLogs, getArchiveLogs, updateLogEntry, deleteLogEntry } from '@/services/logbook';
+import { LogEntry, getRecentLogs, getArchiveLogs, updateLogEntry, deleteLogEntry, verifyLogEntry } from '@/services/logbook';
 import { updateProfile } from '@/services/firestore';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@ function AmendModal({
 // ─── Log Row ─────────────────────────────────────────────────────────────────
 
 function LogRow({
-  entry, canAmend, canDelete, onAmend, onDelete, onViewProfile,
+  entry, canAmend, canDelete, onAmend, onDelete, onViewProfile, onVerify, onCancel,
 }: {
   entry: LogEntry;
   canAmend: boolean;
@@ -127,10 +127,15 @@ function LogRow({
   onAmend: () => void;
   onDelete: () => void;
   onViewProfile?: () => void;
+  onVerify?: () => void;
+  onCancel?: () => void;
 }) {
-  const color = accessColor(entry.accessType);
+  const color      = accessColor(entry.accessType);
+  const isPending  = entry.status === 'pending';
+  const isVerified = entry.status === 'verified';
+
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, isPending && styles.rowPending]}>
       <Text style={styles.rowTime}>{formatLogTime(entry.timestamp)}</Text>
       <View style={styles.rowMiddle}>
         <TouchableOpacity onPress={onViewProfile} disabled={!onViewProfile} activeOpacity={0.6}>
@@ -138,15 +143,33 @@ function LogRow({
             {entry.userName}
           </Text>
         </TouchableOpacity>
-        <View style={[styles.accessPill, { backgroundColor: color + '22' }]}>
-          <Text style={[styles.accessText, { color }]}>{entry.accessType}</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+          <View style={[styles.accessPill, { backgroundColor: color + '22' }]}>
+            <Text style={[styles.accessText, { color }]}>{entry.accessType}</Text>
+          </View>
+          {isPending && (
+            <View style={[styles.accessPill, { backgroundColor: KBC.orange + '22' }]}>
+              <Text style={[styles.accessText, { color: KBC.orange }]}>Pending</Text>
+            </View>
+          )}
         </View>
-        {entry.notes ? <Text style={styles.rowNotes}>{entry.notes}</Text> : null}
-        {entry.amendedBy ? (
-          <Text style={styles.amendedTag}>✏ amended</Text>
+        {isVerified && entry.verifiedBy ? (
+          <Text style={styles.verifiedTag}>✓ verified by {entry.verifiedBy}</Text>
         ) : null}
+        {entry.notes ? <Text style={styles.rowNotes}>{entry.notes}</Text> : null}
+        {entry.amendedBy ? <Text style={styles.amendedTag}>✏ amended</Text> : null}
       </View>
-      {canAmend && (
+
+      {isPending && onVerify && onCancel ? (
+        <View style={styles.rowActions}>
+          <TouchableOpacity style={styles.verifyBtn} onPress={onVerify}>
+            <Text style={styles.verifyBtnText}>✓</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.denyBtn} onPress={onCancel}>
+            <Text style={styles.denyBtnText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      ) : canAmend ? (
         <View style={styles.rowActions}>
           <TouchableOpacity style={styles.amendBtn} onPress={onAmend}>
             <Text style={styles.amendBtnText}>Edit</Text>
@@ -157,7 +180,7 @@ function LogRow({
             </TouchableOpacity>
           )}
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
@@ -177,6 +200,7 @@ export default function LogBookScreen() {
 
   const canAmend    = isAdmin(user?.email, profile?.isAdmin) || (profile?.isSupervisor ?? false);
   const canDelete   = isAdmin(user?.email, profile?.isAdmin);
+  const canVerify   = canAmend; // supervisors + admins can confirm/deny pending sign-ins
   const canSeePurchases = canAmend; // admins + supervisors only
 
   async function loadLogs(isArchive = archive) {
@@ -211,6 +235,22 @@ export default function LogBookScreen() {
     await loadLogs();
   }
 
+  // Shared helper: if the deleted/cancelled entry was the user's only sign-in
+  // entry today, clear lastSignInAt so they can sign in again.
+  async function maybeResetSignInAt(entry: LogEntry, remaining: LogEntry[]) {
+    const todayStr    = new Date().toDateString();
+    const entryDayStr = new Date(entry.timestamp).toDateString();
+    if (entryDayStr !== todayStr || !entry.userId) return;
+    const hasOtherTodaySignIn = remaining.some(
+      l => l.userId === entry.userId &&
+           new Date(l.timestamp).toDateString() === todayStr &&
+           !l.notes?.startsWith('Purchased:'),
+    );
+    if (!hasOtherTodaySignIn) {
+      await updateProfile(entry.userId, { lastSignInAt: undefined }, user?.email ?? '');
+    }
+  }
+
   function handleDelete(entry: LogEntry) {
     Alert.alert(
       'Delete Sign-In',
@@ -224,18 +264,7 @@ export default function LogBookScreen() {
               await deleteLogEntry(entry.id);
               const remaining = logs.filter(l => l.id !== entry.id);
               setLogs(remaining);
-
-              // If the entry is within the 24h window, check whether it was the
-              // user's most recent sign-in. If so, clear the sign-in block.
-              const isRecent = Date.now() - new Date(entry.timestamp).getTime() < 24 * 60 * 60 * 1000;
-              if (isRecent && entry.userId) {
-                const hasNewerEntry = remaining.some(
-                  l => l.userId === entry.userId && l.timestamp > entry.timestamp,
-                );
-                if (!hasNewerEntry) {
-                  await updateProfile(entry.userId, { lastSignInAt: undefined }, user?.email ?? '');
-                }
-              }
+              await maybeResetSignInAt(entry, remaining);
             } catch (e: any) {
               Alert.alert('Error', e.message);
             }
@@ -243,6 +272,41 @@ export default function LogBookScreen() {
         },
       ],
     );
+  }
+
+  function handleCancel(entry: LogEntry) {
+    Alert.alert(
+      'Deny Sign-In',
+      `Deny ${entry.userName}'s pending sign-in?`,
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Deny', style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteLogEntry(entry.id);
+              const remaining = logs.filter(l => l.id !== entry.id);
+              setLogs(remaining);
+              await maybeResetSignInAt(entry, remaining);
+            } catch (e: any) {
+              Alert.alert('Error', e.message);
+            }
+          },
+        },
+      ],
+    );
+  }
+
+  async function handleVerify(entry: LogEntry) {
+    const verifierName = profile?.preferredName || user?.name || user?.email || 'Supervisor';
+    try {
+      await verifyLogEntry(entry.id, verifierName);
+      setLogs(prev =>
+        prev.map(l => l.id === entry.id ? { ...l, status: 'verified' as const, verifiedBy: verifierName } : l),
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
   }
 
   return (
@@ -349,6 +413,8 @@ export default function LogBookScreen() {
                         canDelete={canDelete}
                         onAmend={() => setAmending(entry)}
                         onDelete={() => handleDelete(entry)}
+                        onVerify={canVerify ? () => handleVerify(entry) : undefined}
+                        onCancel={canVerify ? () => handleCancel(entry) : undefined}
                         onViewProfile={canAmend && entry.userId
                           ? () => router.push({ pathname: '/(tabs)/members', params: { openUid: entry.userId } } as any)
                           : undefined
@@ -421,11 +487,18 @@ const styles = StyleSheet.create({
   rowNotes: { fontSize: 12, color: '#888' },
   amendedTag: { fontSize: 11, color: '#bbb', fontStyle: 'italic' },
 
+  rowPending: { borderLeftWidth: 3, borderLeftColor: KBC.orange },
+  verifiedTag: { fontSize: 11, color: KBC.green, fontStyle: 'italic' },
+
   rowActions: { alignItems: 'flex-end', gap: 6 },
   amendBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#f0f0f0', alignSelf: 'flex-start' },
   amendBtnText: { fontSize: 12, fontWeight: '700', color: '#666' },
   deleteBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#fee2e2', alignSelf: 'flex-start' },
   deleteBtnText: { fontSize: 12 },
+  verifyBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: KBC.green + '22', alignSelf: 'flex-start' },
+  verifyBtnText: { fontSize: 14, fontWeight: '800', color: KBC.green },
+  denyBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#fee2e2', alignSelf: 'flex-start' },
+  denyBtnText: { fontSize: 14, fontWeight: '800', color: KBC.pink },
 
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
   emptyText: { textAlign: 'center', color: '#aaa', fontSize: 14, paddingTop: 60 },

@@ -58,6 +58,12 @@ function formatDateTime(date: Date) {
   return `${label} at ${formatTime(date)}`;
 }
 
+function isToday(iso: string): boolean {
+  const d = new Date(iso);
+  const n = new Date();
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+}
+
 function passLabel(start: string | null, expiry: string | null): string {
   if (!start || !expiry) return 'Active Member';
   const months = Math.round(
@@ -652,12 +658,27 @@ export default function HomeScreen() {
     const targetDisplayName = target.preferredName || target.name;
     const { membershipStatus, punchPassRemaining } = target;
 
+    // ── Daily limit: one sign-in per calendar day ─────────────────────────────
+    if (target.lastSignInAt && isToday(target.lastSignInAt)) {
+      Alert.alert(
+        'Already Signed In',
+        `${isSelf ? 'You have' : `${targetDisplayName} has`} already signed in today.\nSign-ins reset at midnight.`,
+      );
+      return;
+    }
+
+    // Sign-in entries for non-privileged users go to "Pending" for supervisor confirmation
+    const pendingStatus = isPrivileged ? undefined : ('pending' as const);
+
     if (membershipStatus === 'active' || membershipStatus === 'pending') {
       setSigningIn(true);
       try {
         const now   = new Date().toISOString();
         const label = passLabel(target.membershipStart, target.membershipExpiry);
-        await addLogEntry({ timestamp: now, userId: target.uid, userName: targetDisplayName, accessType: label });
+        await addLogEntry({
+          timestamp: now, userId: target.uid, userName: targetDisplayName, accessType: label,
+          ...(pendingStatus ? { status: pendingStatus } : {}),
+        });
         await updateProfile(target.uid, { lastSignInAt: now }, user.email);
         if (isSelf) await reloadProfile();
         showToast(`✓ ${isSelf ? 'Signed in!' : `${targetDisplayName} signed in!`} Session logged.`);
@@ -694,7 +715,10 @@ export default function HomeScreen() {
         const now = new Date().toISOString();
         const remaining = punchPassRemaining - 1;
         await updateProfile(target.uid, { punchPassRemaining: remaining, lastSignInAt: now }, user.email);
-        await addLogEntry({ timestamp: now, userId: target.uid, userName: targetDisplayName, accessType: `Punch Pass (${remaining} left)` });
+        await addLogEntry({
+          timestamp: now, userId: target.uid, userName: targetDisplayName, accessType: `Punch Pass (${remaining} left)`,
+          ...(pendingStatus ? { status: pendingStatus } : {}),
+        });
         if (isSelf) await reloadProfile();
         showToast(`✓ ${isSelf ? 'Signed in!' : `${targetDisplayName} signed in!`} ${remaining} punch${remaining !== 1 ? 'es' : ''} remaining.`);
         // If a supervisor signs in, mark the gym as open
@@ -850,6 +874,7 @@ export default function HomeScreen() {
         userId: target.uid,
         userName: targetName,
         accessType,
+        ...(isPrivileged ? {} : { status: 'pending' as const }),
       });
 
       showToast(`✓ ${isOther ? `${targetName} signed in!` : 'Signed in!'} Session logged.`);

@@ -70,6 +70,10 @@ export type LogEntry = {
   notes?: string;
   amendedBy?: string;
   amendedAt?: string;
+  // Supervisor-confirmation workflow
+  status?: 'pending' | 'verified';  // undefined = supervisor-initiated (no confirmation needed)
+  verifiedBy?: string;              // display name of supervisor who confirmed
+  verifiedAt?: string;              // ISO timestamp of confirmation
 };
 
 export type AccessOption = {
@@ -180,6 +184,15 @@ export async function getActiveClimberCount(): Promise<number> {
   const entries = docs.map(r => decodeDoc(r.document));
   const uids = new Set(entries.map((e: any) => e.userId).filter(Boolean));
   return uids.size;
+}
+
+export async function verifyLogEntry(id: string, verifiedBy: string): Promise<void> {
+  const now = new Date().toISOString();
+  await fsPatch(
+    `logs/${id}`,
+    { status: 'verified', verifiedBy, verifiedAt: now },
+    ['status', 'verifiedBy', 'verifiedAt'],
+  );
 }
 
 export async function updateLogEntry(
