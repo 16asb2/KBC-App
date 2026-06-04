@@ -63,6 +63,7 @@ export function EffortBar({ value, onChange, interactive = true }: Props) {
       {/* Labels */}
       <View style={styles.labelRow}>
         <Text style={styles.labelLeft}>Easy</Text>
+        <Text style={styles.labelCenter}>Neutral</Text>
         <Text style={styles.labelRight}>Hard</Text>
       </View>
 
@@ -114,8 +115,9 @@ export function EffortBar({ value, onChange, interactive = true }: Props) {
 const styles = StyleSheet.create({
   wrap: { gap: 4, marginVertical: 2 },
   labelRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  labelLeft:  { fontSize: 11, fontWeight: '700', color: '#2ecc71' },
-  labelRight: { fontSize: 11, fontWeight: '700', color: '#e74c3c' },
+  labelLeft:   { fontSize: 11, fontWeight: '700', color: '#2ecc71' },
+  labelCenter: { fontSize: 11, fontWeight: '700', color: '#999' },
+  labelRight:  { fontSize: 11, fontWeight: '700', color: '#e74c3c' },
   track: {
     height: TRACK_HEIGHT,
     borderRadius: TRACK_HEIGHT / 2,

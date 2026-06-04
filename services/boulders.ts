@@ -29,10 +29,6 @@ export const BADGE_GROUPS = [
     title: 'Body Dependent',
     badges: ['Flexibility', 'Reachy', 'Shouldery', 'Body Tension', 'Contortionism', 'Small-fit'],
   },
-  {
-    title: 'Others',
-    badges: ['Joy', 'Peaceful', 'Pain', 'Cry', 'Anger', 'Ego-Breaker', 'Joke', 'Outrageous', 'OMG', 'Love it', 'Hate it', 'Suffer'],
-  },
 ] as const;
 
 export const BADGES: readonly string[] = BADGE_GROUPS.flatMap(g => [...g.badges]);

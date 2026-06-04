@@ -34,6 +34,39 @@ All notable changes to KBC Scheduler are documented here.
 
 ---
 
+## [Admin Web] — 2026-06-03
+
+Changes to the admin web panel at `kbc-app-admin.web.app`.
+
+### Added
+- **Phone & Emergency Contact fields** — member add form and edit modal now include Phone, Emergency Contact Name, Relationship, and Phone.
+- **Waiver display in edit modal** — edit modal surfaces the member's waiver status: digital (signed in-app, with download PDF), uploaded PDF (with view link), or "No waiver on file". A PDF upload widget is present in all cases to upload a physical waiver scan.
+- **Waiver PDF upload** — admins can upload a scanned waiver PDF to Firebase Storage (`waivers/{uid}.pdf`); the download URL is saved to the member's Firestore doc.
+- **Sortable table columns** — all four tables (Sign-In Book, Members, KBC Climbs, Purchases) now support click-to-sort on any column, with ascending/descending toggle.
+- **Access Pass Start date** — member add form and edit modal now include an "Access Pass Start" date field (`accessPassStart`), alongside the existing end date.
+- **Season management** — new 📅 Seasons button in KBC Climbs opens a modal to add/remove boulder seasons. New seasons appear immediately in the Add Boulder season dropdown.
+- **Grade bar drag interaction** — the setter-grade bar in Add Boulder is now a continuous drag slider. Click and drag anywhere along the bar to move the green pin; grade snaps to nearest of the 5 values.
+
+### Changed
+- **Tables auto-load** — all section tables load automatically when switching to their tab; "Load" buttons removed.
+- **"Membership" renamed to "Access Pass"** — all membership-related labels in the members section now read "Access Pass Status", "Access Pass Start", "Access Pass End Date" to match app terminology.
+- **Default new-member status** — "Inactive" is now pre-selected when adding a member.
+- **Delete button moved** — "Delete" removed from the members table row; replaced by a full-width "⚠ Permanently Delete Member" button at the bottom of the edit modal.
+- **SUP / ADM split into separate columns** — the combined "Roles" column is now two separate columns ("SUP", "ADM") with colour-coded badges.
+- **Setter field made optional** — setter name is no longer required when adding a boulder. Season is now required.
+- **Setter Email removed** — removed from the Add Boulder form; not used in the app.
+- **Legal Name column no longer wraps** — `white-space:nowrap` applied to keep names on one line in the members table.
+- **Vouchers removed from Purchases** — voucher redemptions are recorded in the Sign-In Book; removed from the purchase type dropdown and receipts filter.
+- **Member status filter removed** — the all-members status filter dropdown has been removed from the Members tab.
+
+### Fixed
+- **Add Boulder button** — `openBoulderModal()` was using `style.display=''` which fell back to `display:none` in CSS. Fixed to `style.display='block'`.
+- **Edit Member modal** — same `display:none` fallback bug fixed.
+- **Gym floor plan wall scaling** — wall heights and Y-positions in the SVG floor plan were incorrectly scaled by width (100) instead of height (62), making all walls ~60% too tall. Recalculated from the app's exact `GYM_WALLS` fractions.
+- **Add Boulder visual redesign** — grade bar, badge icon discs, and gym floor plan now visually match the app.
+
+---
+
 ## [Infrastructure] — 2026-06-02
 
 ### Migration: personal account → KBC-owned accounts

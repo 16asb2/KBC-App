@@ -2096,7 +2096,7 @@ function BoulderLogModal({
   const [personalGradeIdx, setPersonalGradeIdx] = useState<number>(-1);
   const [selectedBadges,   setSelectedBadges]   = useState<string[]>([]);
   const [badgesOpen,       setBadgesOpen]       = useState(false);
-  const [effort,           setEffort]           = useState<number | null>(null);
+  const [effort,           setEffort]           = useState<number | null>(50);
   const [project,          setProject]          = useState(false);
   const [attempts,         setAttempts]         = useState('1');
   const [publicComment,    setPublicComment]    = useState('');
@@ -2109,7 +2109,7 @@ function BoulderLogModal({
     if (visible) {
       setLogDate(new Date());
       setType('ascent');
-      // Default personal grade = rounded community avg from boulder.gradeVotes + setter
+      // Compute community avg grade to use as established grade on save
       const allVotes: Record<string, number> = { ...boulder.gradeVotes };
       if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) {
         allVotes['__setter'] = boulder.setterGradeVote;
@@ -2118,7 +2118,7 @@ function BoulderLogModal({
       setPersonalGradeIdx(avg !== null ? Math.round(Math.max(0, Math.min(4, avg))) : -1);
       setSelectedBadges([]);
       setBadgesOpen(false);
-      setEffort(null);
+      setEffort(50);
       setProject(false);
       setAttempts('1');
       setPublicComment('');
@@ -2259,28 +2259,6 @@ function BoulderLogModal({
                 </TouchableOpacity>
               </View>
 
-              {/* Personal Grade */}
-              <Text style={styles.fieldLabel}>Personal Grade</Text>
-              <View style={{ flexDirection: 'row', gap: 6 }}>
-                {GRADES.map((grade, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    onPress={() => setPersonalGradeIdx(i)}
-                    style={{
-                      flex: 1, height: 44,
-                      backgroundColor: GRADE_COLORS[i],
-                      borderRadius: 8,
-                      alignItems: 'center', justifyContent: 'center',
-                      borderWidth: 2.5,
-                      borderColor: personalGradeIdx === i ? '#fff' : 'transparent',
-                      opacity: personalGradeIdx === -1 || personalGradeIdx === i ? 1 : 0.35,
-                    }}
-                  >
-                    <Text style={{ color: GRADE_TEXT[i], fontSize: 10, fontWeight: '700' }}>{grade}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
               {/* Effort */}
               <Text style={styles.fieldLabel}>Effort</Text>
               <EffortBar value={effort} onChange={setEffort} />
@@ -2404,7 +2382,7 @@ function PersonalLogModal({
   const insets = useSafeAreaInsets();
   const [logDate,     setLogDate]     = useState(new Date());
   const [type,        setType]        = useState<'ascent' | 'attempt'>('ascent');
-  const [effort,      setEffort]      = useState<number | null>(null);
+  const [effort,      setEffort]      = useState<number | null>(50);
   const [attempts,    setAttempts]    = useState('1');
   const [quality,     setQuality]     = useState(0);
   const [badges,      setBadges]      = useState<string[]>([]);
@@ -2418,7 +2396,7 @@ function PersonalLogModal({
   useEffect(() => {
     if (visible) {
       setLogDate(new Date()); setType('ascent');
-      setEffort(null); setAttempts('1'); setQuality(0);
+      setEffort(50); setAttempts('1'); setQuality(0);
       setBadges([]); setBadgesOpen(false); setProject(false); setComment('');
     }
   }, [visible]);
@@ -3441,6 +3419,20 @@ export default function BouldersScreen() {
           </TouchableOpacity>
         )}
 
+        <TouchableOpacity
+          style={styles.logClimbTopBtn}
+          onPress={() => {
+            if (mode === 'personal') {
+              setEditingProblem(undefined);
+              setShowNewProblem(true);
+            } else {
+              router.push('/(tabs)/climblog' as any);
+            }
+          }}
+        >
+          <Text style={styles.logClimbTopBtnText}>＋ Log Climb</Text>
+        </TouchableOpacity>
+
       </View>
 
       {/* Personal location filter bar */}
@@ -3595,9 +3587,9 @@ export default function BouldersScreen() {
             );
           })()}
 
-          {/* Add personal problem FAB */}
+          {/* Log Climb / Add Problem button */}
           <TouchableOpacity style={styles.addBtn} onPress={() => { setEditingProblem(undefined); setShowNewProblem(true); }}>
-            <Text style={styles.addBtnText}>+ Add Problem</Text>
+            <Text style={styles.addBtnText}>＋ Log Climb</Text>
           </TouchableOpacity>
         </>
       )}
@@ -3776,6 +3768,11 @@ const styles = StyleSheet.create({
   filterBtnActive:     { borderColor: KBC.lime, backgroundColor: KBC.lime + '22' },
   filterBtnText:       { color: '#888', fontSize: 14, fontWeight: '600' },
   filterBtnTextActive: { color: KBC.lime },
+  logClimbTopBtn: {
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: KBC.lime,
+  },
+  logClimbTopBtnText: { color: '#111', fontSize: 13, fontWeight: '700' },
 
   // Personal location bar
   personalBar: {

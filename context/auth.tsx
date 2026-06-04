@@ -148,16 +148,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // ─── Foreground resume: proactively refresh stale tokens ──────────────────
 
+  const backgroundedAt = useRef<number>(0);
+
   useEffect(() => {
     const sub = AppState.addEventListener('change', async (nextState) => {
+      if (nextState === 'background' || nextState === 'inactive') {
+        backgroundedAt.current = Date.now();
+        return;
+      }
       if (nextState !== 'active') return;
       if (!firebaseRefresh.current) return; // not signed in
-      // Always force-refresh the Firebase token on every foreground transition.
-      // Clearing the expiry bypasses the 55-min cache check so getFirebaseToken()
-      // always calls the refresh endpoint, regardless of when the token was last issued.
-      // This prevents stale tokens from being used after the app sits in the background.
+
+      const timeInBackground = Date.now() - backgroundedAt.current;
+      // After 2 hours in background, force re-sign-in to avoid stale-token Firestore errors.
+      // Firebase ID tokens live for 60 min; refresh tokens can also become invalid after long inactivity.
+      const FORCE_REAUTH_THRESHOLD_MS = 2 * 60 * 60 * 1000;
+      if (timeInBackground >= FORCE_REAUTH_THRESHOLD_MS) {
+        console.warn('[Auth] App inactive for ≥2 h — forcing re-sign-in to refresh credentials');
+        await signOut();
+        return;
+      }
+
+      // Normal foreground resume: force-expire the cached token and get a fresh one.
       firebaseExpiresAt.current = 0;
-      await getFirebaseToken();
+      const freshToken = await getFirebaseToken();
+      if (!freshToken) {
+        // All refresh paths failed (expired/revoked refresh token) — force re-login.
+        console.warn('[Auth] Token refresh failed on foreground — forcing re-sign-in');
+        await signOut();
+        return;
+      }
       // Force-expire the cached Google access token so the next Calendar call fetches a fresh one.
       googleTokenExpiresAt.current = 0;
     });
@@ -290,10 +310,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           }
         } catch {}
-        // All refresh paths failed. Fall back to the cached token — it might still be valid
-        // (we proactively evict at 55 min but Firebase tokens live for 60 min). Better to let
-        // the server reject an expired token than to send an unauthenticated request.
-        return firebaseIdToken.current;
+        // All refresh paths failed — do not fall back to a potentially stale token.
+        // Return null so callers can detect total failure and trigger re-authentication.
+        console.warn('[Auth] getFirebaseToken: all refresh paths exhausted, returning null');
+        return null;
       } catch (e) {
         console.warn('Error getting Firebase token:', e);
         return firebaseIdToken.current;

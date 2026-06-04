@@ -763,7 +763,16 @@ export async function createSpecialEvent(
   if (!requestingUser.isSupervisor && !requestingUser.isAdmin) {
     throw new Error('Only supervisors and admins can create special events.');
   }
-  const body: Record<string, any> = { summary: eventData.summary };
+  const body: Record<string, any> = {
+    summary: eventData.summary,
+    extendedProperties: {
+      private: {
+        createdByRole: requestingUser.isAdmin ? 'admin' : 'supervisor',
+        createdByUserId: requestingUser.uid,
+        type: 'specialEvent',
+      },
+    },
+  };
   if (eventData.allDay) {
     body.start = { date: eventData.start };
     body.end   = { date: eventData.end };

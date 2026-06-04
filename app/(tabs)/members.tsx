@@ -21,8 +21,8 @@ import { isAdmin } from '@/constants/admins';
 import { WAIVER_META } from '@/constants/waivers';
 import { useAuth } from '@/context/auth';
 import { useProfile } from '@/context/profile';
-import { MembershipStatus, UserProfile, WaiverRecord, checkAndUpdateMembershipStatus, deleteProfile, getAllProfiles, updateProfile } from '@/services/firestore';
-import { LogEntry, deleteLogEntry, getUserLogs } from '@/services/logbook';
+import { MembershipStatus, UserProfile, WaiverRecord, checkAndUpdateMembershipStatus, getAllProfiles, updateProfile } from '@/services/firestore';
+import { LogEntry, getUserLogs } from '@/services/logbook';
 
 // ─── Types & constants ───────────────────────────────────────────────────────
 
@@ -135,10 +135,8 @@ type EditModalProps = {
   canEditMembership: boolean;   // admin or supervisor — controls edit panel visibility
   canDirectActivate: boolean;   // admin only — saves directly as active (supervisor → pending)
   canEditSupervisor: boolean;   // admin only — supervisor checkbox in edit panel
-  canDelete: boolean;           // admin only — remove member entirely
   onSave: (updates: Partial<UserProfile>) => Promise<void>;
   onEditFullProfile: () => void;
-  onDelete: () => void;
   onClose: () => void;
 };
 
@@ -147,10 +145,8 @@ function EditModal({
   canEditMembership,
   canDirectActivate,
   canEditSupervisor,
-  canDelete,
   onSave,
   onEditFullProfile,
-  onDelete,
   onClose,
 }: EditModalProps) {
   const insets = useSafeAreaInsets();
@@ -567,12 +563,6 @@ function EditModal({
             </TouchableOpacity>
           </View>
 
-          {canDelete && (
-            <TouchableOpacity style={styles.deleteMemberBtn} onPress={onDelete}>
-              <Text style={styles.deleteMemberBtnText}>Remove Member</Text>
-            </TouchableOpacity>
-          )}
-
           <View style={{ height: 16 }} />
         </ScrollView>
       </View>
@@ -661,33 +651,6 @@ export default function MembersScreen() {
     }
   }
 
-  async function handleDeleteMember(member: UserProfile) {
-    const displayName = member.preferredName || member.name;
-    Alert.alert(
-      'Remove Member',
-      `Permanently delete ${displayName} and all their data? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove', style: 'destructive',
-          onPress: async () => {
-            try {
-              // Delete all log entries for this member
-              const logs = await getUserLogs(member.uid);
-              await Promise.all(logs.map(l => deleteLogEntry(l.id)));
-              // Delete the profile document
-              await deleteProfile(member.uid);
-              setEditing(null);
-              await loadMembers();
-            } catch (e: any) {
-              Alert.alert('Error', e.message);
-            }
-          },
-        },
-      ],
-    );
-  }
-
   async function handleSave(member: UserProfile, updates: Partial<UserProfile>) {
     await updateProfile(member.uid, updates, user?.email ?? '');
     // After any membership change, check and auto-transition status if needed
@@ -773,16 +736,6 @@ export default function MembersScreen() {
         </View>
       )}
 
-      {/* ── Admin tools ── */}
-      {viewerIsAdmin && (
-        <TouchableOpacity
-          style={styles.adminToolsBtn}
-          onPress={() => router.push('/admin-management' as any)}
-        >
-          <Text style={styles.adminToolsBtnText}>🔑  Admin Management</Text>
-        </TouchableOpacity>
-      )}
-
       {/* ── Members list ── */}
       {canSeeAllMembers && (
         <>
@@ -822,15 +775,12 @@ export default function MembersScreen() {
           canEditMembership={viewerIsAdmin || viewerIsSupervisor}
           canDirectActivate={viewerIsAdmin}
           canEditSupervisor={viewerIsAdmin}
-          canDelete={viewerIsAdmin}
           onSave={(updates) => handleSave(editing, updates)}
           onEditFullProfile={() => {
-            // Remember who we were editing so we can restore the modal on close
             prevEditingUidRef.current = editing.uid;
             setEditingMemberProfile(editing);
             setEditing(null);
           }}
-          onDelete={() => handleDeleteMember(editing)}
           onClose={() => setEditing(null)}
         />
       )}
@@ -902,12 +852,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10, alignItems: 'center',
   },
   editProfileBtnText: { color: KBC.cyan, fontSize: 14, fontWeight: '700' },
-  adminToolsBtn: {
-    backgroundColor: KBC.purple + '18', borderRadius: 12, padding: 14,
-    alignItems: 'center', borderWidth: 1, borderColor: KBC.purple + '44',
-  },
-  adminToolsBtnText: { color: KBC.purple, fontSize: 14, fontWeight: '700' },
-
   // ── Shared ──
   avatar: { backgroundColor: KBC.pink, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontWeight: '800' },
@@ -1060,9 +1004,4 @@ const styles = StyleSheet.create({
   historyNavBtnCount:  { fontSize: 13, fontWeight: '700', color: KBC.cyan, backgroundColor: KBC.cyan + '18', paddingHorizontal: 9, paddingVertical: 3, borderRadius: 10 },
   historyNavBtnChevron: { fontSize: 20, color: '#ccc', fontWeight: '300' },
 
-  deleteMemberBtn: {
-    marginTop: 8, marginHorizontal: 16, borderRadius: 12, padding: 14,
-    alignItems: 'center', borderWidth: 1, borderColor: '#fca5a5', backgroundColor: '#fff5f5',
-  },
-  deleteMemberBtnText: { fontSize: 14, fontWeight: '700', color: '#dc2626' },
 });

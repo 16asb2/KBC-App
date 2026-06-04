@@ -351,7 +351,7 @@ function LogClimbModal({
   const [personalGrade,   setPersonalGrade]   = useState(editingClimb?.personalGrade ?? '');
   const [type,            setType]            = useState<'ascent' | 'attempt'>(editingClimb?.type ?? 'ascent');
   const [quality,         setQuality]         = useState(editingClimb?.quality ?? 0);
-  const [effort,          setEffort]          = useState<number | null>(effortToNumber(editingClimb?.effort));
+  const [effort,          setEffort]          = useState<number | null>(editingClimb ? effortToNumber(editingClimb.effort) : 50);
   const [attempts,        setAttempts]        = useState(editingClimb?.attempts ? String(editingClimb.attempts) : '1');
   const [project,         setProject]         = useState(editingClimb?.project ?? false);
   const [badges,          setBadges]          = useState<string[]>(editingClimb?.badges ?? []);
@@ -386,7 +386,7 @@ function LogClimbModal({
       setLocationId(defLoc);
       setSectorIdx(0); setLogDate(new Date()); setClimbName('');
       setEstablishedGrade(''); setPersonalGrade(''); setType('ascent');
-      setQuality(0); setEffort(null); setAttempts('1'); setProject(false); setBadges([]); setComment(''); setPhoto('');
+      setQuality(0); setEffort(50); setAttempts('1'); setProject(false); setBadges([]); setComment(''); setPhoto('');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingClimb?.id, visible]);
@@ -402,7 +402,7 @@ function LogClimbModal({
     setLocationId(defaultLocId);
     setSectorIdx(0); setLogDate(new Date()); setClimbName('');
     setEstablishedGrade(''); setPersonalGrade(''); setType('ascent');
-    setQuality(0); setEffort(null); setAttempts('1'); setProject(false); setBadges([]); setComment(''); setPhoto('');
+    setQuality(0); setEffort(50); setAttempts('1'); setProject(false); setBadges([]); setComment(''); setPhoto('');
   }
 
   async function handleSave() {
@@ -865,7 +865,6 @@ export default function ClimbLogScreen() {
   const { profile } = useProfile();
   const uid         = user?.id ?? '';
   const userName    = profile?.preferredName || user?.name || '';
-  const insets      = useSafeAreaInsets();
 
   const [locationId,   setLocationId]   = useState<string>('all');
   const [locations,    setLocations]    = useState<ClimbLocation[]>([]);
@@ -991,7 +990,10 @@ export default function ClimbLogScreen() {
           </Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.summaryBtn} onPress={() => router.push({ pathname: '/climb-summary', params: { locationId } })}>
-          <Text style={styles.summaryBtnText}>📊 Summary</Text>
+          <Text style={styles.summaryBtnText}>📊</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.logClimbBtn} onPress={() => setShowLogClimb(true)}>
+          <Text style={styles.logClimbBtnText}>＋ Log Climb</Text>
         </TouchableOpacity>
       </View>
 
@@ -1036,7 +1038,7 @@ export default function ClimbLogScreen() {
             />
           );
         }}
-        contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
+        contentContainerStyle={{ padding: 12, paddingBottom: 24 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1053,13 +1055,6 @@ export default function ClimbLogScreen() {
         }
       />
 
-      {/* ── FAB ── */}
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 16 }]}
-        onPress={() => setShowLogClimb(true)}
-      >
-        <Text style={styles.fabText}>＋ Log Climb</Text>
-      </TouchableOpacity>
 
       {/* ── Modals ── */}
       <LocationPickerSheet
@@ -1106,30 +1101,35 @@ const styles = StyleSheet.create({
 
   // Top bar
   topBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 12, paddingVertical: 10,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 10, paddingVertical: 7,
     backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#eee',
   },
   locPill: {
     flex: 1, backgroundColor: '#f0f0f0', borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 8,
+    paddingHorizontal: 12, paddingVertical: 6,
   },
-  locPillText: { fontSize: 14, fontWeight: '600', color: KBC.black },
+  locPillText: { fontSize: 13, fontWeight: '600', color: KBC.black },
   filterBtn: {
     backgroundColor: '#f0f0f0', borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 8,
+    paddingHorizontal: 12, paddingVertical: 6,
   },
   filterBtnActive: { backgroundColor: KBC.cyan },
   filterBtnText: { fontSize: 13, fontWeight: '700', color: '#555' },
   summaryBtn: {
-    backgroundColor: KBC.cyan, borderRadius: 20,
-    paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: '#f0f0f0', borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 6,
   },
-  summaryBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  summaryBtnText: { fontSize: 14, color: '#555' },
+  logClimbBtn: {
+    backgroundColor: KBC.cyan, borderRadius: 20,
+    paddingHorizontal: 12, paddingVertical: 6,
+  },
+  logClimbBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
 
   // Sort bar
   sortBar: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#eee' },
-  sortBarContent: { paddingHorizontal: 10, paddingVertical: 8, flexDirection: 'row', gap: 8 },
+  sortBarContent: { paddingHorizontal: 10, paddingVertical: 5, flexDirection: 'row', gap: 6 },
   sortChip: {
     borderRadius: 20, paddingHorizontal: 13, paddingVertical: 6,
     backgroundColor: '#f0f0f0', borderWidth: 1, borderColor: '#e0e0e0',

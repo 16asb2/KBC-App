@@ -618,8 +618,9 @@ export default function HomeScreen() {
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayEnd   = new Date(todayStart); todayEnd.setDate(todayStart.getDate() + 1);
     return allEvents.filter(e => {
-      const isSpecial = !isSupervisorEvent(e.summary) && !e.summary?.toLowerCase().includes('(requested)');
-      if (!isSpecial) return false;
+      // Only show events explicitly created as "Special Events" through the app
+      const isAppSpecialEvent = e.extendedProperties?.private?.type === 'specialEvent';
+      if (!isAppSpecialEvent) return false;
       if (e.start?.dateTime && e.end?.dateTime) {
         return new Date(e.start.dateTime) < todayEnd && new Date(e.end.dateTime) > todayStart;
       }
@@ -935,7 +936,7 @@ export default function HomeScreen() {
         {/* Special events today */}
         {todaySpecialEvents.length > 0 && (
           <View style={styles.specialEventsCard}>
-            <Text style={styles.specialEventsHeading}>📅  Today&apos;s Events</Text>
+            <Text style={styles.specialEventsHeading}>★  Special Events Today</Text>
             {todaySpecialEvents.map(e => (
               <View key={e.id} style={styles.specialEventRow}>
                 <View style={styles.specialEventDot} />
