@@ -480,7 +480,7 @@ function EditModal({
 
           {/* ── Documents (collapsible, everyone) ── */}
           <CollapsibleSection title="Documents">
-            {(['liability'] as const).map(wType => {
+            {(['membership', 'liability'] as const).map(wType => {
               const meta = WAIVER_META[wType];
               const raw  = member[meta.profileKey];
               const record: WaiverRecord | null = (() => {
@@ -506,7 +506,7 @@ function EditModal({
                     {record ? (
                       <Text style={styles.waiverDate}>
                         {record.guardian ? `${record.guardian} (guardian) — ` : ''}
-                        {new Date(record.signedAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                        {new Date(record.signedAt).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}
                         {record.docUrl ? '  📄' : ''}
                       </Text>
                     ) : (

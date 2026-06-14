@@ -54,7 +54,7 @@ export default function NewMemberSetupScreen() {
         ln, ec, pn, phone,
       );
       await reloadProfile();
-      router.replace('/waiver/liability?fromOnboarding=true' as any);
+      router.replace('/waiver/membership?fromOnboarding=true' as any);
     } catch (e: any) {
       Alert.alert('Error', e.message);
     } finally {
@@ -158,7 +158,7 @@ export default function NewMemberSetupScreen() {
         >
           {saving
             ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.btnText}>Continue to Waiver</Text>
+            : <Text style={styles.btnText}>Continue to Membership Forms</Text>
           }
         </TouchableOpacity>
       </ScrollView>

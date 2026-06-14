@@ -37,8 +37,9 @@ export type UserProfile = {
   memberSince: string;             // first registration date (ISO)
   membershipStart: string | null;  // start of current paid period (ISO)
   membershipExpiry: string | null; // end of current paid period (ISO)
-  // Waiver — stored as JSON string in Firestore (signed during member creation)
-  waiverLiability?: string;        // JSON WaiverRecord
+  // Waivers — stored as JSON strings in Firestore (signed during onboarding)
+  waiverMembership?: string;       // JSON WaiverRecord — Share Purchase for Lifetime Membership
+  waiverLiability?: string;        // JSON WaiverRecord — Release of Liability
   // User-editable profile fields
   preferredName?: string;          // display name override
   additionalEmails?: string;       // JSON string[]

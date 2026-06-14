@@ -4,6 +4,21 @@ All notable changes to KBC Scheduler are documented here.
 
 ---
 
+## [Unreleased] — 2026-06-14
+
+### Added
+- **Membership waiver (Share Purchase for Lifetime Membership)**: new required waiver added to the onboarding flow. New members must sign the Share Purchase form before the Liability waiver. Includes mission, vision, values, agreement terms ($10 CAD share), and electronic signature consent. Stored as `waiverMembership` on the member profile.
+- **Waiver gate — persistent tabs guard**: the tabs layout (`(tabs)/_layout.tsx`) now re-checks both waivers on every profile update. Any member missing either waiver is redirected immediately, regardless of how they reached a tab (deep link, back navigation, etc.). This is in addition to the existing one-time check in the root layout on login.
+- **Waiver signed timestamp in Members panel**: the waiver rows in the member detail card now show the full date and time the waiver was submitted (e.g. "Jun 14, 2026, 3:42 PM").
+- **Members panel — membership waiver row**: the Documents section now lists both the Share Purchase waiver and the Liability waiver for each member, with signed timestamp or "Tap to sign →" for each.
+
+### Changed
+- **Onboarding waiver sequence**: after completing the member setup form, new members are routed to the membership waiver first, then the liability waiver. Both must be signed before reaching Home. The root layout checks membership waiver before liability waiver.
+- **Liability waiver — updated text**: section heading updated to "Electronic Signature Consent to Waiver" to distinguish it from the membership consent heading.
+- **New member setup button**: "Continue to Waiver" renamed to "Continue to Membership Forms" to reflect the two-step signing flow.
+
+---
+
 ## [Unreleased] — 2026-06-04
 
 ### Added

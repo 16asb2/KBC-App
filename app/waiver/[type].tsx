@@ -127,7 +127,12 @@ export default function WaiverScreen() {
       // Only reload own profile
       if (!isForOther) await reloadProfile();
       if (isOnboarding) {
-        router.replace('/(tabs)/home');
+        // Membership waiver is always followed by the liability waiver
+        if (type === 'membership') {
+          router.replace('/waiver/liability?fromOnboarding=true' as any);
+        } else {
+          router.replace('/(tabs)/home');
+        }
       } else {
         router.back();
       }

@@ -42,7 +42,11 @@ function RootLayoutNav() {
       return;
     }
 
-    // Waiver required before accessing the app
+    // Both waivers required before accessing the app (membership first, then liability)
+    if (!profile.waiverMembership) {
+      router.replace('/waiver/membership?fromOnboarding=true' as any);
+      return;
+    }
     if (!profile.waiverLiability) {
       router.replace('/waiver/liability?fromOnboarding=true' as any);
       return;

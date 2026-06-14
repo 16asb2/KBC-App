@@ -1,24 +1,36 @@
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { GoogleSigninButton } from '@react-native-google-signin/google-signin';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StyleSheet, View } from 'react-native';
 
 import { useAuth } from '@/context/auth';
 import { ThemedText } from '@/components/themed-text';
 
 export default function LoginScreen() {
-  const { signIn, loading } = useAuth();
+  const { signIn, signInWithApple, loading } = useAuth();
 
   return (
     <View style={styles.container}>
       <ThemedText type="title" style={styles.title}>KBC App</ThemedText>
-      <ThemedText style={styles.subtitle}>We connect through Google</ThemedText>
+      <ThemedText style={styles.subtitle}>Sign in to continue</ThemedText>
       {loading ? (
         <ActivityIndicator size="large" />
       ) : (
-        <GoogleSigninButton
-          size={GoogleSigninButton.Size.Wide}
-          color={GoogleSigninButton.Color.Dark}
-          onPress={signIn}
-        />
+        <View style={styles.buttons}>
+          <GoogleSigninButton
+            size={GoogleSigninButton.Size.Wide}
+            color={GoogleSigninButton.Color.Dark}
+            onPress={signIn}
+          />
+          {Platform.OS === 'ios' && (
+            <AppleAuthentication.AppleAuthenticationButton
+              buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+              buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+              cornerRadius={5}
+              style={styles.appleButton}
+              onPress={signInWithApple}
+            />
+          )}
+        </View>
       )}
     </View>
   );
@@ -38,5 +50,13 @@ const styles = StyleSheet.create({
   subtitle: {
     marginBottom: 24,
     opacity: 0.6,
+  },
+  buttons: {
+    alignItems: 'center',
+    gap: 12,
+  },
+  appleButton: {
+    width: 192,
+    height: 48,
   },
 });

@@ -1,6 +1,7 @@
+import * as AppleAuthentication from 'expo-apple-authentication';
 import { GoogleSignin, isSuccessResponse } from '@react-native-google-signin/google-signin';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { registerBridge, clearBridge } from '@/services/authBridge';
 
 const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_OAUTH_CLIENT_ID;
@@ -24,6 +25,7 @@ type AuthContextType = {
   user: User | null;
   loading: boolean;
   signIn: () => Promise<void>;
+  signInWithApple: () => Promise<void>;
   signOut: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
   getFirebaseToken: () => Promise<string | null>;
@@ -59,6 +61,35 @@ async function exchangeGoogleIdToken(
   return { idToken: data.idToken as string, refreshToken: data.refreshToken as string, uid: data.localId as string };
 }
 
+async function exchangeAppleIdToken(
+  appleIdToken: string,
+): Promise<{ idToken: string; refreshToken: string; uid: string; email: string; displayName: string | null } | null> {
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${FIREBASE_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requestUri: 'http://localhost',
+        postBody: `id_token=${appleIdToken}&providerId=apple.com`,
+        returnSecureToken: true,
+      }),
+    },
+  );
+  if (!res.ok) {
+    console.warn('[Auth] exchangeAppleIdToken FAILED:', res.status, await res.text());
+    return null;
+  }
+  const data = await res.json();
+  return {
+    idToken: data.idToken as string,
+    refreshToken: data.refreshToken as string,
+    uid: data.localId as string,
+    email: data.email as string,
+    displayName: (data.displayName as string | null) ?? null,
+  };
+}
+
 async function refreshFirebaseIdToken(
   firebaseRefreshToken: string,
 ): Promise<{ idToken: string; refreshToken: string } | null> {
@@ -83,6 +114,8 @@ async function refreshFirebaseIdToken(
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading]   = useState(true);
+
+  const authProvider = useRef<'google' | 'apple' | null>(null);
 
   // Google Calendar scope tracking
   const scopesGranted        = useRef(false);
@@ -208,6 +241,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       firebaseIdToken.current   = fb.idToken;
       firebaseRefresh.current   = fb.refreshToken;
       firebaseExpiresAt.current = Date.now() + 55 * 60 * 1000;
+      authProvider.current      = 'google';
       console.log('[Auth] signIn: Firebase token acquired successfully — setting user');
       registerBridge(getFirebaseToken, getAdminCalendarToken, clearFirebaseTokenCache);
       setUser({
@@ -219,22 +253,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function signOut() {
+  async function signInWithApple() {
+    if (Platform.OS !== 'ios') return;
     try {
-      await GoogleSignin.signOut();
-    } catch (e) {
-      console.warn('GoogleSignin.signOut error (ignored):', e);
-    } finally {
-      setUser(null);
-      firebaseIdToken.current    = null;
-      firebaseRefresh.current    = null;
-      firebaseExpiresAt.current  = 0;
-      adminToken.current         = null;
-      adminExpiresAt.current     = 0;
-      scopesGranted.current      = false;
-      googleTokenExpiresAt.current = 0;
-      clearBridge();
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+      if (!credential.identityToken) {
+        console.warn('[Auth] signInWithApple: no identityToken');
+        return;
+      }
+      const fb = await exchangeAppleIdToken(credential.identityToken);
+      if (!fb) {
+        console.warn('[Auth] signInWithApple: Firebase exchange failed');
+        return;
+      }
+      // Apple only returns name/email on the very first sign-in; fall back to what Firebase stored.
+      const givenName  = credential.fullName?.givenName  ?? null;
+      const familyName = credential.fullName?.familyName ?? null;
+      const name = (givenName || familyName)
+        ? [givenName, familyName].filter(Boolean).join(' ')
+        : fb.displayName;
+
+      firebaseIdToken.current   = fb.idToken;
+      firebaseRefresh.current   = fb.refreshToken;
+      firebaseExpiresAt.current = Date.now() + 55 * 60 * 1000;
+      authProvider.current      = 'apple';
+      registerBridge(getFirebaseToken, getAdminCalendarToken, clearFirebaseTokenCache);
+      setUser({ id: fb.uid, name, email: fb.email, photo: null });
+    } catch (e: any) {
+      if (e.code !== 'ERR_REQUEST_CANCELED') {
+        console.warn('[Auth] signInWithApple error:', e);
+      }
     }
+  }
+
+  async function signOut() {
+    if (authProvider.current === 'google') {
+      try {
+        await GoogleSignin.signOut();
+      } catch (e) {
+        console.warn('GoogleSignin.signOut error (ignored):', e);
+      }
+    }
+    setUser(null);
+    firebaseIdToken.current    = null;
+    firebaseRefresh.current    = null;
+    firebaseExpiresAt.current  = 0;
+    adminToken.current         = null;
+    adminExpiresAt.current     = 0;
+    scopesGranted.current      = false;
+    googleTokenExpiresAt.current = 0;
+    authProvider.current       = null;
+    clearBridge();
   }
 
   // ─── Token getters ────────────────────────────────────────────────────────
@@ -357,7 +431,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut, getAccessToken, getFirebaseToken }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signInWithApple, signOut, getAccessToken, getFirebaseToken }}>
       {children}
     </AuthContext.Provider>
   );

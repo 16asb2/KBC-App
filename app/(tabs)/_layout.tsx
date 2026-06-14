@@ -1,5 +1,5 @@
-import { Tabs } from 'expo-router';
-import React from 'react';
+import { Tabs, router } from 'expo-router';
+import React, { useEffect } from 'react';
 import { Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,6 +7,7 @@ import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { KBC } from '@/constants/theme';
 import { useAuth } from '@/context/auth';
+import { useProfile } from '@/context/profile';
 import { ScheduleProvider } from '@/context/schedule';
 
 const logoSource = require('@/assets/images/kbc-logo.png');
@@ -32,6 +33,18 @@ function KBCHeader() {
 
 function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const { profile, profileReady } = useProfile();
+
+  useEffect(() => {
+    if (!profileReady) return;
+    if (!profile?.waiverMembership) {
+      router.replace('/waiver/membership?fromOnboarding=true' as any);
+      return;
+    }
+    if (!profile?.waiverLiability) {
+      router.replace('/waiver/liability?fromOnboarding=true' as any);
+    }
+  }, [profile, profileReady]);
 
   return (
     <View style={{ flex: 1 }} collapsable={false}>
