@@ -110,7 +110,8 @@ Each flow should match the existing workflow diagrams. Flag any divergence in DE
 - Admin management screen (dynamic Firestore-managed admins)
 - Calendar views — read via the existing mediated Cloud Function, never calling the Calendar API from the browser
 
-### Phase 5 — Payments
+### Phase 5 — Payments (out of scope for this version)
+**Dropped from this version of the app.** Purchase-access (Phase 3) already ships as UI-only — a member picks an option and it writes `pending` status / `pendingPunches` for admin confirmation, exactly matching mobile's current (non-Stripe) behavior. Real payment processing was never live in mobile either, so this isn't a regression. If Stripe integration becomes a priority later, the original plan was:
 - Stripe Checkout Session created by a Cloud Function, redirect from web
 - Webhook handler in `functions/` for fulfilment (grant pass / activate membership)
 - Success and cancel return routes
@@ -126,14 +127,14 @@ Each flow should match the existing workflow diagrams. Flag any divergence in DE
 - Android/desktop: handle `beforeinstallprompt` for a real install button
 - Test: launches standalone (no browser chrome), correct icon, correct splash
 
-### Phase 7 — Security remediation (fold in the audit)
-The migration is the right moment to close out the open audit items:
-- **Critical:** confirm `firestore.rules` are locked down, not in test mode; write rules tests
-- **Critical:** admin OAuth credentials live only in Cloud Function config — nothing sensitive in the web bundle
-- **Medium:** server-side role enforcement via Firebase Auth **custom claims**, set by a Cloud Function; client-side checks become UX only
-- **Medium:** migrate hardcoded super-admin off a personal account to the KBC organisational account
-- **Medium:** add secret scanning to CI
-- **Low:** replace timestamp-based user IDs with Firebase-generated UIDs
+### Phase 7 — Security remediation ✅ done
+Checked each item against the actual code/rules rather than assuming the list was still accurate — most of it already held:
+- **Critical:** `firestore.rules` locked down, not in test mode — ✅ confirmed, no wildcard-open rules. (Rules tests still not written — the rules themselves just turned out to already be sound.)
+- **Critical:** admin OAuth credentials live only in Cloud Function config — ✅ confirmed, `functions/src/index.ts` uses `defineSecret()`/Secret Manager, nothing in any client bundle.
+- **Medium:** server-side role enforcement — ✅ effectively already true. `isSupervisorOrAdmin()` in `firestore.rules` re-reads the live `users/{uid}` doc server-side rather than trusting anything client-supplied, so it isn't spoofable. Migrating to Firebase Auth **custom claims** would still be a reasonable *performance* upgrade (a JWT claim read vs. an extra Firestore `get()` per rule check) but isn't closing a security gap — downgraded from a fix to an optional later optimization.
+- **Medium:** migrate hardcoded super-admin off a personal account — ✅ already the case. The hardcoded super-admin is `kingstonboulderingcooperative@gmail.com`, the KBC org account (also the account the Firebase project itself is managed under), not a personal one.
+- **Medium:** add secret scanning to CI — ✅ confirmed, `gitleaks-action` already runs in `.github/workflows/ci.yml`.
+- **Low:** replace timestamp-based user IDs — the actual bug this pointed at: `findOrLinkProfile()` linked a manually-created member's synthetic `manual_<timestamp>_<random>` doc to their real Firebase UID but never deleted the old doc, leaving a permanent orphan. **Fixed** — see git log (`fix(web): delete the superseded doc when linking a manual profile`). Full replacement of the synthetic-ID scheme itself (pre-provisioning a real UID via a Cloud Function) is still open but low-value now that the orphan bug is gone.
 
 ### Phase 8 — Deploy & CI
 - Firebase Hosting config; add authorised domain to Firebase Auth settings
@@ -156,7 +157,7 @@ The migration is the right moment to close out the open audit items:
 
 - Punch pass vs. membership model (carried over from DESIGN.md — still open)
 - Gym close mechanism (carried over from DESIGN.md — still open)
-- Do we keep the Expo app alive as a build target, or freeze `mobile/` at its current commit?
+- ~~Do we keep the Expo app alive as a build target, or freeze `mobile/` at its current commit?~~ Resolved during Phase 0: freeze `mobile/` at its current commit once `web/` reaches parity.
 - Session check-in method on web: QR scan via `getUserMedia` (works in iOS Safari), manual code entry, or both?
 - Does anything currently depend on Firebase App Distribution / the `kbc-friends` tester group that needs a web equivalent (e.g. a staging Hosting channel)?
 
@@ -167,6 +168,6 @@ The migration is the right moment to close out the open audit items:
 - A climber can open a link on iOS or Android, sign in with Google, add the app to their home screen, and sign in to a session
 - A supervisor can add a new member and view the member directory
 - An admin can manage admins and view the schedule
-- A member can purchase an access pass end-to-end through Stripe
-- Firestore rules are locked down and covered by tests
+- A member can select and "purchase" an access pass, same as mobile today: it's recorded as `pending` for admin confirmation, no real payment processing (Stripe is out of scope for this version — see Phase 5)
+- Firestore rules are locked down (rules tests still not written)
 - No App Store or Play Store dependency anywhere in the path
