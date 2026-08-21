@@ -4,6 +4,20 @@ All notable changes to KBC Scheduler are documented here.
 
 ---
 
+## [Unreleased] — 2026-08-20
+
+### Added
+- **Web app migration**: new Vite + React + TypeScript PWA in `web/`, alongside the existing Expo app (moved to `mobile/`, frozen at feature parity). Same Firebase project, Firestore data model, and role hierarchy. See [WEB-MIGRATION-PLAN.md](./WEB-MIGRATION-PLAN.md) for the full plan. Done so far: domain layer (member types, role/status logic), Google sign-in, new-member setup + waiver signing, session sign-in, purchase-access (UI only — writes `pending` status for admin confirmation, matching mobile, no real payment processing), add-new-member-via-supervisor, member directory + admin-editable membership panel, admin management, read-only calendar views (Schedule/Calendar tabs), and PWA install support (manifest, service worker, iOS/Android install prompts).
+- **Firebase Hosting: second site for web/**: `firebase.json`/`.firebaserc` now define an `admin` hosting target (existing `admin-web/` site, unchanged) and a `web` hosting target pointed at the Firebase project's previously-unused default site (`kbc-app-3307b`, already an authorized Auth domain). A `deploy-web.yml` GitHub Actions workflow builds and deploys `web/` to a PR preview channel or live on merge to `main`, gated on a `FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B` repo secret that still needs to be created before it can run.
+
+### Fixed
+- **Orphaned member profile docs (web/)**: linking a manually-created member's profile (synthetic `manual_<timestamp>_<random>` doc ID) to their real Firebase UID on first Google sign-in now deletes the superseded doc instead of leaving a permanent duplicate behind.
+
+### Changed
+- **Repo layout**: the Expo app moved from the repo root into `mobile/` (pure relocation, no code changes) to make room for `web/`.
+
+---
+
 ## [Unreleased] — 2026-06-14
 
 ### Added

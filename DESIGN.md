@@ -11,6 +11,8 @@
 
 The app is internal-only — not on any public app store. Distributed as an APK via EAS to a small user base (~dozens of members).
 
+> **Web migration in progress.** The Expo app now lives in `mobile/` and is being frozen at feature parity in favor of a new Vite/React/TypeScript PWA in `web/`, which will become the primary client going forward — same Firebase project, same Firestore data model, same role hierarchy described below. See [WEB-MIGRATION-PLAN.md](./WEB-MIGRATION-PLAN.md) for the phased plan and current status, and [web/CLAUDE.md](./web/CLAUDE.md) for the web app's own architecture notes. The rest of this document still describes `mobile/`'s design as originally built; where `web/` diverges deliberately (e.g. reading Calendar events through the admin-mediated Cloud Function instead of a per-user OAuth token), that's called out in web/CLAUDE.md rather than here.
+
 ---
 
 ## Current Version

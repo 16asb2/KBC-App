@@ -1,0 +1,64 @@
+name: Deploy web
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-web.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-web.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # PRs get a preview channel that expires on its own; merges to main
+      # deploy live. Both only ever touch the "web" hosting target — the
+      # admin-web/ site is untouched by this workflow.
+      - name: Deploy preview channel (PR)
+        if: github.event_name == 'pull_request'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B }}'
+          projectId: kbc-app-3307b
+          target: web
+
+      - name: Deploy live (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B }}'
+          projectId: kbc-app-3307b
+          target: web
+          channelId: live
