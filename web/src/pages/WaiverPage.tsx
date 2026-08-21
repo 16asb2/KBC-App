@@ -1,5 +1,5 @@
 import { useState, type UIEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { KBC } from '@/constants/theme'
 import { WAIVER_META, type WaiverType } from '@/constants/waivers'
 import { useAuth } from '@/context/AuthContext'
@@ -16,20 +16,28 @@ function formatSignedDate(iso: string) {
   )
 }
 
-// Ported from mobile/app/waiver/[type].tsx. Not yet ported: signing on behalf of
-// another member (targetUid/targetName — lands with the "add member via
-// supervisor" workflow) and the Google Doc copy of the signed waiver
-// (services/waiver-doc.ts — needs a Drive-scoped OAuth token we don't request
-// yet, and mobile treats it as non-fatal/best-effort already).
+// Ported from mobile/app/waiver/[type].tsx. Not yet ported: the Google Doc copy
+// of the signed waiver (services/waiver-doc.ts — needs a Drive-scoped OAuth
+// token we don't request yet, and mobile treats it as non-fatal/best-effort
+// already).
 export function WaiverPage() {
   const { type } = useParams<{ type: string }>()
   const config = WAIVER_META[type as WaiverType]
+  const [searchParams] = useSearchParams()
 
   const { user } = useAuth()
   const { profile, reloadProfile } = useProfile()
   const navigate = useNavigate()
 
-  const memberName = profile?.legalName || user?.displayName || user?.email || 'Unknown'
+  // When a supervisor signs on behalf of a member they just created
+  // (see components/NewMemberModal.tsx), the target's identity travels via
+  // the URL — their profile isn't loaded into ProfileContext.
+  const targetUid = searchParams.get('targetUid')
+  const isForOther = !!targetUid
+  const saveUid = isForOther ? targetUid : (user?.uid ?? '')
+  const memberName = isForOther
+    ? (searchParams.get('targetName') ?? 'Member')
+    : profile?.legalName || user?.displayName || user?.email || 'Unknown'
 
   const [scrolledToEnd, setScrolledToEnd] = useState(false)
   const [isMinor, setIsMinor] = useState(false)
@@ -46,13 +54,17 @@ export function WaiverPage() {
     )
   }
 
-  const existing: WaiverRecord | null = (() => {
-    try {
-      return profile?.[config.profileKey] ? JSON.parse(profile[config.profileKey]!) : null
-    } catch {
-      return null
-    }
-  })()
+  // Target profiles aren't loaded into context, so we can't show an
+  // already-signed banner for them — matches mobile's behavior.
+  const existing: WaiverRecord | null = isForOther
+    ? null
+    : (() => {
+        try {
+          return profile?.[config.profileKey] ? JSON.parse(profile[config.profileKey]!) : null
+        } catch {
+          return null
+        }
+      })()
 
   function handleScroll(e: UIEvent<HTMLDivElement>) {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
@@ -64,8 +76,8 @@ export function WaiverPage() {
   async function handleSign() {
     setError(null)
     const name = signedBy.trim()
-    if (!name) return setError('Please enter your full legal name.')
-    if (!nameMatches) return setError(`The name entered must exactly match your legal name: "${memberName}".`)
+    if (!name) return setError(`Please enter ${isForOther ? "the member's" : 'your'} full legal name.`)
+    if (!nameMatches) return setError(`The name entered must exactly match the member's legal name: "${memberName}".`)
     if (isMinor && !guardianName.trim()) return setError("Please enter the guardian's full legal name.")
     if (!user) return
 
@@ -76,11 +88,16 @@ export function WaiverPage() {
         signedBy: name,
         ...(isMinor ? { guardian: guardianName.trim() } : {}),
       }
+      const savedBy = isForOther ? `supervisor:${user.email}` : (user.email ?? 'unknown')
 
-      await updateProfile(user.uid, { [config!.profileKey]: JSON.stringify(record) }, user.email ?? 'unknown')
-      await reloadProfile()
-      // OnboardingGate re-evaluates the redirect chain (membership → liability → home).
-      navigate('/', { replace: true })
+      await updateProfile(saveUid, { [config!.profileKey]: JSON.stringify(record) }, savedBy)
+      if (!isForOther) {
+        await reloadProfile()
+        // OnboardingGate re-evaluates the redirect chain (membership → liability → home).
+        navigate('/', { replace: true })
+      } else {
+        navigate('/home', { replace: true })
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
@@ -91,6 +108,16 @@ export function WaiverPage() {
   return (
     <div onScroll={handleScroll} className="min-h-svh overflow-y-auto bg-[#f2f2f2]">
       <div className="mx-auto max-w-2xl space-y-5 px-5 py-6 pb-24">
+        {isForOther && (
+          <button
+            type="button"
+            onClick={() => navigate('/home')}
+            className="text-sm font-semibold"
+            style={{ color: KBC.pink }}
+          >
+            Cancel
+          </button>
+        )}
         <h1 className="text-lg leading-tight font-extrabold text-black">{config.fullTitle}</h1>
 
         {existing && (
@@ -186,13 +213,18 @@ export function WaiverPage() {
                     </p>
                   </>
                 ) : (
-                  <Field label="Your full legal name">
+                  <Field label={isForOther ? `${memberName}'s full legal name` : 'Your full legal name'}>
                     <input
                       className="kbc-input"
                       value={signedBy}
                       onChange={(e) => setSignedBy(e.target.value)}
                       placeholder="Full legal name"
                     />
+                    {isForOther && (
+                      <p className="mt-1 text-xs text-neutral-500 italic">
+                        Signing on behalf of {memberName}. Supervised by {user?.displayName ?? user?.email}.
+                      </p>
+                    )}
                   </Field>
                 )}
 

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { AccessModal } from '@/components/AccessModal'
 import { Modal } from '@/components/Modal'
+import { NewMemberModal } from '@/components/NewMemberModal'
 import { KBC } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
@@ -10,17 +12,19 @@ import { addLogEntry, getGymStatus, setGymOpen, type AccessOption, type GymStatu
 import { updateProfile } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
 
-// Ported from mobile/app/(tabs)/home.tsx — self sign-in only. Supervisor-assisted
-// flows (signing another climber in, donating a punch, creating a new member)
-// aren't ported yet; see AccessModal.tsx for the same scoping note.
+// Ported from mobile/app/(tabs)/home.tsx — self sign-in, purchase access, and
+// (as of this pass) adding a new member are covered. Still not ported: signing
+// another *existing* climber in and punch donation between members.
 export function HomePage() {
   const { user } = useAuth()
   const { profile, reloadProfile } = useProfile()
+  const navigate = useNavigate()
 
   const [gymStatus, setGymStatus] = useState<GymStatus | null>(null)
   const [signingIn, setSigningIn] = useState(false)
   const [showAccess, setShowAccess] = useState(false)
   const [showPunchChoice, setShowPunchChoice] = useState(false)
+  const [showNewMember, setShowNewMember] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
   useEffect(() => {
@@ -188,7 +192,32 @@ export function HomePage() {
         {signingIn ? 'Signing in…' : 'Sign In to a Session'}
       </button>
 
+      {privileged && (
+        <button
+          type="button"
+          onClick={() => setShowNewMember(true)}
+          className="w-full rounded-2xl border p-4 text-base font-bold"
+          style={{ borderColor: KBC.orange, color: KBC.orange }}
+        >
+          Add New Member
+        </button>
+      )}
+
       {showAccess && <AccessModal onComplete={(opt, code) => void handleAccessSelected(opt, code)} onClose={() => setShowAccess(false)} />}
+
+      {showNewMember && (
+        <NewMemberModal
+          createdByEmail={user.email ?? ''}
+          onCreated={(member) => {
+            setShowNewMember(false)
+            const targetName = member.legalName || member.name
+            navigate(
+              `/waiver/liability?targetUid=${encodeURIComponent(member.uid)}&targetName=${encodeURIComponent(targetName)}`,
+            )
+          }}
+          onClose={() => setShowNewMember(false)}
+        />
+      )}
 
       {showPunchChoice && (
         <Modal onClose={() => setShowPunchChoice(false)}>
