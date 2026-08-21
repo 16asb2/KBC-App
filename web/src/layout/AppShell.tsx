@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { InstallPrompt } from '@/components/InstallPrompt'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { isPrivileged } from '@/domain/roles'
@@ -71,6 +72,7 @@ export function AppShell() {
   return (
     <div className="flex min-h-svh flex-col" style={{ backgroundColor: KBC.black }}>
       <Header />
+      <InstallPrompt />
       <div className="flex min-h-0 flex-1">
         <nav
           className="hidden w-52 shrink-0 flex-col gap-1 border-r border-neutral-800 p-3 md:flex"
