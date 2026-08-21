@@ -41,11 +41,16 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Check deploy secret is configured
+        id: check-secret
+        run: echo "has_secret=${{ secrets.FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B != '' }}" >> "$GITHUB_OUTPUT"
+
       # PRs get a preview channel that expires on its own; merges to main
       # deploy live. Both only ever touch the "web" hosting target — the
-      # admin-web/ site is untouched by this workflow.
+      # admin-web/ site is untouched by this workflow. Skipped (not failed)
+      # until FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B is set — see web/CLAUDE.md.
       - name: Deploy preview channel (PR)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && steps.check-secret.outputs.has_secret == 'true'
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
@@ -54,7 +59,7 @@ jobs:
           target: web
 
       - name: Deploy live (main)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.check-secret.outputs.has_secret == 'true'
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
@@ -62,3 +67,8 @@ jobs:
           projectId: kbc-app-3307b
           target: web
           channelId: live
+
+      - name: Deploy skipped — missing secret
+        if: steps.check-secret.outputs.has_secret != 'true'
+        run: |
+          echo "::warning::FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B is not set — skipping deploy. See web/CLAUDE.md for setup steps."
