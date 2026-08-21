@@ -4,7 +4,7 @@ import { ProfileProvider } from '@/context/ProfileContext'
 import { RequireAuth } from '@/routes/RequireAuth'
 import { RequireRole } from '@/routes/RequireRole'
 import { OnboardingGate } from '@/routes/OnboardingGate'
-import { isPrivileged } from '@/domain/roles'
+import { isAdmin, isPrivileged } from '@/domain/roles'
 import { AppShell } from '@/layout/AppShell'
 import { LoginPage } from '@/pages/LoginPage'
 import { NewMemberSetupPage } from '@/pages/NewMemberSetupPage'
@@ -13,6 +13,7 @@ import { HomePage } from '@/pages/HomePage'
 import { SchedulePage } from '@/pages/SchedulePage'
 import { CalendarPage } from '@/pages/CalendarPage'
 import { MembersPage } from '@/pages/MembersPage'
+import { AdminManagementPage } from '@/pages/AdminManagementPage'
 import { BouldersPage } from '@/pages/BouldersPage'
 import { ClimbLogPage } from '@/pages/ClimbLogPage'
 
@@ -35,6 +36,9 @@ function App() {
                 <Route path="/calendar" element={<CalendarPage />} />
                 <Route element={<RequireRole check={isPrivileged} />}>
                   <Route path="/members" element={<MembersPage />} />
+                </Route>
+                <Route element={<RequireRole check={(email, profile) => isAdmin(email, profile?.isAdmin)} />}>
+                  <Route path="/admin-management" element={<AdminManagementPage />} />
                 </Route>
                 <Route path="/boulders" element={<BouldersPage />} />
                 <Route path="/climblog" element={<ClimbLogPage />} />
