@@ -4,7 +4,7 @@ New installable web app (PWA) for Kingston Boulder Cooperative, replacing the Ex
 
 ## Status
 
-Phases 1-4 are done — domain layer, auth + shell, all four Phase 3 workflows, member directory, admin management, and read-only calendar views. See git log for exact scope and what's deliberately deferred in each. Boulders and Log Book tabs are still placeholders. Phase 5 (Stripe payments) needs a real Stripe account before it can start — that's the next blocker, not a code task. Phase 6 (PWA/install experience) has no such blocker and is next in line. This file will grow as each phase lands.
+Phases 1-4 are done — domain layer, auth + shell, all four Phase 3 workflows, member directory, admin management, and read-only calendar views. Phase 6 (PWA/install experience) is mostly done: manifest, service worker, icons, install prompts — still needs an actual on-device install check, which isn't possible from this environment. See git log for exact scope and what's deliberately deferred in each phase. Boulders and Log Book tabs are still placeholders. Phase 5 (Stripe payments) needs a real Stripe account before it can start — that's a blocker, not a code task. Phase 7 (security remediation) and Phase 8 (deploy/CI) are next in line and have no such blocker. This file will grow as each phase lands.
 
 ## Tech stack
 
