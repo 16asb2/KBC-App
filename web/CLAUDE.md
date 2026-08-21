@@ -4,7 +4,7 @@ New installable web app (PWA) for Kingston Boulder Cooperative, replacing the Ex
 
 ## Status
 
-Phase 1 (domain layer) done — no UI wiring yet, no auth, no routes. This file will grow as each phase lands.
+Phase 2 (auth + app shell) done — Google sign-in, route guards, responsive shell with placeholder pages for each tab. No real page content yet (Phase 3). This file will grow as each phase lands.
 
 ## Tech stack
 
@@ -31,7 +31,33 @@ src/
     roles.ts            — isAdminFor()/isAdmin()/isPrivileged(): role resolution
                           (each has a colocated *.test.ts)
   services/profiles.ts — Firestore CRUD for user profiles, modular SDK
-  lib/firebase.ts       — initializeApp()/getAuth()/getFirestore() client init
+  lib/firebase.ts       — initializeApp()/getAuth()/getFirestore()/googleProvider
+
+  context/
+    AuthContext.tsx      — Firebase Auth: user, loading, signInWithGoogle(), signOut()
+                          (thin — the modular SDK's onAuthStateChanged/session
+                          persistence replaces most of mobile/context/auth.tsx's
+                          manual token-caching; that file's Calendar-scope OAuth
+                          token handling isn't ported yet, it lands with Phase 4)
+    ProfileContext.tsx    — profile, profileLoading, profileReady, reloadProfile
+                          (ported from mobile/context/profile.tsx onto services/profiles.ts)
+  routes/
+    RequireAuth.tsx       — redirects to /login if signed out
+    RequireRole.tsx        — generic role gate; pass a check from domain/roles.ts
+                            (used to gate /members on isPrivileged)
+    OnboardingGate.tsx      — mirrors mobile/app/_layout.tsx's RootLayoutNav cascade:
+                            no profile/legalName → /setup; no waiverMembership →
+                            /waiver/membership; no waiverLiability → /waiver/liability
+  layout/
+    AppShell.tsx           — header + responsive nav (sidebar ≥md, bottom bar <md)
+    nav.ts                  — NAV_ITEMS: mirrors mobile/'s TABS order + KBC colors
+  pages/                    — one file per route. All placeholders except LoginPage
+                            (real Google sign-in) — page content is Phase 3/4 work.
+                            NewMemberSetupPage and WaiverPage are the real
+                            mobile/app/new-member-setup.tsx and
+                            mobile/app/waiver/[type].tsx workflows, not yet built.
+  App.tsx                   — route tree: /login, then RequireAuth → OnboardingGate
+                            → (/setup, /waiver/:type) or AppShell → tab routes
 ```
 
 **Cross-app compatibility constraint:** `services/profiles.ts` writes to the same `users/{uid}` documents `mobile/`'s REST client reads. Fields like `emergencyContact` are stored as JSON-*stringified* strings, not native Firestore maps — `mobile/`'s hand-rolled REST decoder only understands `stringValue`/`booleanValue`/`integerValue`/`timestampValue` and silently returns `null` for a `mapValue`/`arrayValue`. Keep writing `JSON.stringify(...)` for those fields; don't "clean up" to native nested objects while both apps read the same collection.
