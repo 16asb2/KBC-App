@@ -1,1 +1,7 @@
 @import 'tailwindcss';
+
+@layer components {
+  .kbc-input {
+    @apply w-full rounded-[10px] border border-neutral-200 bg-white p-3 text-[15px] text-neutral-900 placeholder:text-neutral-400;
+  }
+}
