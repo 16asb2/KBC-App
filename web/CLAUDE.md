@@ -4,7 +4,7 @@ New installable web app (PWA) for Kingston Boulder Cooperative, replacing the Ex
 
 ## Status
 
-Phase 3's four documented workflows are done: App entrance (new-member setup + waiver signing), session sign-in, purchase-access (UI only, no Stripe — matches mobile today), and add-new-member-via-supervisor. Two narrower supervisor conveniences from mobile's Home screen are still deferred (not separately named in the migration plan): signing in an *existing* climber other than yourself, and punch donation between members. Schedule/Calendar/Members/Boulders/Log Book tabs are still placeholders (Phase 4+). This file will grow as each phase lands.
+Phase 3 (all four workflows) is done — see git log for details. Phase 4 in progress: Members (directory + admin-only edit panel) and Admin Management are done. Calendar views (Schedule/Calendar tabs, the mediated Cloud Function read path) are next — Boulders and Log Book tabs are still placeholders (later phases). This file will grow as each phase lands.
 
 ## Tech stack
 
