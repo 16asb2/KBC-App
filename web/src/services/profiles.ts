@@ -54,9 +54,18 @@ export async function findOrLinkProfile(
 
   if (existing) {
     console.log('[Profile] Linking Firebase UID to existing member profile for', email)
-    const { uid: _discarded, ...existingData } = existing
+    const { uid: oldUid, ...existingData } = existing
     const linked: Omit<UserProfile, 'uid'> = { ...existingData, name, email, photo }
     await setDoc(doc(db, USERS, uid), linked)
+    // The old doc (synthetic manual_* id from createNewMemberProfile, or any
+    // other prior id) is now a duplicate of the one we just wrote under the
+    // real Firebase uid — remove it so it doesn't linger as an orphan.
+    // Non-fatal: the member is already linked at this point either way.
+    try {
+      await deleteProfile(oldUid)
+    } catch (e) {
+      console.warn('[Profile] Failed to delete superseded profile doc:', oldUid, e)
+    }
     return { uid, ...linked }
   }
 
