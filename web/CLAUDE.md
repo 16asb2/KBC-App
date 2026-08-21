@@ -4,7 +4,7 @@ New installable web app (PWA) for Kingston Boulder Cooperative, replacing the Ex
 
 ## Status
 
-Phase 2 (auth + app shell) done — Google sign-in, route guards, responsive shell with placeholder pages for each tab. No real page content yet (Phase 3). This file will grow as each phase lands.
+Phase 3 in progress. Done: App entrance (new-member setup + waiver signing), self-service session sign-in, self-service purchase-access (UI only, no Stripe — matches mobile today). Remaining in Phase 3: supervisor-assisted flows (sign in another climber, punch donation, add new member), which HomePage/AccessModal explicitly don't cover yet. Schedule/Calendar/Members/Boulders/Log Book tabs are still placeholders (Phase 4+). This file will grow as each phase lands.
 
 ## Tech stack
 
