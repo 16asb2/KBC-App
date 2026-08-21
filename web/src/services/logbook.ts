@@ -54,12 +54,13 @@ export async function addLogEntry(entry: Omit<LogEntry, 'id'>): Promise<void> {
 // Stored in `gymStatus/current` — updated whenever a supervisor signs in.
 // closesAt = 2 hours after the supervisor's sign-in timestamp.
 //
-// NOTE: mobile/'s Home screen currently derives its displayed gym-status banner
-// from Calendar events instead of this document (see mobile/app/(tabs)/home.tsx's
-// own getGymStatus(events)) — this Firestore-backed version is what mobile/'s
-// own logbook.ts exports but nothing there actually calls it for display. We use
-// it here because the Calendar-based version depends on the calendar service,
-// which isn't ported yet (lands with Phase 4). Revisit once it is.
+// NOTE: unused for display, matching mobile exactly. mobile/'s Home screen
+// derives its displayed gym-status banner from Calendar events instead (see
+// domain/calendarEvent.ts's getGymStatusFromEvents, ported from
+// mobile/app/(tabs)/home.tsx's own local getGymStatus(events)) — this
+// Firestore-backed version is what mobile/services/logbook.ts exports but
+// nothing there actually calls for display either. Kept for parity with
+// mobile's public API; setGymOpen() below is still very much live.
 
 export type GymStatus = {
   open: boolean

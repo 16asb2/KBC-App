@@ -6,9 +6,11 @@ import { NewMemberModal } from '@/components/NewMemberModal'
 import { KBC } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
+import { useSchedule } from '@/context/ScheduleContext'
 import { hasSignedInToday, passLabel } from '@/domain/signIn'
 import { isPrivileged } from '@/domain/roles'
-import { addLogEntry, getGymStatus, setGymOpen, type AccessOption, type GymStatus } from '@/services/logbook'
+import { getGymStatusFromEvents, type GymStatus } from '@/domain/calendarEvent'
+import { addLogEntry, setGymOpen, type AccessOption } from '@/services/logbook'
 import { updateProfile } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
 
@@ -18,18 +20,15 @@ import type { UserProfile } from '@/types/member'
 export function HomePage() {
   const { user } = useAuth()
   const { profile, reloadProfile } = useProfile()
+  const { allEvents } = useSchedule()
   const navigate = useNavigate()
 
-  const [gymStatus, setGymStatus] = useState<GymStatus | null>(null)
+  const gymStatus: GymStatus = getGymStatusFromEvents(allEvents)
   const [signingIn, setSigningIn] = useState(false)
   const [showAccess, setShowAccess] = useState(false)
   const [showPunchChoice, setShowPunchChoice] = useState(false)
   const [showNewMember, setShowNewMember] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
-
-  useEffect(() => {
-    getGymStatus().then(setGymStatus)
-  }, [])
 
   useEffect(() => {
     if (!toast) return
@@ -259,8 +258,25 @@ export function HomePage() {
   )
 }
 
-function GymStatusCard({ status }: { status: GymStatus | null }) {
-  if (!status) return null
+function formatTime(d: Date): string {
+  const h = d.getHours()
+  const m = d.getMinutes()
+  const ampm = h >= 12 ? 'PM' : 'AM'
+  const hour = h % 12 || 12
+  return `${hour}:${String(m).padStart(2, '0')} ${ampm}`
+}
+
+function formatDateTime(date: Date): string {
+  const today = new Date()
+  const tomorrow = new Date(today)
+  tomorrow.setDate(today.getDate() + 1)
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+  const label = sameDay(date, today) ? 'Today' : sameDay(date, tomorrow) ? 'Tomorrow' : date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
+  return `${label} at ${formatTime(date)}`
+}
+
+function GymStatusCard({ status }: { status: GymStatus }) {
   return (
     <div className="rounded-2xl p-6 text-center" style={{ backgroundColor: KBC.black }}>
       <span
@@ -269,11 +285,25 @@ function GymStatusCard({ status }: { status: GymStatus | null }) {
       >
         {status.open ? 'OPEN NOW' : 'CLOSED'}
       </span>
-      <p className="mt-3 text-lg font-bold text-white">
-        {status.open ? 'The gym is open!' : 'Gym is closed right now.'}
-      </p>
-      {status.open && status.openedBy && (
-        <p className="mt-1 text-sm text-neutral-400">Supervisor: {status.openedBy}</p>
+      {status.open ? (
+        <>
+          <p className="mt-3 text-lg font-bold text-white">The gym is open!</p>
+          <p className="mt-1 text-sm text-neutral-400">
+            {status.supervisorName ? `Supervisor: ${status.supervisorName}` : 'Come climb!'} · until {formatTime(status.until)}
+          </p>
+        </>
+      ) : status.next ? (
+        <>
+          <p className="mt-3 text-lg font-bold text-white">Gym is closed right now.</p>
+          <p className="mt-1 text-sm text-neutral-400">
+            Next session opens <span className="font-semibold text-white">{formatDateTime(status.next)}</span>.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="mt-3 text-lg font-bold text-white">Gym is closed.</p>
+          <p className="mt-1 text-sm text-neutral-400">No upcoming sessions scheduled. Check back soon!</p>
+        </>
       )}
     </div>
   )

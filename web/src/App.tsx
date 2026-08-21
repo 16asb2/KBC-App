@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from '@/context/AuthContext'
 import { ProfileProvider } from '@/context/ProfileContext'
+import { ScheduleProvider } from '@/context/ScheduleContext'
 import { RequireAuth } from '@/routes/RequireAuth'
 import { RequireRole } from '@/routes/RequireRole'
 import { OnboardingGate } from '@/routes/OnboardingGate'
@@ -29,7 +30,13 @@ function App() {
               <Route path="/setup" element={<NewMemberSetupPage />} />
               <Route path="/waiver/:type" element={<WaiverPage />} />
 
-              <Route element={<AppShell />}>
+              <Route
+                element={
+                  <ScheduleProvider>
+                    <AppShell />
+                  </ScheduleProvider>
+                }
+              >
                 <Route index element={<Navigate to="/home" replace />} />
                 <Route path="/home" element={<HomePage />} />
                 <Route path="/schedule" element={<SchedulePage />} />
