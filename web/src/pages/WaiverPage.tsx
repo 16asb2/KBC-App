@@ -1,4 +1,4 @@
-import { useState, type UIEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { KBC } from '@/constants/theme'
 import { WAIVER_META, type WaiverType } from '@/constants/waivers'
@@ -46,6 +46,34 @@ export function WaiverPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // "Has the member read to the bottom?" is detected with an IntersectionObserver
+  // on a sentinel at the end of the waiver text, rather than by comparing scroll
+  // offsets. Scroll math was the original approach (ported from the RN ScrollView)
+  // and it silently never fired on web: the page scrolls at the *window* level, so
+  // no onScroll ever reached the container, and the signature form stayed hidden
+  // forever — nobody could complete onboarding. An observer doesn't care which
+  // element scrolls, and it also fires immediately when the text is short enough
+  // to fit on screen without scrolling, which the offset check could never
+  // satisfy either.
+  const observerRef = useRef<IntersectionObserver | null>(null)
+  useEffect(() => () => observerRef.current?.disconnect(), [])
+
+  const endSentinelRef = useCallback((node: HTMLDivElement | null) => {
+    observerRef.current?.disconnect()
+    if (!node) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setScrolledToEnd(true)
+          observer.disconnect()
+        }
+      },
+      { root: null, threshold: 0 },
+    )
+    observer.observe(node)
+    observerRef.current = observer
+  }, [])
+
   if (!config) {
     return (
       <div className="flex min-h-svh items-center justify-center">
@@ -65,11 +93,6 @@ export function WaiverPage() {
           return null
         }
       })()
-
-  function handleScroll(e: UIEvent<HTMLDivElement>) {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget
-    if (scrollTop + clientHeight >= scrollHeight - 48) setScrolledToEnd(true)
-  }
 
   const nameMatches = signedBy.trim().toLowerCase() === memberName.toLowerCase()
 
@@ -106,7 +129,7 @@ export function WaiverPage() {
   }
 
   return (
-    <div onScroll={handleScroll} className="min-h-svh overflow-y-auto bg-[#f2f2f2]">
+    <div className="min-h-svh bg-[#f2f2f2]">
       <div className="mx-auto max-w-2xl space-y-5 px-5 py-6 pb-24">
         {isForOther && (
           <button
@@ -162,6 +185,9 @@ export function WaiverPage() {
               </p>
             )
           })}
+
+          {/* Marks the end of the waiver text — see endSentinelRef above. */}
+          <div ref={endSentinelRef} aria-hidden="true" />
         </div>
 
         {!existing && (
