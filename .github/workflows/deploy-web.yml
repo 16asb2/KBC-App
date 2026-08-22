@@ -1,0 +1,91 @@
+name: Deploy web
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-web.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-web.yml'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Vite bakes VITE_* vars into the bundle at build time. web/.env is
+      # gitignored (never committed), so without these the CI build ships
+      # with an undefined Firebase config — initializeApp() throws before
+      # React ever renders, i.e. a blank white screen with no visible error.
+      # Hardcoded rather than GitHub Secrets: every value here is public by
+      # design (safe in a browser bundle) — see web/.env.example.
+      - name: Build
+        run: npm run build
+        env:
+          VITE_FIREBASE_API_KEY: AIzaSyAhJKoDWPj4mWK2M_DAvAO6kbMpu3ajB9Y
+          VITE_FIREBASE_AUTH_DOMAIN: kbc-app-3307b.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: kbc-app-3307b
+          VITE_FIREBASE_STORAGE_BUCKET: kbc-app-3307b.firebasestorage.app
+          VITE_FIREBASE_MESSAGING_SENDER_ID: '451887190936'
+          VITE_FIREBASE_APP_ID: 1:451887190936:web:f03973ef0ac016cfd551ed
+          VITE_SUPER_ADMIN_EMAIL: kingstonboulderingcooperative@gmail.com
+          VITE_GOOGLE_CALENDAR_ID: 5nvdvotstcgplice0j4k0h7c4g@group.calendar.google.com
+          VITE_CLOUD_FUNCTIONS_BASE_URL: https://kbc-admin-token.kingstonboulderingcooperative.workers.dev
+
+      - name: Check deploy secret is configured
+        id: check-secret
+        run: echo "has_secret=${{ secrets.FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B != '' }}" >> "$GITHUB_OUTPUT"
+
+      # PRs get a preview channel that expires on its own; merges to main
+      # deploy live. Both only ever touch the "web" hosting target — the
+      # admin-web/ site is untouched by this workflow. Skipped (not failed)
+      # until FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B is set — see web/CLAUDE.md.
+      - name: Deploy preview channel (PR)
+        if: github.event_name == 'pull_request' && steps.check-secret.outputs.has_secret == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B }}'
+          projectId: kbc-app-3307b
+          target: web
+
+      - name: Deploy live (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.check-secret.outputs.has_secret == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B }}'
+          projectId: kbc-app-3307b
+          target: web
+          channelId: live
+
+      - name: Deploy skipped — missing secret
+        if: steps.check-secret.outputs.has_secret != 'true'
+        run: |
+          echo "::warning::FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B is not set — skipping deploy. See web/CLAUDE.md for setup steps."

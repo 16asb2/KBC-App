@@ -4,6 +4,38 @@ All notable changes to KBC Scheduler are documented here.
 
 ---
 
+## [Unreleased] — 2026-08-21
+
+### Added
+- **Web app migration**: new Vite + React + TypeScript PWA in `web/`, alongside the existing Expo app (moved to `mobile/`, frozen at feature parity). Same Firebase project, Firestore data model, and role hierarchy. See [WEB-MIGRATION-PLAN.md](./WEB-MIGRATION-PLAN.md) for the full plan and [web/CLAUDE.md](./web/CLAUDE.md) for current per-tab status. All six tabs now have real content:
+  - **Home**: session sign-in (daily-limit enforced, active/pending membership, punch-pass use-or-buy choice), purchase-access (UI only — writes `pending` status for admin confirmation, matching mobile, no real payment processing), add-new-member-via-supervisor, gym-open/closed banner derived from the calendar.
+  - **App entrance**: new-member setup form and membership/liability waiver signing (legal text ported verbatim), including a supervisor signing a waiver on behalf of a member they just created.
+  - **Schedule / Calendar**: read-only day timeline and month view of the shared KBC calendar, reading through the admin-mediated Cloud Function rather than a per-user Calendar OAuth token (a deliberate divergence from mobile — see `web/src/services/calendar.ts`).
+  - **Members**: searchable directory, admin/supervisor-editable membership panel (pass tier, dates, punch count, supervisor toggle, pending-purchase confirm/cancel), and Admin Management (grant/revoke admin) — now reachable from a button mobile itself never wired up.
+  - **Boulders** (KBC mode): season selection, the community boulder list with filter/sort, grade + quality voting, likes, project marking, comments, logging an ascent/attempt, and admin add/edit/remove/moderate. Boulders' Personal mode (a separate self-contained data model for non-KBC problems/locations) is not yet ported.
+  - **Log Book**: personal climb log, date-grouped, with logging/editing a climb at KBC or a custom location (including creating the location), delete, and filtering/sorting.
+  - Plus: PWA install support (manifest, service worker, iOS/Android install prompts) and a Firestore data-integrity fix (see Fixed, below).
+- **Firebase Hosting: second site for web/**: `firebase.json`/`.firebaserc` define an `admin` hosting target (existing `admin-web/` site, unchanged) and a `web` hosting target pointed at the Firebase project's previously-unused default site (`kbc-app-3307b`, already an authorized Auth domain). A `deploy-web.yml` GitHub Actions workflow builds and deploys `web/` to a PR preview channel or live on merge to `main`, using a `FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B` repo secret (now configured) — the deploy step skips cleanly with a warning rather than failing the check if that secret is ever missing.
+
+### Fixed
+- **Orphaned member profile docs (web/)**: linking a manually-created member's profile (synthetic `manual_<timestamp>_<random>` doc ID) to their real Firebase UID on first Google sign-in now deletes the superseded doc instead of leaving a permanent duplicate behind.
+
+### Changed
+- **Repo layout**: the Expo app moved from the repo root into `mobile/` (pure relocation, no code changes) to make room for `web/`.
+- **The web app is now *the* app.** The Expo build in `mobile/` was never released and has no users, so it's no longer framed as a co-equal client "frozen at parity" — it's a porting reference kept only until `web/` closes its last feature gaps, then deleted. Docs updated throughout (`README.md`, `CLAUDE.md`, `mobile/CLAUDE.md`, `web/CLAUDE.md`, `DESIGN.md`, `WEB-MIGRATION-PLAN.md`) to reflect that, including removing the now-moot "keep mobile as a fallback" reasoning.
+- **Calendar mediation — corrected record**: docs claimed Google Calendar access was mediated by `functions/getAdminCalendarToken`. It never was — that Cloud Function was never deployed (the Cloud Functions API isn't enabled on the project) while the Cloudflare Worker in `worker/` served the endpoint all along. The misleadingly-named `*_CLOUD_FUNCTIONS_BASE_URL` env var is what obscured this.
+
+### Removed
+- **`mobile/`**: the entire Expo/React Native app, deleted. It was never released — no App Store, no Play Store, no lasting tester distribution, no users — and `web/` now covers everything that mattered. Recoverable in full from git history at **`1cdfada`** (`git show 1cdfada:mobile/<path>`); the `// Ported from mobile/...` provenance comments throughout `web/src` still point at real, readable files there. Its CI job (`mobile-lint-and-test`) went with it.
+- **`functions/`**: deleted. Never deployed, unreferenced by `firebase.json` and CI, and duplicated by the live `worker/` — it was a trap for anyone reading the repo. Recoverable from git history.
+- **`EXPO_PUBLIC_GOOGLE_ADMIN_REFRESH_TOKEN` from `mobile/.env`**: Expo inlines `EXPO_PUBLIC_*` into the shipped bundle, so this put a long-lived KBC-admin credential inside every mobile build. Confirmed unused by any runtime code (only a one-time generator script referenced it) before removing. Low real-world impact since no mobile build was ever distributed.
+
+### Security
+- **Worker now verifies Firebase ID tokens**: `worker/` accepts either a Google OAuth access token (as `mobile/` sends) or a Firebase ID token (as `web/` sends). ID tokens are fully verified — RS256 signature against Google's published JWKs, plus `aud`/`iss`/`sub`/`exp`/`iat` with clock-skew tolerance — not merely decoded.
+- **Secret scanning**: added `.gitleaks.toml` allowlisting the Firebase *web* API key, which is public by design (it ships in every web bundle and is retrievable via `firebase apps:sdkconfig`). Scoped to that exact key value, so any other secret in the same files is still caught.
+
+---
+
 ## [Unreleased] — 2026-06-14
 
 ### Added

@@ -1,16 +1,24 @@
 # KBC App 🧗
 
-The official app for the **Kingston Bouldering Cooperative** — a member-managed climbing gym in Kingston, ON. This app supports gym operations and gives local climbers useful tools to stay connected with the community.
+The official app for the **Kingston Bouldering Cooperative** — a member-managed climbing gym in Kingston, ON. It supports gym operations and gives local climbers useful tools to stay connected with the community.
 
-> **Status:** MVP — actively in development
+> **Status:** The app is a **web app (PWA)** — installable to a phone home screen, no app store involved. It lives in [`web/`](./web/).
+>
+> It was ported from an earlier Expo/React Native app, which was never released and has since been deleted. See [WEB-MIGRATION-PLAN.md](./WEB-MIGRATION-PLAN.md) for that background.
 
 ---
 
 ## Tech Stack
 
-- **Framework:** [Expo](https://expo.dev) (React Native)
-- **Backend:** Firebase (Firestore, Cloud Functions)
-- **Auth:** Google Sign-In via Firebase Authentication
+- **Framework:** [Vite](https://vite.dev) + React + TypeScript
+- **Styling:** [Tailwind CSS](https://tailwindcss.com)
+- **Routing:** React Router
+- **Backend:** Firebase — Firestore (via the modular [Firebase JS SDK](https://firebase.google.com/docs/web/setup)), Firestore Security Rules
+- **Auth:** Firebase Auth, Google sign-in via `signInWithPopup`
+- **PWA:** `vite-plugin-pwa` (Workbox) — manifest, service worker, offline app shell
+- **Hosting:** Firebase Hosting, deployed by GitHub Actions
+
+**Google Calendar access** is mediated through a Cloudflare Worker ([`worker/`](./worker/)) that holds the KBC admin account's OAuth credentials, so no client ever does.
 
 ---
 
@@ -18,43 +26,57 @@ The official app for the **Kingston Bouldering Cooperative** — a member-manage
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (LTS recommended)
-- [Expo CLI](https://docs.expo.dev/get-started/installation/)
-- Access to the KBC Firebase project (ask a team member)
-
-### Install dependencies
+- [Node.js](https://nodejs.org/) 20+
+- Access to the KBC Firebase project (ask a team member) and a `web/.env` — see [`web/.env.example`](./web/.env.example) for the keys it needs
 
 ```bash
+cd web
 npm install
+npm run dev
 ```
 
-### Start the development server
+Opens at `http://localhost:5173`. Other commands:
 
-```bash
-npx expo start
-```
+| Command | What it does |
+|---|---|
+| `npm run dev` | Dev server |
+| `npm run lint` | ESLint |
+| `npm run test` | Unit tests (Vitest) |
+| `npm run build` | Type-check + production build |
+| `npm run preview` | Serve a production build locally |
 
-From there you can open the app in:
-- [Expo Go](https://expo.dev/go) on your phone
-- An [iOS Simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- An [Android Emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
+See [web/CLAUDE.md](./web/CLAUDE.md) for architecture notes and current feature status.
 
 ---
 
 ## Project Structure
 
-This project uses [file-based routing](https://docs.expo.dev/router/introduction) via Expo Router. All screens live inside the `app/` directory.
+```
+web/          — the app (routes in web/src/pages/, wired up in web/src/App.tsx)
+admin-web/    — legacy standalone admin panel (single HTML file), still live
+worker/       — Cloudflare Worker mediating Google Calendar admin access
+firestore.rules — shared Firestore security rules
+DESIGN.md     — product/architecture decisions and open questions
+WEB-MIGRATION-PLAN.md — how the app got from Expo to web
+CHANGELOG.md  — project-wide history
+```
+
+---
+
+## Deployment
+
+Pushes to a PR deploy `web/` to a temporary Firebase Hosting **preview channel** (URL posted as a PR comment); merges to `main` deploy **live**. Both are handled by [`.github/workflows/deploy-web.yml`](./.github/workflows/deploy-web.yml) and only ever touch the `web` hosting target — `admin-web/`'s site is untouched.
 
 ---
 
 ## Contributing
 
-This is an internal project for the KBC team. If you're picking up a new feature or fixing a bug, branch off `main` and open a PR when ready.
+This is an internal project for the KBC team. Branch off `main` (`feat/`, `fix/`, `chore/`, `refactor/` prefixes, conventional commits) and open a PR when ready. Architecture decisions belong in `DESIGN.md`; user-facing changes in `CHANGELOG.md`.
 
 ---
 
 ## Resources
 
-- [Expo Docs](https://docs.expo.dev/)
+- [Vite Docs](https://vite.dev/) · [React Docs](https://react.dev/) · [Tailwind CSS Docs](https://tailwindcss.com/docs)
 - [Firebase Docs](https://firebase.google.com/docs)
 - [Kingston Bouldering Cooperative](https://kingstonbouldering.com)

@@ -3,8 +3,10 @@
 # dependencies
 node_modules/
 
-# Firebase CLI cache
+# Firebase CLI cache + debug output
 .firebase/
+firebase-debug.log*
+firestore-debug.log*
 
 # Expo
 .expo/

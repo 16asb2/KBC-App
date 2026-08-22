@@ -9,6 +9,12 @@ on:
 jobs:
   secret-scan:
     runs-on: ubuntu-latest
+    # gitleaks-action posts its findings as a PR comment; without these it
+    # still scans and still fails the job on a leak, but logs a confusing
+    # "Resource not accessible by integration" warning instead of commenting.
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,8 +24,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  lint-and-test:
+  web-lint-and-test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
 
@@ -28,6 +37,7 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
+          cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -35,5 +45,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Type check
-        run: npx tsc --noEmit
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build

@@ -1,5 +1,17 @@
 {
   "projects": {
     "default": "kbc-app-3307b"
+  },
+  "targets": {
+    "kbc-app-3307b": {
+      "hosting": {
+        "admin": [
+          "kbc-app-admin"
+        ],
+        "web": [
+          "kbc-app-3307b"
+        ]
+      }
+    }
   }
 }
