@@ -1,6 +1,12 @@
 # KBC Web App — Claude Code Guide
 
-**The** KBC member app — an installable PWA. This is the only client that ships; the Expo app in `../mobile/` was never released and exists only as a porting reference. See [../WEB-MIGRATION-PLAN.md](../WEB-MIGRATION-PLAN.md) for how this app came to be, and [../CLAUDE.md](../CLAUDE.md) for the shared backend it talks to.
+**The** KBC member app — an installable PWA, and the only client. See [../WEB-MIGRATION-PLAN.md](../WEB-MIGRATION-PLAN.md) for how this app came to be, and [../CLAUDE.md](../CLAUDE.md) for the shared backend it talks to.
+
+> **About the `// Ported from mobile/...` comments throughout this source:**
+> they're accurate provenance, but `mobile/` no longer exists — it was an
+> unreleased Expo app, deleted once this app covered the ground that mattered.
+> To read any file it names: `git show 1cdfada:mobile/<path>`. Nothing there is
+> a live constraint; where this app deliberately diverged, that's noted inline.
 
 ## Status
 
@@ -8,7 +14,7 @@ Phases 1-4 are done — domain layer, auth + shell, all four Phase 3 workflows, 
 
 All six tabs have real content: Home, Schedule, Calendar, Members, Boulders (KBC mode), Log Book.
 
-**Remaining feature gaps.** These were originally deferred as "mobile has it, web doesn't" — but since mobile never shipped, they are now simply *missing features of the product*, not parity debt:
+**Remaining feature gaps.** These were originally deferred as "mobile has it, web doesn't" — but since mobile never shipped and is now gone, they are simply *missing features of the product*, not parity debt. Each can still be read out of git history at `1cdfada` if you want the original implementation as a starting point:
 - **Boulders → Personal mode**: logging climbs at non-KBC locations/problems. Self-contained (`personalProblems`, `climbLocations` collections); needs its own list/card/editor UI.
 - **Supervisor conveniences on Home**: signing in an *existing* other climber, and punch donation between members. (Adding a *new* member is done.)
 - **Summary screens**: `boulder-summary` and `climb-summary` — bar-chart stats views both tabs used to link out to.
@@ -21,8 +27,8 @@ See git log for exact scope per commit.
 - **Tailwind CSS v4** via `@tailwindcss/vite` (no separate PostCSS config needed — see `vite.config.ts`)
 - **ESLint** (flat config, `eslint.config.js`) + **Prettier** (`.prettierrc.json`) — `npm run lint`
 - **Vitest** for unit tests — colocated `*.test.ts` files
-- Firebase: this app is free to use the real **modular Firebase JS SDK** (`firebase` package) directly, unlike `mobile/`, which is REST-only because the Firebase SDK is incompatible with React Native's New Architecture. That constraint doesn't apply here.
-- `@/*` path alias → `src/*` (configured in both `vite.config.ts` and `tsconfig.app.json`), matching `mobile/`'s convention.
+- Firebase: uses the real **modular Firebase JS SDK** (`firebase` package). (The old Expo app couldn't — the SDK is incompatible with React Native's New Architecture — so it hand-rolled a Firestore REST client. That constraint never applied here.)
+- `@/*` path alias → `src/*` (configured in both `vite.config.ts` and `tsconfig.app.json`)
 
 ## Environment
 
@@ -32,44 +38,53 @@ See git log for exact scope per commit.
 
 ```
 src/
-  types/member.ts     — UserProfile, MembershipStatus, WaiverRecord, EmergencyContact
-                         (ported from mobile/services/firestore.ts — keep in sync,
-                         the `users/{uid}` Firestore collection is shared)
-  domain/
-    membership.ts      — nextMembershipStatus(): pure auto-transition decision logic
-    roles.ts            — isAdminFor()/isAdmin()/isPrivileged(): role resolution
-                          (each has a colocated *.test.ts)
-  services/profiles.ts — Firestore CRUD for user profiles, modular SDK
-  lib/firebase.ts       — initializeApp()/getAuth()/getFirestore()/googleProvider
+  App.tsx        — route tree: /login, then RequireAuth → OnboardingGate →
+                   (/setup, /waiver/:type) or AppShell → the six tab routes
+  lib/firebase.ts — initializeApp()/getAuth()/getFirestore()/googleProvider
+
+  types/member.ts — UserProfile, MembershipStatus, WaiverRecord, EmergencyContact
+
+  domain/        — pure logic, no Firestore/env reads. Each has a *.test.ts.
+    membership.ts       — nextMembershipStatus(): auto-expire decision
+    membershipPass.ts   — PASS_OPTIONS, getPassId/getPassLabel
+    roles.ts            — isAdminFor()/isAdmin()/isPrivileged()
+    signIn.ts           — hasSignedInToday(), passLabel()
+    calendarEvent.ts    — event classification, timeline layout, gym-status-from-events
+    climbAggregates.ts  — computeAggregates(), getPersonalStatus()
+    boulderFilters.ts   — boulder filter state (+ localStorage persistence)
+    climbLogFilter.ts   — climb filter/sort/date-grouping
+
+  services/      — Firestore + Calendar I/O (modular Firebase SDK)
+    profiles.ts, logbook.ts, boulders.ts, climblog.ts, calendar.ts
 
   context/
-    AuthContext.tsx      — Firebase Auth: user, loading, signInWithGoogle(), signOut()
-                          (thin — the modular SDK's onAuthStateChanged/session
-                          persistence replaces most of mobile/context/auth.tsx's
-                          manual token-caching; that file's Calendar-scope OAuth
-                          token handling isn't ported yet, it lands with Phase 4)
-    ProfileContext.tsx    — profile, profileLoading, profileReady, reloadProfile
-                          (ported from mobile/context/profile.tsx onto services/profiles.ts)
+    AuthContext.tsx     — user, loading, signInWithGoogle(), signOut()
+    ProfileContext.tsx  — profile, profileReady, reloadProfile()
+    ScheduleContext.tsx — shared calendar-events cache (wraps the AppShell routes)
+
   routes/
-    RequireAuth.tsx       — redirects to /login if signed out
-    RequireRole.tsx        — generic role gate; pass a check from domain/roles.ts
-                            (used to gate /members on isPrivileged)
-    OnboardingGate.tsx      — mirrors mobile/app/_layout.tsx's RootLayoutNav cascade:
-                            no profile/legalName → /setup; no waiverMembership →
-                            /waiver/membership; no waiverLiability → /waiver/liability
-  layout/
-    AppShell.tsx           — header + responsive nav (sidebar ≥md, bottom bar <md)
-    nav.ts                  — NAV_ITEMS: mirrors mobile/'s TABS order + KBC colors
-  pages/                    — one file per route. All placeholders except LoginPage
-                            (real Google sign-in) — page content is Phase 3/4 work.
-                            NewMemberSetupPage and WaiverPage are the real
-                            mobile/app/new-member-setup.tsx and
-                            mobile/app/waiver/[type].tsx workflows, not yet built.
-  App.tsx                   — route tree: /login, then RequireAuth → OnboardingGate
-                            → (/setup, /waiver/:type) or AppShell → tab routes
+    RequireAuth.tsx     — redirects to /login if signed out
+    RequireRole.tsx     — generic role gate; takes a check from domain/roles.ts
+    OnboardingGate.tsx  — no profile/legalName → /setup; missing waivers →
+                          /waiver/:type; else render the app
+
+  layout/AppShell.tsx, layout/nav.ts — header + responsive nav (sidebar ≥md,
+                                        bottom bar <md); NAV_ITEMS + tab colors
+
+  pages/         — one per route: Login, NewMemberSetup, Waiver, Home, Schedule,
+                   Calendar, Members, AdminManagement, Boulders, ClimbLog
+  components/    — shared UI + the modals each page opens (Modal, BadgeIcon,
+                   GradeBar, EffortBar, StarRating, DropdownPicker, InstallPrompt,
+                   and the Boulder*/Climb*/Member*/Access/NewMember/Season ones)
+  utils/         — id.ts (generateId), imageResize.ts (canvas resize → data URL)
 ```
 
-**Cross-app compatibility constraint:** `services/profiles.ts` writes to the same `users/{uid}` documents `mobile/`'s REST client reads. Fields like `emergencyContact` are stored as JSON-*stringified* strings, not native Firestore maps — `mobile/`'s hand-rolled REST decoder only understands `stringValue`/`booleanValue`/`integerValue`/`timestampValue` and silently returns `null` for a `mapValue`/`arrayValue`. Keep writing `JSON.stringify(...)` for those fields; don't "clean up" to native nested objects while both apps read the same collection.
+**Data-format constraint — keep `JSON.stringify()` on nested `users/{uid}` fields.** `emergencyContact`, `additionalEmails` and `pendingMembership` are stored as JSON-*stringified strings*, not native Firestore maps. This originated as a workaround for the old Expo app's hand-rolled REST decoder, which is now gone — but it still binds, for two reasons that aren't going away:
+
+1. **`admin-web/` reads them the same way** (`JSON.parse(u.emergencyContact || '{}')`), and it's still live.
+2. **Every existing production document is already in that format.** Switching to native maps would silently produce a mixed-format collection, and this app's own readers (`JSON.parse`) would throw on the new-format docs.
+
+Changing it means migrating existing documents *and* updating `admin-web/` in the same change — not a local cleanup. Note this does **not** apply to the `boulders`/`climbLogs`/`climbLocations` collections, which correctly use native maps and arrays throughout.
 
 **Pure-logic-first pattern**: domain functions that make a decision (`nextMembershipStatus`, `isAdminFor`) take their inputs as plain parameters and return a value — no Firestore/env reads inside them, so no mocking is needed to unit test them. Side-effecting wrappers (env var reads, Firestore writes) live one layer up, in `domain/roles.ts`'s `isAdmin()`/`SUPER_ADMIN_EMAIL` and `services/profiles.ts`'s `checkAndUpdateMembershipStatus()`. Follow this split for new domain logic (session rules, punch-pass logic, etc. in later phases).
 

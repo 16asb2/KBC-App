@@ -26,6 +26,7 @@ All notable changes to KBC Scheduler are documented here.
 - **Calendar mediation — corrected record**: docs claimed Google Calendar access was mediated by `functions/getAdminCalendarToken`. It never was — that Cloud Function was never deployed (the Cloud Functions API isn't enabled on the project) while the Cloudflare Worker in `worker/` served the endpoint all along. The misleadingly-named `*_CLOUD_FUNCTIONS_BASE_URL` env var is what obscured this.
 
 ### Removed
+- **`mobile/`**: the entire Expo/React Native app, deleted. It was never released — no App Store, no Play Store, no lasting tester distribution, no users — and `web/` now covers everything that mattered. Recoverable in full from git history at **`1cdfada`** (`git show 1cdfada:mobile/<path>`); the `// Ported from mobile/...` provenance comments throughout `web/src` still point at real, readable files there. Its CI job (`mobile-lint-and-test`) went with it.
 - **`functions/`**: deleted. Never deployed, unreferenced by `firebase.json` and CI, and duplicated by the live `worker/` — it was a trap for anyone reading the repo. Recoverable from git history.
 - **`EXPO_PUBLIC_GOOGLE_ADMIN_REFRESH_TOKEN` from `mobile/.env`**: Expo inlines `EXPO_PUBLIC_*` into the shipped bundle, so this put a long-lived KBC-admin credential inside every mobile build. Confirmed unused by any runtime code (only a one-time generator script referenced it) before removing. Low real-world impact since no mobile build was ever distributed.
 

@@ -4,7 +4,7 @@ The official app for the **Kingston Bouldering Cooperative** — a member-manage
 
 > **Status:** The app is a **web app (PWA)** — installable to a phone home screen, no app store involved. It lives in [`web/`](./web/).
 >
-> An earlier Expo/React Native version lives in [`mobile/`](./mobile/). **It was never released** and has no users; it's kept as a porting reference while `web/` closes its last feature gaps, then it goes away. See [WEB-MIGRATION-PLAN.md](./WEB-MIGRATION-PLAN.md) for the background.
+> It was ported from an earlier Expo/React Native app, which was never released and has since been deleted. See [WEB-MIGRATION-PLAN.md](./WEB-MIGRATION-PLAN.md) for that background.
 
 ---
 
@@ -53,7 +53,6 @@ See [web/CLAUDE.md](./web/CLAUDE.md) for architecture notes and current feature 
 
 ```
 web/          — the app (routes in web/src/pages/, wired up in web/src/App.tsx)
-mobile/       — retired, unreleased Expo app; porting reference only
 admin-web/    — legacy standalone admin panel (single HTML file), still live
 worker/       — Cloudflare Worker mediating Google Calendar admin access
 firestore.rules — shared Firestore security rules
