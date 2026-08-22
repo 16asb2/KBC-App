@@ -1,30 +1,35 @@
 # Gitleaks config for the KBC App repo.
 #
-# Extends the default ruleset — this only ADDS narrowly-scoped exceptions,
+# Extends the default ruleset — this only ADDS a narrowly-scoped exception,
 # it never disables rules wholesale.
+#
+# NOTE: this must be the singular `[allowlist]` table. The plural
+# `[[allowlists]]` form is accepted by the TOML parser but silently ignored
+# by gitleaks 8.24.x at the top level — it produces no error and no effect.
+# Verified against gitleaks 8.24.3 (the version CI pins).
 
 [extend]
 useDefault = true
 
-[[allowlists]]
+[allowlist]
 description = """
 The Firebase *web* API key is public by design and is not a secret.
 
 Google documents this explicitly: it identifies the project to Firebase
-services, it is not a credential. It ships inside every web bundle, is
-served to every visitor, and is retrievable by anyone via
-`firebase apps:sdkconfig WEB`. Security for this project comes from
-firestore.rules plus the Firebase Auth authorized-domains list — not from
-keeping this string private.
+services, it is not a credential. It ships inside every web bundle, is served
+to every visitor, and is retrievable by anyone via `firebase apps:sdkconfig
+WEB`. Security for this project comes from firestore.rules plus the Firebase
+Auth authorized-domains list — not from keeping this string private.
 
-It appears in .github/workflows/deploy-web.yml because Vite inlines
-VITE_* vars at build time, and web/.env is (correctly) gitignored — so
-CI has to supply it somehow.
+It appears in .github/workflows/deploy-web.yml because Vite inlines VITE_*
+vars at build time, and web/.env is (correctly) gitignored — so CI has to
+supply it somehow.
 
-Scoped to this exact key value rather than to a path, so that any *other*
-secret accidentally added to those same files is still caught.
+Scoped to these exact key values rather than to a file path, so that any
+*other* secret accidentally added to those same files is still caught.
 """
 regexTarget = "match"
 regexes = [
+  # web/ — Firebase web app config (public)
   '''AIzaSyAhJKoDWPj4mWK2M_DAvAO6kbMpu3ajB9Y''',
 ]
