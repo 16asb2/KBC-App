@@ -1,17 +1,24 @@
 import { auth } from '@/lib/firebase'
 
-// Reads go through the same admin-mediated Cloud Function mobile/ uses for
-// WRITES (functions/getAdminCalendarToken) — a deliberate divergence from
-// mobile/services/calendarService.ts, which reads with the signed-in user's
-// own Google OAuth access token instead. That works for mobile because
-// Google Sign-In already gives it a long-lived, refreshable access token for
-// the calendar.events scope. Doing the same on web would mean requesting
-// that scope during signInWithPopup and then re-implementing Google Identity
-// Services' separate silent-refresh flow, since Firebase Auth's JS SDK only
-// hands you a Google OAuth access token once, at sign-in, and never refreshes
-// it. Reusing the admin-mediated path avoids all of that — the KBC calendar
-// is shared read-only with any Google account, so the admin token can read
-// it exactly as well as a member's own token could, with fewer moving parts.
+// Reads go through the same admin-mediated token service mobile/ uses for
+// WRITES — a deliberate divergence from mobile/services/calendarService.ts,
+// which reads with the signed-in user's own Google OAuth access token
+// instead. That works for mobile because Google Sign-In already gives it a
+// long-lived, refreshable access token for the calendar.events scope. Doing
+// the same on web would mean requesting that scope during signInWithPopup
+// and then re-implementing Google Identity Services' separate silent-refresh
+// flow, since Firebase Auth's JS SDK only hands you a Google OAuth access
+// token once, at sign-in, and never refreshes it. Reusing the admin-mediated
+// path avoids all of that — the KBC calendar is shared read-only with any
+// Google account, so the admin token can read it exactly as well as a
+// member's own token could, with fewer moving parts.
+//
+// NOTE on which service that actually is: VITE_CLOUD_FUNCTIONS_BASE_URL is
+// named after functions/getAdminCalendarToken, but both it and mobile's
+// EXPO_PUBLIC_CLOUD_FUNCTIONS_BASE_URL point at the Cloudflare Worker in
+// worker/ instead. That Cloud Function has never been deployed (the Cloud
+// Functions API isn't enabled on the project) — worker/ is the live one.
+// It accepts the Firebase ID token sent below; see worker/src/index.ts.
 const CALENDAR_ID = import.meta.env.VITE_GOOGLE_CALENDAR_ID
 const CLOUD_FN_BASE = import.meta.env.VITE_CLOUD_FUNCTIONS_BASE_URL
 const BASE_URL = 'https://www.googleapis.com/calendar/v3'
