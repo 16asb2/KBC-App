@@ -2,16 +2,18 @@
 
 ## What the app is and who it's for
 
-**KBC Scheduler** is the member app for **Kingston Boulder Cooperative (KBC)**, a member-run climbing gym in Kingston, Ontario. It replaces paper sign-in sheets, a shared Google Calendar, and informal boulder tracking with a single mobile app.
+**KBC Scheduler** is the member app for **Kingston Boulder Cooperative (KBC)**, a member-run climbing gym in Kingston, Ontario. It replaces paper sign-in sheets, a shared Google Calendar, and informal boulder tracking with a single app.
 
 **Users:**
 - **Regular members** — sign in to climbing sessions, browse the schedule, log personal climbs, vote on boulders
 - **Supervisors** — volunteer members who open the gym; can sign others in, manage the calendar, open the gym
 - **Admins** — board members; can manage memberships, grant/revoke supervisor status, create special events
 
-The app is internal-only — not on any public app store. Distributed as an APK via EAS to a small user base (~dozens of members).
+The app is internal-only, for a small user base (~dozens of members) — no public app store involved.
 
-> **Web migration in progress.** The Expo app now lives in `mobile/` and is being frozen at feature parity in favor of a new Vite/React/TypeScript PWA in `web/`, which will become the primary client going forward — same Firebase project, same Firestore data model, same role hierarchy described below. See [WEB-MIGRATION-PLAN.md](./WEB-MIGRATION-PLAN.md) for the phased plan and current status, and [web/CLAUDE.md](./web/CLAUDE.md) for the web app's own architecture notes. The rest of this document still describes `mobile/`'s design as originally built; where `web/` diverges deliberately (e.g. reading Calendar events through the admin-mediated Cloud Function instead of a per-user OAuth token), that's called out in web/CLAUDE.md rather than here.
+> **The app is now a web app (PWA)**, in `web/`, installable to a phone home screen. The original Expo build in `mobile/` **was never released and has no users**; it's kept only as a porting reference and will be deleted once `web/` closes its remaining gaps. See [WEB-MIGRATION-PLAN.md](./WEB-MIGRATION-PLAN.md) for the background and [web/CLAUDE.md](./web/CLAUDE.md) for the web app's architecture notes.
+>
+> **How to read the rest of this document:** the product design below — roles, membership model, permissions, workflows, data schema — is current and applies to `web/`. Anything phrased as "how the app currently does X" describes `mobile/`'s implementation, which is now history rather than a constraint; `web/` deliberately diverges where the web platform called for it (see web/CLAUDE.md).
 
 ---
 

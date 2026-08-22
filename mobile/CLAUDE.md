@@ -1,4 +1,19 @@
-# KBC Scheduler — Claude Code Project Guide
+# KBC Scheduler (mobile) — Claude Code Project Guide
+
+> ## ⚠️ This app is retired and was never released
+>
+> It never shipped to the App Store, Google Play, or any lasting tester
+> distribution — **it has no users and never did.** The product is now the web
+> app in [`../web/`](../web/CLAUDE.md); see [../CLAUDE.md](../CLAUDE.md).
+>
+> This directory is kept only as a **porting reference** while `web/` closes its
+> last feature gaps (Boulders' Personal mode, a couple of supervisor
+> conveniences, the summary screens). Once those land, it can be deleted.
+>
+> **Don't build features here.** Don't preserve its behaviour for compatibility's
+> sake — there's nothing downstream to be compatible with. Where the docs below
+> describe intent or business rules, they're still useful; where they describe
+> "how it currently works", that's history, not a constraint.
 
 ## What this app is
 A React Native / Expo app for **Kingston Boulder Cooperative (KBC)**, a member-run climbing gym. It handles:

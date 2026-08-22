@@ -1,10 +1,19 @@
 # KBC Web App — Claude Code Guide
 
-New installable web app (PWA) for Kingston Boulder Cooperative, replacing the Expo/React Native app in `../mobile/`. See [../WEB-MIGRATION-PLAN.md](../WEB-MIGRATION-PLAN.md) for the phased migration plan this app is being built against, and [../CLAUDE.md](../CLAUDE.md) for the shared backend (Firebase project, Cloud Functions, Firestore rules) this app talks to.
+**The** KBC member app — an installable PWA. This is the only client that ships; the Expo app in `../mobile/` was never released and exists only as a porting reference. See [../WEB-MIGRATION-PLAN.md](../WEB-MIGRATION-PLAN.md) for how this app came to be, and [../CLAUDE.md](../CLAUDE.md) for the shared backend it talks to.
 
 ## Status
 
-Phases 1-4 are done — domain layer, auth + shell, all four Phase 3 workflows, member directory, admin management, and read-only calendar views. Phase 6 (PWA/install experience) is mostly done: manifest, service worker, icons, install prompts — still needs an actual on-device install check, which isn't possible from this environment. Phase 7 (security remediation) is done — see git log. Phase 5 (Stripe payments) is out of scope for this version of the app. Phase 8 (deploy/CI): `firebase.json`/`.firebaserc` and `.github/workflows/deploy-web.yml` are in place and the `FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B` secret now exists — deploys should be live on PRs going forward. All six tabs now have real content, including Boulders (KBC mode) and Log Book, ported outside the original 8-phase scope for full feature parity with mobile. Deferred: Boulders' Personal mode (separate self-contained data model), a handful of narrower supervisor conveniences from Phase 3, and the boulder-summary/climb-summary stats screens. See git log for exact scope per commit. This file will grow as further gaps get closed.
+Phases 1-4 are done — domain layer, auth + shell, all four Phase 3 workflows, member directory, admin management, and read-only calendar views. Phase 6 (PWA/install experience) is mostly done: manifest, service worker, icons, install prompts — still needs an actual on-device install check. Phase 7 (security remediation) is done. Phase 5 (Stripe payments) is out of scope for this version. Phase 8 (deploy/CI) is wired up and deploying to PR preview channels.
+
+All six tabs have real content: Home, Schedule, Calendar, Members, Boulders (KBC mode), Log Book.
+
+**Remaining feature gaps.** These were originally deferred as "mobile has it, web doesn't" — but since mobile never shipped, they are now simply *missing features of the product*, not parity debt:
+- **Boulders → Personal mode**: logging climbs at non-KBC locations/problems. Self-contained (`personalProblems`, `climbLocations` collections); needs its own list/card/editor UI.
+- **Supervisor conveniences on Home**: signing in an *existing* other climber, and punch donation between members. (Adding a *new* member is done.)
+- **Summary screens**: `boulder-summary` and `climb-summary` — bar-chart stats views both tabs used to link out to.
+
+See git log for exact scope per commit.
 
 ## Tech stack
 

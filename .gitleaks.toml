@@ -1,0 +1,30 @@
+# Gitleaks config for the KBC App repo.
+#
+# Extends the default ruleset — this only ADDS narrowly-scoped exceptions,
+# it never disables rules wholesale.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = """
+The Firebase *web* API key is public by design and is not a secret.
+
+Google documents this explicitly: it identifies the project to Firebase
+services, it is not a credential. It ships inside every web bundle, is
+served to every visitor, and is retrievable by anyone via
+`firebase apps:sdkconfig WEB`. Security for this project comes from
+firestore.rules plus the Firebase Auth authorized-domains list — not from
+keeping this string private.
+
+It appears in .github/workflows/deploy-web.yml because Vite inlines
+VITE_* vars at build time, and web/.env is (correctly) gitignored — so
+CI has to supply it somehow.
+
+Scoped to this exact key value rather than to a path, so that any *other*
+secret accidentally added to those same files is still caught.
+"""
+regexTarget = "match"
+regexes = [
+  '''AIzaSyAhJKoDWPj4mWK2M_DAvAO6kbMpu3ajB9Y''',
+]

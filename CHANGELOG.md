@@ -22,7 +22,16 @@ All notable changes to KBC Scheduler are documented here.
 
 ### Changed
 - **Repo layout**: the Expo app moved from the repo root into `mobile/` (pure relocation, no code changes) to make room for `web/`.
-- **README.md**: rewritten for the two-app layout — separate `mobile/`/`web/` getting-started instructions, updated tech stack and project structure.
+- **The web app is now *the* app.** The Expo build in `mobile/` was never released and has no users, so it's no longer framed as a co-equal client "frozen at parity" — it's a porting reference kept only until `web/` closes its last feature gaps, then deleted. Docs updated throughout (`README.md`, `CLAUDE.md`, `mobile/CLAUDE.md`, `web/CLAUDE.md`, `DESIGN.md`, `WEB-MIGRATION-PLAN.md`) to reflect that, including removing the now-moot "keep mobile as a fallback" reasoning.
+- **Calendar mediation — corrected record**: docs claimed Google Calendar access was mediated by `functions/getAdminCalendarToken`. It never was — that Cloud Function was never deployed (the Cloud Functions API isn't enabled on the project) while the Cloudflare Worker in `worker/` served the endpoint all along. The misleadingly-named `*_CLOUD_FUNCTIONS_BASE_URL` env var is what obscured this.
+
+### Removed
+- **`functions/`**: deleted. Never deployed, unreferenced by `firebase.json` and CI, and duplicated by the live `worker/` — it was a trap for anyone reading the repo. Recoverable from git history.
+- **`EXPO_PUBLIC_GOOGLE_ADMIN_REFRESH_TOKEN` from `mobile/.env`**: Expo inlines `EXPO_PUBLIC_*` into the shipped bundle, so this put a long-lived KBC-admin credential inside every mobile build. Confirmed unused by any runtime code (only a one-time generator script referenced it) before removing. Low real-world impact since no mobile build was ever distributed.
+
+### Security
+- **Worker now verifies Firebase ID tokens**: `worker/` accepts either a Google OAuth access token (as `mobile/` sends) or a Firebase ID token (as `web/` sends). ID tokens are fully verified — RS256 signature against Google's published JWKs, plus `aud`/`iss`/`sub`/`exp`/`iat` with clock-skew tolerance — not merely decoded.
+- **Secret scanning**: added `.gitleaks.toml` allowlisting the Firebase *web* API key, which is public by design (it ships in every web bundle and is retrievable via `firebase apps:sdkconfig`). Scoped to that exact key value, so any other secret in the same files is still caught.
 
 ---
 

@@ -1,9 +1,11 @@
 # KBC App — Migration Plan: Expo/React Native → Installable Web App (PWA)
 
 **Repo:** `16asb2/KBC-App`
-**Status:** Planning — not yet started
-**Author:** Artur (KBC mobile app developer)
-**Purpose of this doc:** Hand to Claude Code as the working spec for the migration. Update as decisions are made.
+**Status:** ✅ **Migration done.** `web/` is the product; all six tabs are built and it deploys to Firebase Hosting via CI. Phase 5 (Stripe payments) was dropped from scope. A few feature gaps remain — tracked in [web/CLAUDE.md](./web/CLAUDE.md), not here.
+**Author:** Artur (KBC app developer)
+**Purpose of this doc:** Originally the working spec for the migration; now mostly a record of *why* things were built the way they were. Phase-by-phase status notes below are kept for that history.
+
+> **Since this plan was written, one assumption changed materially:** the Expo app **was never released** — no App Store, no Play Store, no lasting tester distribution, no users. So the "keep `mobile/` alive as a fallback" reasoning throughout this document (Phase 0, §2, §6) is moot. `mobile/` is a porting reference that gets deleted once `web/` closes its remaining gaps, and there was never any user-migration or backwards-compatibility burden to manage.
 
 ---
 
@@ -54,7 +56,7 @@ Since **auth and payments — the two hardest integrations — have to be rewrit
 | Hosting | Firebase Hosting | Same project, keeps auth domain consistent |
 | CI | Existing GitHub Actions | Extend `lint-and-test` to the web workspace |
 
-**Repo layout — keep one repo:**
+**Repo layout — keep one repo.** As planned:
 
 ```
 KBC-App/
@@ -66,6 +68,12 @@ KBC-App/
 ├── CHANGELOG.md
 └── CLAUDE.md        # update with web/ context
 ```
+
+As it actually ended up: `functions/` was deleted (never deployed — `worker/`, a
+Cloudflare Worker not anticipated by this plan, was the live Calendar mediator all
+along), and `mobile/` is now a delete-when-done porting reference rather than a
+kept fallback, since it turned out to have never shipped. See the current layout in
+[CLAUDE.md](./CLAUDE.md).
 
 Keeping `mobile/` in place costs nothing and preserves the option to resurrect Stripe Terminal / BLE later.
 
@@ -130,7 +138,7 @@ Each flow should match the existing workflow diagrams. Flag any divergence in DE
 ### Phase 7 — Security remediation ✅ done
 Checked each item against the actual code/rules rather than assuming the list was still accurate — most of it already held:
 - **Critical:** `firestore.rules` locked down, not in test mode — ✅ confirmed, no wildcard-open rules. (Rules tests still not written — the rules themselves just turned out to already be sound.)
-- **Critical:** admin OAuth credentials live only in Cloud Function config — ✅ confirmed, `functions/src/index.ts` uses `defineSecret()`/Secret Manager, nothing in any client bundle.
+- **Critical:** admin OAuth credentials never in a client bundle — ✅ true, but the reasoning at the time was wrong: this was verified against `functions/src/index.ts`'s `defineSecret()`/Secret Manager usage, on the assumption that Cloud Function was the live mediator. It never was — it was never deployed, and `worker/` (Cloudflare, credentials in Worker secrets) has served that endpoint all along. `functions/` has since been deleted. The security property holds either way; the *evidence* cited originally didn't. Separately, an actual leak was found and fixed later: `mobile/.env` carried `EXPO_PUBLIC_GOOGLE_ADMIN_REFRESH_TOKEN`, which Expo inlines into the app bundle — removed once confirmed no runtime code read it.
 - **Medium:** server-side role enforcement — ✅ effectively already true. `isSupervisorOrAdmin()` in `firestore.rules` re-reads the live `users/{uid}` doc server-side rather than trusting anything client-supplied, so it isn't spoofable. Migrating to Firebase Auth **custom claims** would still be a reasonable *performance* upgrade (a JWT claim read vs. an extra Firestore `get()` per rule check) but isn't closing a security gap — downgraded from a fix to an optional later optimization.
 - **Medium:** migrate hardcoded super-admin off a personal account — ✅ already the case. The hardcoded super-admin is `kingstonboulderingcooperative@gmail.com`, the KBC org account (also the account the Firebase project itself is managed under), not a personal one.
 - **Medium:** add secret scanning to CI — ✅ confirmed, `gitleaks-action` already runs in `.github/workflows/ci.yml`.

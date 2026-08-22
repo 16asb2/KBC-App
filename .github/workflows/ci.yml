@@ -9,6 +9,12 @@ on:
 jobs:
   secret-scan:
     runs-on: ubuntu-latest
+    # gitleaks-action posts its findings as a PR comment; without these it
+    # still scans and still fails the job on a leak, but logs a confusing
+    # "Resource not accessible by integration" warning instead of commenting.
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
