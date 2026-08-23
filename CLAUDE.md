@@ -14,9 +14,17 @@ worker/       — Cloudflare Worker (`kbc-admin-token`). The live admin-token
                 service, despite the env var pointing at it being named
                 *_CLOUD_FUNCTIONS_BASE_URL. Mediates Google Calendar access
                 through the KBC admin account without exposing its OAuth
-                credentials to any client. Accepts a Firebase ID token (what
-                web/ sends) or a Google OAuth access token (legacy).
+                credentials to any client. Accepts a Firebase ID token and
+                nothing else — it used to also take a Google OAuth access
+                token, which any Google user could supply, so that path was
+                removed rather than repaired.
 firestore.rules — Shared Firestore security rules.
+rules-tests/  — Security-rules tests for firestore.rules, run against the
+                Firestore emulator. Its own package because the emulator is a
+                JVM app: without Java installed these can't run, and they'd
+                otherwise break `npm test` in web/ for anyone lacking a JDK.
+                CI runs them (`rules-test` job); locally use
+                `npm run test:emulated`.
 DESIGN.md     — Product/architecture decisions and open questions (role
                 hierarchy, punch-pass vs. membership model, etc.).
 CHANGELOG.md  — Project-wide history.
@@ -52,4 +60,8 @@ if ever needed — everything is in the commits, nothing was force-purged.
 - Typed branches off `main`: `feat/`, `fix/`, `chore/`, `refactor/`
 - Conventional commit prefixes
 - Architecture decisions go in `DESIGN.md`; versioning in `CHANGELOG.md`
+- CI (`.github/workflows/ci.yml`) runs four jobs: secret scanning, `web/`
+  lint+test+build, `worker/` typecheck+test, and the `firestore.rules`
+  tests. The worker job pins Node 24 — its tests import a `.ts` file and
+  rely on type stripping, which Node 20 doesn't have.
 - Secrets never in Git; `web/.env` is gitignored (see `web/.env.example`)

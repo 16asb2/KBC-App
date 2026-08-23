@@ -1,0 +1,16 @@
+{
+  "name": "kbc-rules-tests",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Security-rules tests for firestore.rules. Needs the Firestore emulator, which needs a JVM \u2014 see README.",
+  "scripts": {
+    "test": "node --test \"*.test.mjs\"",
+    "test:emulated": "firebase emulators:exec --only firestore --project kbc-app-3307b \"npm test\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "firebase": "^12.18.0",
+    "firebase-tools": "^14.0.0"
+  }
+}
