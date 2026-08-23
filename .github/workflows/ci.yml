@@ -106,7 +106,16 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          # 21, not 17: firebase-tools 15 drops support for older JDKs and
+          # already warns about it on every run.
+          java-version: '21'
+
+      # The emulator jar is ~60MB and is otherwise re-downloaded every run.
+      - name: Cache Firestore emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}
 
       - name: Install dependencies
         run: npm ci

@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Security-rules tests for firestore.rules. Needs the Firestore emulator, which needs a JVM \u2014 see README.",
   "scripts": {
-    "test": "node --test \"*.test.mjs\"",
+    "test": "node --test",
     "test:emulated": "firebase emulators:exec --only firestore --project kbc-app-3307b \"npm test\""
   },
   "devDependencies": {
