@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { InstallPrompt } from '@/components/InstallPrompt'
+import { NavIcon } from '@/components/NavIcon'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { isPrivileged } from '@/domain/roles'
@@ -57,11 +58,8 @@ function NavItems({ orientation }: { orientation: 'row' | 'col' }) {
           }
           style={({ isActive }) => (isActive ? { color: item.color } : undefined)}
         >
-          <span
-            className={orientation === 'row' ? 'size-2 rounded-full' : 'size-2.5 rounded-full'}
-            style={{ backgroundColor: item.color }}
-          />
-          {item.label}
+          <NavIcon name={item.icon} size={orientation === 'row' ? 22 : 20} />
+          <span className={orientation === 'row' ? 'leading-none' : ''}>{item.label}</span>
         </NavLink>
       ))}
     </>
@@ -70,7 +68,14 @@ function NavItems({ orientation }: { orientation: 'row' | 'col' }) {
 
 export function AppShell() {
   return (
-    <div className="flex min-h-svh flex-col" style={{ backgroundColor: KBC.black }}>
+    // h-svh (an exact height), not min-h-svh. With a min-height the shell grows
+    // past the viewport on long pages, which meant <main>'s overflow-y-auto never
+    // became a scroll region and the mobile tab bar sat at the bottom of the
+    // *document* instead of the screen — you had to scroll a long list to its end
+    // just to reach the tabs. Pinning the shell to the viewport makes <main> the
+    // only scroller. svh (not vh/dvh) is deliberate: it's the *small* viewport
+    // height, so nothing hides behind mobile browser chrome as it expands.
+    <div className="flex h-svh flex-col overflow-hidden" style={{ backgroundColor: KBC.black }}>
       <Header />
       <InstallPrompt />
       <div className="flex min-h-0 flex-1">
