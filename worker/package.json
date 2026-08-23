@@ -3,7 +3,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "node --test \"test/**/*.test.mjs\"",
+    "test": "node --test",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

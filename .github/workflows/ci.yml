@@ -50,3 +50,79 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  worker-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # 24, not 20 like the jobs above — deliberate, not drift. The tests
+          # import src/verifyIdToken.ts directly and lean on Node's type
+          # stripping so the Worker needs no bundler or test framework of its
+          # own. Stripping is only on by default from Node 22.18; on 20 the
+          # import fails with ERR_UNKNOWN_FILE_EXTENSION.
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Covers the JWT forgeries a verifier has to reject (alg:none, HS256
+      # confusion, tampering, cross-project aud/iss) and that opaque Google
+      # access tokens are refused — the hole fixed in 7f000e7.
+      - name: Test
+        run: npm test
+
+  rules-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rules-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: rules-tests/package-lock.json
+
+      # The Firestore emulator is a JVM application. That is why these tests
+      # can't run on a machine without Java, and why they live in their own
+      # package rather than inside web/'s vitest run — a developer without a
+      # JDK should still get a green `npm test` in web/.
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          # 21, not 17: firebase-tools 15 drops support for older JDKs and
+          # already warns about it on every run.
+          java-version: '21'
+
+      # The emulator jar is ~60MB and is otherwise re-downloaded every run.
+      - name: Cache Firestore emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Runs firestore.rules against the emulator. Asserts a pre-registered
+      # supervisor can complete first sign-in (the fix in 505d58c) and that
+      # the linkedFrom branch enabling it can't be turned into privilege
+      # escalation.
+      - name: Test security rules
+        run: npm run test:emulated
