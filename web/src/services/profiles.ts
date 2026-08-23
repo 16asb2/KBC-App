@@ -55,7 +55,13 @@ export async function findOrLinkProfile(
   if (existing) {
     console.log('[Profile] Linking Firebase UID to existing member profile for', email)
     const { uid: oldUid, ...existingData } = existing
-    const linked: Omit<UserProfile, 'uid'> = { ...existingData, name, email, photo }
+    // linkedFrom is what makes this write legal when the pre-registered
+    // profile already carries isAdmin/isSupervisor. The self-create branch in
+    // firestore.rules rejects a doc with either flag set, and the
+    // supervisor/admin branch can't help: it reads users/{auth.uid}, which is
+    // the very document being created. So the rules instead re-check the flags
+    // against the profile named here, which must exist and share this email.
+    const linked: Omit<UserProfile, 'uid'> = { ...existingData, name, email, photo, linkedFrom: oldUid }
     await setDoc(doc(db, USERS, uid), linked)
     // The old doc (synthetic manual_* id from createNewMemberProfile, or any
     // other prior id) is now a duplicate of the one we just wrote under the
