@@ -44,4 +44,9 @@ export type UserProfile = {
   lastSignInAt?: string // ISO — last completed session sign-in (enforces 24h rule)
   lastUpdatedBy?: string
   lastUpdatedAt?: string
+  // Id of the pre-registration profile this doc was copied from on first
+  // Google sign-in. Written once by findOrLinkProfile; firestore.rules reads
+  // it to confirm any isAdmin/isSupervisor being carried over was already
+  // granted on that profile. Kept afterwards as provenance.
+  linkedFrom?: string
 }

@@ -63,6 +63,36 @@ service cloud.firestore {
       ]);
     }
 
+    // First Google sign-in for someone an admin pre-registered.
+    //
+    // services/profiles.ts findOrLinkProfile() copies their existing profile
+    // to the real Firebase uid. That copy carries whatever isAdmin/isSupervisor
+    // the admin already granted, which the self-create branch below rejects —
+    // and isSupervisorOrAdmin() can't authorise it either, because it reads
+    // users/{auth.uid}, the very document being created. Without this branch a
+    // pre-registered supervisor is denied, findOrLinkProfile throws, and
+    // OnboardingGate sends them to /setup as if they were a new member.
+    //
+    // The flags are re-checked against the profile named by linkedFrom, which
+    // must already exist and carry this user's email, so this can only carry
+    // privileges across — never mint them. An attacker can't point linkedFrom
+    // at an admin's profile: the emails wouldn't match.
+    function linkSource() {
+      return get(/databases/$(database)/documents/users/$(request.resource.data.linkedFrom));
+    }
+
+    function linksOwnExistingProfile(uid) {
+      return isAuthenticated() &&
+        request.auth.uid == uid &&
+        request.auth.token.get('email', '') != '' &&
+        request.resource.data.get('linkedFrom', '') != '' &&
+        request.resource.data.linkedFrom != uid &&
+        exists(/databases/$(database)/documents/users/$(request.resource.data.linkedFrom)) &&
+        linkSource().data.get('email', '').lower() == request.auth.token.email.lower() &&
+        request.resource.data.get('isAdmin', false) == linkSource().data.get('isAdmin', false) &&
+        request.resource.data.get('isSupervisor', false) == linkSource().data.get('isSupervisor', false);
+    }
+
     // A member may update their own access/purchase state as long as they
     // don't touch role fields and don't self-approve to 'active'.
     function canSelfUpdateAccess(uid) {
@@ -82,7 +112,8 @@ service cloud.firestore {
                        (isAuthenticated() &&
                         request.auth.uid == uid &&
                         request.resource.data.get('isAdmin', false) == false &&
-                        request.resource.data.get('isSupervisor', false) == false);
+                        request.resource.data.get('isSupervisor', false) == false) ||
+                       linksOwnExistingProfile(uid);
       allow delete: if isSupervisorOrAdmin();
       allow update: if isSupervisorOrAdmin() ||
                        (isAuthenticated() &&
