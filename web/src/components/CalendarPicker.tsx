@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSwipe } from '@/hooks/useSwipe'
 import { KBC } from '@/constants/theme'
 import { isEventOnDay, isRequestedEvent, isSameDay, isSupervisorEvent } from '@/domain/calendarEvent'
 import type { CalendarEvent } from '@/services/calendar'
@@ -47,8 +48,11 @@ export function CalendarPicker({
 
   const days = buildCalendarDays(viewYear, viewMonth)
 
+  // Swipe the grid to change month, same direction as the ‹ › buttons.
+  const swipe = useSwipe({ onSwipeLeft: nextMonth, onSwipeRight: prevMonth })
+
   return (
-    <div className="px-3 pt-3">
+    <div className="px-3 pt-3" {...swipe}>
       <div className="mb-3 flex items-center justify-between">
         <button type="button" onClick={prevMonth} className="p-2 text-3xl leading-none" style={{ color: KBC.pink }}>
           ‹

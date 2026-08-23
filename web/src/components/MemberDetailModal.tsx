@@ -32,6 +32,8 @@ export function MemberDetailModal({
   canDirectActivate,
   canEditSupervisor,
   onSave,
+  onEditProfile,
+  onViewHistory,
   onClose,
 }: {
   member: UserProfile
@@ -39,6 +41,9 @@ export function MemberDetailModal({
   canDirectActivate: boolean
   canEditSupervisor: boolean
   onSave: (updates: Partial<UserProfile>) => Promise<void>
+  /** Opens the rest of the record — names, contact, emergency contact, notes. */
+  onEditProfile: () => void
+  onViewHistory: (kind: 'signins' | 'purchases') => void
   onClose: () => void
 }) {
   const [showEdit, setShowEdit] = useState(false)
@@ -297,6 +302,36 @@ export function MemberDetailModal({
           </div>
         </div>
       )}
+
+      {/* The panel above is membership and access only. Everything else about a
+          member — names, contact details, emergency contact, staff notes —
+          lives in ProfileEditModal, and their attendance in MemberHistoryModal. */}
+      <div className="mt-5 space-y-2 border-t border-neutral-200 pt-4">
+        <button
+          type="button"
+          onClick={onEditProfile}
+          className="w-full rounded-xl border p-2.5 text-sm font-bold"
+          style={{ borderColor: KBC.cyan, color: KBC.cyan }}
+        >
+          Edit Full Profile
+        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onViewHistory('signins')}
+            className="flex-1 rounded-xl border border-neutral-300 p-2.5 text-sm font-semibold text-neutral-600"
+          >
+            Sign-In History
+          </button>
+          <button
+            type="button"
+            onClick={() => onViewHistory('purchases')}
+            className="flex-1 rounded-xl border border-neutral-300 p-2.5 text-sm font-semibold text-neutral-600"
+          >
+            Access Pass History
+          </button>
+        </div>
+      </div>
     </Modal>
   )
 }

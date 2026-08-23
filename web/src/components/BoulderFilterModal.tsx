@@ -1,15 +1,17 @@
 import { useState } from 'react'
 import { BadgeIcon } from '@/components/BadgeIcon'
 import { DropdownPicker } from '@/components/DropdownPicker'
+import { GymMap } from '@/components/GymMap'
 import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
 import { DEFAULT_BOULDER_FILTER, type BoulderFilterState } from '@/domain/boulderFilters'
 import { BADGE_GROUPS, GRADES, GRADE_COLORS, GRADE_TEXT, LOCATIONS } from '@/services/boulders'
 
-// Ported from mobile/app/(tabs)/boulders.tsx's FilterModal. Location is a
-// plain checkbox list here instead of mobile's visual GymMap floor-plan
-// picker — same set of locations, simpler control; the interactive wall-map
-// UI is deferred (it's not needed for the filter to work).
+// Ported from mobile/app/(tabs)/boulders.tsx's FilterModal, including its
+// GymMap floor-plan picker. The plain chip row is kept below the map rather
+// than replaced by it: the map's chips are rotated to sit alongside the walls
+// they name, which makes them small targets, and the row is the accessible
+// path. Both drive the same filter state.
 export function BoulderFilterModal({
   filters,
   onChange,
@@ -59,6 +61,7 @@ export function BoulderFilterModal({
 
         <div>
           <FieldLabel>Location</FieldLabel>
+          <GymMap selected={local.locations} onToggle={toggleLoc} />
           <div className="mt-1.5 flex flex-wrap gap-2">
             {LOCATIONS.map((loc) => {
               const on = local.locations.includes(loc)

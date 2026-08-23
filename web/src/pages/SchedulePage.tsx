@@ -5,6 +5,7 @@ import { TimelineView } from '@/components/TimelineView'
 import { KBC } from '@/constants/theme'
 import { useSchedule } from '@/context/ScheduleContext'
 import { isEventOnDay } from '@/domain/calendarEvent'
+import { useSwipe } from '@/hooks/useSwipe'
 
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
@@ -38,10 +39,17 @@ export function SchedulePage() {
     setSelectedDate(next)
   }
 
+  // Swiping left goes forward, matching the ‹ › buttons and the direction the
+  // content would move if it were a filmstrip.
+  const swipe = useSwipe({
+    onSwipeLeft: () => changeDay(1),
+    onSwipeRight: () => changeDay(-1),
+  })
+
   const dayEvents = allEvents.filter((e) => isEventOnDay(e, selectedDate))
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" {...swipe}>
       <div className="flex items-center gap-1 px-2 py-2.5" style={{ backgroundColor: KBC.darkGrey }}>
         <button type="button" className="flex-1 text-left" onClick={() => setPickerOpen(true)}>
           <span className="flex items-center gap-1.5">

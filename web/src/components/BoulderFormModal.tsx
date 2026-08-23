@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BadgeIcon } from '@/components/BadgeIcon'
 import { DropdownPicker } from '@/components/DropdownPicker'
 import { GradeBar } from '@/components/GradeBar'
+import { GymMap } from '@/components/GymMap'
 import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
 import { resizeImageFileToDataUrl } from '@/utils/imageResize'
@@ -217,6 +218,7 @@ export function BoulderFormModal({
         </Field>
 
         <Field label="Location">
+          <GymMap selected={locations} onToggle={toggleLocation} />
           <div className="flex flex-wrap gap-2">
             {LOCATIONS.map((loc) => {
               const on = locations.includes(loc)
