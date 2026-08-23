@@ -6,6 +6,12 @@ import { KBC } from '@/constants/theme'
 import { useSchedule } from '@/context/ScheduleContext'
 import { isEventOnDay } from '@/domain/calendarEvent'
 import { useSwipe } from '@/hooks/useSwipe'
+import { useAuth } from '@/context/AuthContext'
+import { useProfile } from '@/context/ProfileContext'
+import { isPrivileged } from '@/domain/roles'
+import { EventDetailModal } from '@/components/EventDetailModal'
+import { SessionFormModal, type SessionFormMode } from '@/components/SessionFormModal'
+import type { CalendarEvent, CalendarUser } from '@/services/calendar'
 
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
@@ -24,14 +30,30 @@ function formatHeaderLabel(date: Date): string | null {
   return null
 }
 
-// Ported from mobile/app/(tabs)/index.tsx, day view only. The "+ Climb
-// Session" / "Request Climb Session" / "+ Special Event" buttons and
-// tap-a-timeslot-to-add / tap-an-event-to-edit aren't ported — they're all
-// write paths (add-session/edit-session/add-event) that land with a later
-// calendar-writes pass. This is a view, as scoped.
+// Ported from mobile/app/(tabs)/index.tsx, day view only, now including its
+// write paths: supervisors open sessions and add special events, members
+// request a time, and tapping an event opens it to join, leave, edit or delete.
+// mobile had these as separate add-session/edit-session/add-event routes.
 export function SchedulePage() {
   const { selectedDate, setSelectedDate, allEvents, loading, error, reload } = useSchedule()
+  const { user } = useAuth()
+  const { profile } = useProfile()
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [form, setForm] = useState<SessionFormMode | null>(null)
+  const [viewing, setViewing] = useState<CalendarEvent | null>(null)
+
+  const privileged = isPrivileged(user?.email ?? null, profile)
+  // Calendar identity is separate from the Firestore profile: the name here is
+  // what gets written into the event title and roster.
+  const calendarUser: CalendarUser | null =
+    user && profile
+      ? {
+          uid: profile.uid,
+          name: profile.preferredName || profile.name,
+          isSupervisor: profile.isSupervisor,
+          isAdmin: profile.isAdmin,
+        }
+      : null
 
   function changeDay(offset: number) {
     const next = new Date(selectedDate)
@@ -77,6 +99,40 @@ export function SchedulePage() {
         <LegendItem color={KBC.cyan} label="Events" />
       </div>
 
+      {calendarUser && (
+        <div className="flex shrink-0 gap-2 border-b border-neutral-200 px-3.5 py-2">
+          {privileged ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setForm({ kind: 'session' })}
+                className="flex-1 rounded-lg p-2 text-[13px] font-bold text-white"
+                style={{ backgroundColor: KBC.pink }}
+              >
+                + Climb Session
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm({ kind: 'special' })}
+                className="flex-1 rounded-lg border p-2 text-[13px] font-bold"
+                style={{ borderColor: KBC.cyan, color: KBC.cyan }}
+              >
+                + Special Event
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setForm({ kind: 'request' })}
+              className="flex-1 rounded-lg p-2 text-[13px] font-bold text-white"
+              style={{ backgroundColor: KBC.purple }}
+            >
+              Request a Climb Session
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="min-h-0 flex-1">
         {loading ? (
           <div className="flex h-full items-center justify-center">
@@ -92,7 +148,12 @@ export function SchedulePage() {
             </button>
           </div>
         ) : (
-          <TimelineView events={dayEvents} selectedDate={selectedDate} scrollToFirstEvent />
+          <TimelineView
+            events={dayEvents}
+            selectedDate={selectedDate}
+            scrollToFirstEvent
+            onEventPress={calendarUser ? setViewing : undefined}
+          />
         )}
       </div>
 
@@ -107,6 +168,30 @@ export function SchedulePage() {
             }}
           />
         </Modal>
+      )}
+
+      {viewing && calendarUser && (
+        <EventDetailModal
+          event={viewing}
+          user={calendarUser}
+          canEdit={privileged}
+          onEdit={() => {
+            setForm({ kind: 'edit', event: viewing })
+            setViewing(null)
+          }}
+          onChanged={() => void reload()}
+          onClose={() => setViewing(null)}
+        />
+      )}
+
+      {form && calendarUser && (
+        <SessionFormModal
+          mode={form}
+          user={calendarUser}
+          seedDate={selectedDate}
+          onDone={() => void reload()}
+          onClose={() => setForm(null)}
+        />
       )}
     </div>
   )

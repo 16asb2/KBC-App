@@ -53,7 +53,7 @@ if ever needed — everything is in the commits, nothing was force-purged.
 
 - **Firebase project**: `kbc-app-3307b` (see `.firebaserc`)
 - **Firestore data model and security rules** are shared by `web/` and `admin-web/` — `firestore.rules` is the single source of truth for access control, and client-side role checks are UX only
-- **Google Calendar access is always mediated** through the `worker/` Cloudflare Worker (a signed-in user's credential in, a short-lived Calendar access token for the KBC admin account out) — never embed the KBC admin account's OAuth client secret or refresh token in any client bundle
+- **Google Calendar access is always mediated** through the `worker/` Cloudflare Worker (a signed-in user's credential in, a short-lived Calendar access token for the KBC admin account out) — never embed the KBC admin account's OAuth client secret or refresh token in any client bundle. That token carries `calendar.events`, so it can write: who may create or delete a session is enforced in `web/src/services/calendar.ts`, client-side only. See the open question in `DESIGN.md` about moving writes behind the Worker.
 
 ## Working conventions
 

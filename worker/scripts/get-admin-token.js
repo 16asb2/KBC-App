@@ -44,10 +44,24 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
 const PORT         = 3000;
 const REDIRECT_URI = `http://localhost:${PORT}`;
 
-// Read-only: web/ only ever calls listUpcomingEvents(). The previous token
-// carried calendar.events, which also permits creating, editing and deleting
-// events — capability the app has never used.
-const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+// Which Calendar scope to request. `events` permits creating, editing and
+// deleting; `readonly` cannot. Pass it as the third argument:
+//
+//   node worker/scripts/get-admin-token.js <ID> <SECRET> readonly
+//
+// Defaults to `events` because the Schedule tab creates and edits sessions —
+// with `readonly` every write fails at 403 insufficientPermissions. Use
+// `readonly` only if those write features are removed again.
+const SCOPE_ARG = (process.argv[4] ?? 'events').toLowerCase();
+const SCOPES = {
+  events: 'https://www.googleapis.com/auth/calendar.events',
+  readonly: 'https://www.googleapis.com/auth/calendar.readonly',
+};
+if (!SCOPES[SCOPE_ARG]) {
+  console.error(`Unknown scope "${SCOPE_ARG}". Use "events" or "readonly".`);
+  process.exit(1);
+}
+const SCOPE = SCOPES[SCOPE_ARG];
 
 const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
   client_id:     CLIENT_ID,
