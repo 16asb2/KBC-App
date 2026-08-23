@@ -16,7 +16,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Scan for secrets
@@ -30,12 +30,12 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
@@ -57,16 +57,16 @@ jobs:
       run:
         working-directory: worker
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          # 24, not 20 like the jobs above — deliberate, not drift. The tests
-          # import src/verifyIdToken.ts directly and lean on Node's type
-          # stripping so the Worker needs no bundler or test framework of its
-          # own. Stripping is only on by default from Node 22.18; on 20 the
-          # import fails with ERR_UNKNOWN_FILE_EXTENSION.
+          # This job has a hard floor the others don't: the tests import
+          # src/verifyIdToken.ts directly and lean on Node's type stripping,
+          # which keeps the Worker free of a bundler and a test framework.
+          # Stripping is only on by default from 22.18 — below that the import
+          # fails with ERR_UNKNOWN_FILE_EXTENSION. Don't lower this one.
           node-version: 24
           cache: 'npm'
           cache-dependency-path: worker/package-lock.json
@@ -89,12 +89,12 @@ jobs:
       run:
         working-directory: rules-tests
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
-          node-version: 20
+          node-version: 24
           cache: 'npm'
           cache-dependency-path: rules-tests/package-lock.json
 
@@ -103,7 +103,7 @@ jobs:
       # package rather than inside web/'s vitest run — a developer without a
       # JDK should still get a green `npm test` in web/.
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           # 21, not 17: firebase-tools 15 drops support for older JDKs and
@@ -112,7 +112,7 @@ jobs:
 
       # The emulator jar is ~60MB and is otherwise re-downloaded every run.
       - name: Cache Firestore emulator
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/firebase/emulators
           key: firebase-emulators-${{ runner.os }}
