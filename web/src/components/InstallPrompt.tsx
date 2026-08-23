@@ -57,7 +57,7 @@ export function InstallPrompt() {
   if (!isIos() && !deferredPrompt) return null
 
   return (
-    <div className="flex items-start gap-3 border-b border-neutral-800 px-4 py-2.5" style={{ backgroundColor: KBC.darkGrey }}>
+    <div className="flex shrink-0 items-start gap-3 border-b border-neutral-800 px-4 py-2.5" style={{ backgroundColor: KBC.darkGrey }}>
       <div className="min-w-0 flex-1">
         {isIos() ? (
           <p className="text-xs text-neutral-300">
