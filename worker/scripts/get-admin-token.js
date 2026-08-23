@@ -23,11 +23,21 @@ const CLIENT_SECRET = process.argv[3];
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error('Usage: node worker/scripts/get-admin-token.js <CLIENT_ID> <CLIENT_SECRET>');
   console.error('');
-  console.error('These must be the SAME desktop OAuth client whose ID and secret are');
-  console.error('already stored in the Worker as GOOGLE_ADMIN_CLIENT_ID and');
-  console.error('GOOGLE_ADMIN_CLIENT_SECRET. A refresh token is bound to the client');
-  console.error('that issued it — mint one against a different client and the Worker');
-  console.error('will fail its token exchange with "invalid_client".');
+  console.error('Create a NEW OAuth client for this — Google Cloud Console →');
+  console.error('APIs & Services → Credentials → Create Credentials → OAuth client');
+  console.error('ID → Application type: Desktop app. Copy the secret from the dialog');
+  console.error('or download the JSON: Google reveals it only at creation, so the');
+  console.error('secret of the existing client cannot be read back. Cloudflare Worker');
+  console.error('secrets are write-only too (`wrangler secret list` shows names only).');
+  console.error('');
+  console.error('A refresh token is bound to the client that issued it, so rotating');
+  console.error('the client means rotating all three Worker secrets together:');
+  console.error('  GOOGLE_ADMIN_CLIENT_ID, GOOGLE_ADMIN_CLIENT_SECRET,');
+  console.error('  GOOGLE_ADMIN_REFRESH_TOKEN');
+  console.error('Set only some of them and the exchange fails with invalid_client.');
+  console.error('');
+  console.error('Check the OAuth consent screen is "In production", not "Testing" —');
+  console.error('Google revokes testing-mode refresh tokens after 7 days.');
   process.exit(1);
 }
 
@@ -99,9 +109,15 @@ const server = http.createServer(async (req, res) => {
   console.log('Granted scope:', data.scope);
   console.log('\nRefresh token:\n');
   console.log('  ' + data.refresh_token);
-  console.log('\nStore it in the Worker (it will prompt you to paste the value):\n');
-  console.log('  cd worker && npx wrangler secret put GOOGLE_ADMIN_REFRESH_TOKEN\n');
-  console.log('Then verify, and revoke the OLD write-scoped token so it stops working:\n');
+  console.log('\nSet all three Worker secrets — each prompts for a value. The');
+  console.log('refresh token only works with the client that issued it, so the ID');
+  console.log('and secret must be the ones passed to this script:\n');
+  console.log('  cd worker');
+  console.log('  npx wrangler secret put GOOGLE_ADMIN_CLIENT_ID');
+  console.log('  npx wrangler secret put GOOGLE_ADMIN_CLIENT_SECRET');
+  console.log('  npx wrangler secret put GOOGLE_ADMIN_REFRESH_TOKEN\n');
+  console.log('Confirm the calendar still loads before cleaning up. Once it does,');
+  console.log('revoke the old write-scoped grant so it stops working:\n');
   console.log('  https://myaccount.google.com/permissions\n');
   process.exit(0);
 });
