@@ -18,13 +18,11 @@ All six tabs have real content: Home, Schedule, Calendar, Members, Boulders (KBC
 - **Boulders → Personal mode**: logging climbs at non-KBC locations/problems. Self-contained (`personalProblems`, `climbLocations` collections); needs its own list/card/editor UI.
 - **Supervisor conveniences on Home**: signing in an *existing* other climber, and punch donation between members. (Adding a *new* member is done.)
 - **Summary screens**: `boulder-summary` and `climb-summary` — bar-chart stats views both tabs used to link out to.
-- **Calendar writes**: the Schedule tab is read-only. mobile's `add-session`,
-  `edit-session` and `add-event` screens, and the whole participant model behind
-  them (`extendedProperties.private.participants`, join/leave, member requests
-  and supervisor slots reconciling against each other) are not ported —
-  `domain/calendarEvent.ts` classifies events by their summary text alone.
-  Note this also needs the Worker's admin token rotated back to
-  `calendar.events`: it is `calendar.readonly` today.
+- **Session fulfilment**: a supervisor can open a session and members can
+  request one, but mobile's `fulfillSessionRequest` — a supervisor adopting an
+  existing member request as their own slot — is not ported. Today they open a
+  session over the same time, and reconciliation trims the request away, which
+  reaches the same end state by a longer route.
 
 See git log for exact scope per commit.
 
@@ -62,6 +60,8 @@ src/
     climbLogFilter.ts   — climb filter/sort/date-grouping
     signInBook.ts       — sign-in book filtering, day grouping, and the
                           lastSignInAt reset rule
+    calendarSession.ts  — session rosters (participants ↔ event title) and the
+                          interval maths behind request reconciliation
 
   services/      — Firestore + Calendar I/O (modular Firebase SDK)
     profiles.ts, logbook.ts, boulders.ts, climblog.ts, calendar.ts
