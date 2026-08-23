@@ -18,6 +18,13 @@ All six tabs have real content: Home, Schedule, Calendar, Members, Boulders (KBC
 - **Boulders → Personal mode**: logging climbs at non-KBC locations/problems. Self-contained (`personalProblems`, `climbLocations` collections); needs its own list/card/editor UI.
 - **Supervisor conveniences on Home**: signing in an *existing* other climber, and punch donation between members. (Adding a *new* member is done.)
 - **Summary screens**: `boulder-summary` and `climb-summary` — bar-chart stats views both tabs used to link out to.
+- **Calendar writes**: the Schedule tab is read-only. mobile's `add-session`,
+  `edit-session` and `add-event` screens, and the whole participant model behind
+  them (`extendedProperties.private.participants`, join/leave, member requests
+  and supervisor slots reconciling against each other) are not ported —
+  `domain/calendarEvent.ts` classifies events by their summary text alone.
+  Note this also needs the Worker's admin token rotated back to
+  `calendar.events`: it is `calendar.readonly` today.
 
 See git log for exact scope per commit.
 
@@ -53,6 +60,8 @@ src/
     climbAggregates.ts  — computeAggregates(), getPersonalStatus()
     boulderFilters.ts   — boulder filter state (+ localStorage persistence)
     climbLogFilter.ts   — climb filter/sort/date-grouping
+    signInBook.ts       — sign-in book filtering, day grouping, and the
+                          lastSignInAt reset rule
 
   services/      — Firestore + Calendar I/O (modular Firebase SDK)
     profiles.ts, logbook.ts, boulders.ts, climblog.ts, calendar.ts
@@ -71,11 +80,17 @@ src/
   layout/AppShell.tsx, layout/nav.ts — header + responsive nav (sidebar ≥md,
                                         bottom bar <md); NAV_ITEMS + tab colors
 
+  hooks/         — useSwipe.ts (horizontal swipe for Schedule/Calendar; mobile
+                   got this from react-native-gesture-handler)
+
   pages/         — one per route: Login, NewMemberSetup, Waiver, Home, Schedule,
-                   Calendar, Members, AdminManagement, Boulders, ClimbLog
+                   Calendar, Members, AdminManagement, Boulders, ClimbLog,
+                   Logbook (the gym sign-in book — distinct from ClimbLog, which
+                   is the "Log Book" tab and holds a member's own climbs)
   components/    — shared UI + the modals each page opens (Modal, BadgeIcon,
                    GradeBar, EffortBar, StarRating, DropdownPicker, InstallPrompt,
-                   and the Boulder*/Climb*/Member*/Access/NewMember/Season ones)
+                   GymMap (the floor-plan wall picker), and the
+                   Boulder*/Climb*/Member*/Profile*/Access/NewMember/Season ones)
   utils/         — id.ts (generateId), imageResize.ts (canvas resize → data URL)
 ```
 

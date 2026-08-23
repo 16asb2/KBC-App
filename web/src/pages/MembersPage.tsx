@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { MemberDetailModal } from '@/components/MemberDetailModal'
+import { MemberHistoryModal, type HistoryKind } from '@/components/MemberHistoryModal'
+import { ProfileEditModal } from '@/components/ProfileEditModal'
 import { KBC } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
@@ -21,9 +23,11 @@ function initials(name: string) {
   return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
 }
 
-// Ported from mobile/app/(tabs)/members.tsx, scoped down — see
-// components/MemberDetailModal.tsx for what's deferred. "Edit My Profile" for
-// the signed-in user's own card isn't ported either (same ProfileEditModal gap).
+// Ported from mobile/app/(tabs)/members.tsx. MemberDetailModal covers
+// membership and access; ProfileEditModal covers the rest of the record (names,
+// contact, emergency contact, notes), and MemberHistoryModal shows a member's
+// visits and purchases — mobile reached that through a /member-history/[uid]
+// route, which is a modal here since this app has no navigation stack.
 export function MembersPage() {
   const { user } = useAuth()
   const { profile, reloadProfile } = useProfile()
@@ -32,6 +36,8 @@ export function MembersPage() {
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<UserProfile | null>(null)
+  const [editingProfile, setEditingProfile] = useState<UserProfile | null>(null)
+  const [history, setHistory] = useState<{ member: UserProfile; kind: HistoryKind } | null>(null)
 
   const viewerIsAdmin = isAdmin(user?.email, profile?.isAdmin)
   const viewerIsSupervisor = profile?.isSupervisor ?? false
@@ -108,6 +114,14 @@ export function MembersPage() {
             <p className="mt-1 text-xs text-neutral-400">Member since {formatDate(profile.memberSince)}</p>
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setEditingProfile(profile)}
+          className="mt-4 w-full rounded-xl border p-2.5 text-sm font-bold"
+          style={{ borderColor: KBC.cyan, color: KBC.cyan }}
+        >
+          Edit My Profile
+        </button>
       </div>
 
       {viewerIsAdmin && (
@@ -173,7 +187,29 @@ export function MembersPage() {
           canDirectActivate={viewerIsAdmin}
           canEditSupervisor={viewerIsAdmin}
           onSave={(updates) => handleSave(editing, updates)}
+          onEditProfile={() => setEditingProfile(editing)}
+          onViewHistory={(kind) => setHistory({ member: editing, kind })}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {editingProfile && (
+        <ProfileEditModal
+          profile={editingProfile}
+          // Legal name is what the waivers were signed against, so only admins
+          // may change it — including on their own record.
+          canEditLegalName={viewerIsAdmin}
+          onSave={(updates) => handleSave(editingProfile, updates)}
+          onClose={() => setEditingProfile(null)}
+        />
+      )}
+
+      {history && (
+        <MemberHistoryModal
+          uid={history.member.uid}
+          memberName={history.member.preferredName || history.member.name}
+          kind={history.kind}
+          onClose={() => setHistory(null)}
         />
       )}
     </div>
