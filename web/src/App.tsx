@@ -17,6 +17,7 @@ import { MembersPage } from '@/pages/MembersPage'
 import { AdminManagementPage } from '@/pages/AdminManagementPage'
 import { BouldersPage } from '@/pages/BouldersPage'
 import { ClimbLogPage } from '@/pages/ClimbLogPage'
+import { LogbookPage } from '@/pages/LogbookPage'
 
 function App() {
   return (
@@ -39,6 +40,7 @@ function App() {
               >
                 <Route index element={<Navigate to="/home" replace />} />
                 <Route path="/home" element={<HomePage />} />
+                <Route path="/logbook" element={<LogbookPage />} />
                 <Route path="/schedule" element={<SchedulePage />} />
                 <Route path="/calendar" element={<CalendarPage />} />
                 <Route element={<RequireRole check={isPrivileged} />}>

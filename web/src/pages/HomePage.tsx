@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { AccessModal } from '@/components/AccessModal'
 import { Modal } from '@/components/Modal'
 import { NewMemberModal } from '@/components/NewMemberModal'
@@ -10,7 +10,12 @@ import { useSchedule } from '@/context/ScheduleContext'
 import { hasSignedInToday, passLabel } from '@/domain/signIn'
 import { isPrivileged } from '@/domain/roles'
 import { getGymStatusFromEvents, type GymStatus } from '@/domain/calendarEvent'
-import { addLogEntry, setGymOpen, type AccessOption } from '@/services/logbook'
+import {
+  addLogEntry,
+  getPendingSignInCount,
+  setGymOpen,
+  type AccessOption,
+} from '@/services/logbook'
 import { updateProfile } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
 
@@ -29,12 +34,23 @@ export function HomePage() {
   const [showPunchChoice, setShowPunchChoice] = useState(false)
   const [showNewMember, setShowNewMember] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [pendingSignIns, setPendingSignIns] = useState(0)
 
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 4000)
     return () => clearTimeout(t)
   }, [toast])
+
+  useEffect(() => {
+    // Only supervisors and admins can act on pending sign-ins, so the read
+    // isn't spent for anyone else. Failing here is not worth surfacing — the
+    // badge just doesn't appear, and the Sign-In Book itself still works.
+    if (!user || !isPrivileged(user.email, profile)) return
+    getPendingSignInCount()
+      .then(setPendingSignIns)
+      .catch((e) => console.warn('[Home] Pending sign-in count failed:', e))
+  }, [user, profile])
 
   if (!profile || !user) return null
 
@@ -201,6 +217,26 @@ export function HomePage() {
           Add New Member
         </button>
       )}
+
+      {/* The sign-in book isn't a tab — the bottom bar is already six items
+          wide on a phone. Everyone gets here for "My Visits"; supervisors
+          also confirm pending sign-ins here, so the count is surfaced on the
+          button rather than making them open it to discover work waiting. */}
+      <Link
+        to="/logbook"
+        className="flex w-full items-center justify-between rounded-2xl border p-4 text-base font-bold"
+        style={{ borderColor: KBC.green, color: KBC.green }}
+      >
+        <span>Sign-In Book</span>
+        {privileged && pendingSignIns > 0 && (
+          <span
+            className="rounded-full px-2.5 py-1 text-xs font-bold"
+            style={{ backgroundColor: KBC.orange + '22', color: KBC.orange }}
+          >
+            {pendingSignIns} pending
+          </span>
+        )}
+      </Link>
 
       {showAccess && <AccessModal onComplete={(opt, code) => void handleAccessSelected(opt, code)} onClose={() => setShowAccess(false)} />}
 
