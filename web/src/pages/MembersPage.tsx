@@ -172,11 +172,11 @@ export function MembersPage() {
       {editing && (
         <MemberDetailModal
           member={editing}
-          canEditMembership={viewerIsAdmin || viewerIsSupervisor}
+          canEditMembership={viewerIsAdmin}
           canDirectActivate={viewerIsAdmin}
           canEditSupervisor={viewerIsAdmin}
           onSave={(updates) => handleSave(editing, updates)}
-          onEditProfile={() => setEditingProfile(editing)}
+          onEditProfile={viewerIsAdmin ? () => setEditingProfile(editing) : undefined}
           onViewHistory={(kind) => setHistory({ member: editing, kind })}
           onClose={() => setEditing(null)}
         />

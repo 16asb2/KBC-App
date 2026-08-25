@@ -138,7 +138,13 @@ describe('shouldResetLastSignIn', () => {
 describe('accessKind', () => {
   it.each([
     ['Active Member', 'member'],
+    // Membership sign-ins are named after the pass now, not the status.
+    ['Annual pass', 'member'],
+    ['1-month pass', 'member'],
+    ['Student annual pass', 'member'],
+    ['Access pass', 'member'],
     ['Punch Pass (4 left)', 'punch'],
+    ['Punch Pass (from Jane)', 'punch'],
     ['Drop-In', 'dropin'],
     ['Voucher', 'other'],
   ])('maps %s to %s', (input, expected) => {

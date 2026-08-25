@@ -41,8 +41,11 @@ export function MemberDetailModal({
   canDirectActivate: boolean
   canEditSupervisor: boolean
   onSave: (updates: Partial<UserProfile>) => Promise<void>
-  /** Opens the rest of the record — names, contact, emergency contact, notes. */
-  onEditProfile: () => void
+  /**
+   * Opens the rest of the record — names, contact, emergency contact, notes.
+   * Omit to hide the button: supervisors read member records, admins edit them.
+   */
+  onEditProfile?: () => void
   onViewHistory: (kind: 'signins' | 'purchases') => void
   onClose: () => void
 }) {
@@ -179,6 +182,14 @@ export function MemberDetailModal({
         )}
       </div>
 
+      {/* Say why the controls are missing rather than leaving a supervisor to
+          wonder whether the screen is broken. */}
+      {!canEditMembership && (
+        <p className="border-t border-neutral-100 pt-3 text-xs text-neutral-500">
+          Access passes and member profiles are read-only here — an admin can change them.
+        </p>
+      )}
+
       {/* Pending membership confirmation */}
       {pendingMembership && (
         <PendingRow label={`${pendingMembership.label} (pending)`} detail={`${formatDate(pendingMembership.start)} → ${formatDate(pendingMembership.expiry)}`}>
@@ -307,14 +318,16 @@ export function MemberDetailModal({
           member — names, contact details, emergency contact, staff notes —
           lives in ProfileEditModal, and their attendance in MemberHistoryModal. */}
       <div className="mt-5 space-y-2 border-t border-neutral-200 pt-4">
-        <button
-          type="button"
-          onClick={onEditProfile}
-          className="w-full rounded-xl border p-2.5 text-sm font-bold"
-          style={{ borderColor: KBC.cyan, color: KBC.cyan }}
-        >
-          Edit Full Profile
-        </button>
+        {onEditProfile && (
+          <button
+            type="button"
+            onClick={onEditProfile}
+            className="w-full rounded-xl border p-2.5 text-sm font-bold"
+            style={{ borderColor: KBC.cyan, color: KBC.cyan }}
+          >
+            Edit Full Profile
+          </button>
+        )}
         <div className="flex gap-2">
           <button
             type="button"
