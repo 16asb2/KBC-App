@@ -102,7 +102,12 @@ export function CalendarPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    // Two scrolls, deliberately. The page itself is taller than the viewport,
+    // so scrolling it slides the month grid up and out of the way — and since
+    // the list below is exactly one screen tall, once the grid has gone the
+    // list fills the display. The list then scrolls inside that, so you can
+    // read far into the future without the grid ever coming back.
+    <div className="flex flex-col">
       <div className="shrink-0">
         <CalendarPicker
           selectedDate={selectedDate}
@@ -111,11 +116,13 @@ export function CalendarPage() {
         />
       </div>
 
-      {/* The list scrolls independently of the month grid above it, so rolling
-          to a day never pushes the grid off screen. */}
+      {/* One screen tall: the viewport less the AppShell header, and less the
+          bottom tab bar too below md, where that bar exists. svh (the *small*
+          viewport height) so mobile browser chrome expanding cannot push the
+          bottom of the list out of reach. */}
       <div
         ref={listRef}
-        className="min-h-0 flex-1 overflow-y-auto border-t border-neutral-100 px-3.5"
+        className="h-[calc(100svh-7.5rem)] overflow-y-auto border-t border-neutral-100 px-3.5 md:h-[calc(100svh-4rem)]"
       >
         {/* `relative` is load-bearing: it makes each day group's offsetTop
             measure from here, which is what scrollListToDay scrolls to. */}

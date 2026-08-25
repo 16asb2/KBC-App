@@ -262,7 +262,7 @@ export function SessionFormModal({
           type="button"
           onClick={() => void submit()}
           disabled={saving}
-          className="flex-1 rounded-xl p-3 text-center text-sm font-extrabold text-black disabled:opacity-60"
+          className="flex-1 rounded-xl p-3 text-center text-sm font-extrabold text-white disabled:opacity-60"
           style={{ backgroundColor: KBC.cyan }}
         >
           {saving ? 'Saving…' : editing ? 'Save changes' : 'Confirm'}

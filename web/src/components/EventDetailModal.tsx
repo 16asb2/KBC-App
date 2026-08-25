@@ -161,7 +161,7 @@ export function EventDetailModal({
               type="button"
               onClick={() => void run(() => joinSession(event.id, user))}
               disabled={busy}
-              className="w-full rounded-xl p-3 text-center text-sm font-extrabold text-black disabled:opacity-60"
+              className="w-full rounded-xl p-3 text-center text-sm font-extrabold text-white disabled:opacity-60"
               style={{ backgroundColor: KBC.cyan }}
             >
               Join this session
