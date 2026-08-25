@@ -3,7 +3,7 @@ import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
 import { createSeason, type BoulderSeason } from '@/services/boulders'
 
-// Ported from mobile/app/(tabs)/boulders.tsx's SeasonPickerModal.
+// Ported from mobile@1cdfada/app/(tabs)/boulders.tsx's SeasonPickerModal.
 export function SeasonPickerModal({
   seasons,
   selectedId,

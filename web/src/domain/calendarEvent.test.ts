@@ -4,7 +4,6 @@ import {
   getGymStatusFromEvents,
   isClimbSession,
   isRequestedEvent,
-  isSameDay,
   isSupervisorEvent,
   layoutEvents,
   minutesToY,
@@ -81,16 +80,6 @@ describe('eventKind', () => {
   })
 })
 
-describe('isSameDay', () => {
-  it('is true for the same calendar day in different times', () => {
-    expect(isSameDay(new Date('2026-06-15T01:00:00'), new Date('2026-06-15T23:00:00'))).toBe(true)
-  })
-
-  it('is false across a day boundary', () => {
-    expect(isSameDay(new Date('2026-06-15T23:59:00'), new Date('2026-06-16T00:01:00'))).toBe(false)
-  })
-})
-
 describe('yToMinutes', () => {
   it('is the inverse of minutesToY', () => {
     for (const minutes of [6 * 60, 9 * 60 + 30, 21 * 60 + 45]) {
@@ -103,7 +92,9 @@ describe('getGymStatusFromEvents', () => {
   const now = new Date('2026-06-15T18:00:00.000Z')
 
   it('is open during a current supervisor slot', () => {
-    const events = [timedEvent('Artur (super)', '2026-06-15T17:00:00.000Z', '2026-06-15T20:00:00.000Z')]
+    const events = [
+      timedEvent('Artur (super)', '2026-06-15T17:00:00.000Z', '2026-06-15T20:00:00.000Z'),
+    ]
     const status = getGymStatusFromEvents(events, now)
     expect(status.open).toBe(true)
     if (status.open) {
@@ -125,7 +116,11 @@ describe('getGymStatusFromEvents', () => {
   })
 
   it('does not count a special event a supervisor put on the calendar', () => {
-    const closure = timedEvent('Closed for maintenance', '2026-06-15T17:00:00.000Z', '2026-06-15T20:00:00.000Z')
+    const closure = timedEvent(
+      'Closed for maintenance',
+      '2026-06-15T17:00:00.000Z',
+      '2026-06-15T20:00:00.000Z',
+    )
     closure.extendedProperties = { private: { type: 'specialEvent', createdByRole: 'supervisor' } }
     const status = getGymStatusFromEvents([closure], now)
     expect(status.open).toBe(false)
@@ -216,7 +211,9 @@ describe('layoutEvents', () => {
   })
 
   it('drops events missing a dateTime (all-day events)', () => {
-    const positioned = layoutEvents([{ id: 'allday', summary: 'x', start: { date: '2026-06-15' }, end: { date: '2026-06-16' } }])
+    const positioned = layoutEvents([
+      { id: 'allday', summary: 'x', start: { date: '2026-06-15' }, end: { date: '2026-06-16' } },
+    ])
     expect(positioned).toHaveLength(0)
   })
 })

@@ -5,8 +5,9 @@ import { StarRating } from '@/components/StarRating'
 import { KBC } from '@/constants/theme'
 import { addComment, avgQuality, deleteComment, getComments, type Boulder, type BoulderComment } from '@/services/boulders'
 import type { PersonalClimb } from '@/services/climblog'
+import { formatMonthDay, formatShortDate } from '@/utils/datetime'
 
-// Ported from mobile/app/(tabs)/boulders.tsx's BoulderOverviewModal, rendered
+// Ported from mobile@1cdfada/app/(tabs)/boulders.tsx's BoulderOverviewModal, rendered
 // full-screen instead of as a bottom sheet (there's more content here than
 // fits a sheet comfortably). Not ported: the pinch-zoom full-screen photo
 // viewer (plain click-to-enlarge instead) and the interactive GymMap for
@@ -276,7 +277,7 @@ export function BoulderOverviewModal({
               {comments.map((c) => {
                 const mine = c.uid === uid
                 const canDel = mine || canRemove
-                const time = new Date(c.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' })
+                const time = formatMonthDay(c.createdAt)
                 return (
                   <div key={c.id} className={`flex items-start gap-2 ${mine ? 'flex-row-reverse' : ''}`}>
                     <div className="max-w-[85%] rounded-xl bg-neutral-100 px-3 py-2">
@@ -324,7 +325,7 @@ export function BoulderOverviewModal({
               {[...myLogs]
                 .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
                 .map((l, i) => {
-                  const date = new Date(l.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+                  const date = formatShortDate(l.timestamp)
                   return (
                     <div key={l.id} className={`flex items-center gap-2 px-3 py-1.5 ${i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}`}>
                       <span className="truncate text-sm text-neutral-700">{userName}</span>
@@ -346,7 +347,7 @@ export function BoulderOverviewModal({
               {myPersonalComments.map((l) => (
                 <div key={l.id} className="rounded-xl bg-neutral-50 p-3">
                   <p className="text-xs text-neutral-400">
-                    {new Date(l.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} ·{' '}
+                    {formatShortDate(l.timestamp)} ·{' '}
                     {l.type === 'ascent' ? '✓ Sent' : '△ Tried'}
                   </p>
                   <p className="mt-1 text-sm text-neutral-800">{l.comment}</p>

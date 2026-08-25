@@ -1,7 +1,7 @@
 import type { CalendarEvent, CalendarParticipant } from '@/services/calendar'
 
 // Pure logic behind calendar sessions, ported from the helpers embedded in
-// mobile/services/calendarService.ts. Pulled out so the parts that are easy to
+// mobile@1cdfada/services/calendarService.ts. Pulled out so the parts that are easy to
 // get quietly wrong — who is on an event, and how a member's request is trimmed
 // when a supervisor covers part of it — can be tested without touching Google.
 

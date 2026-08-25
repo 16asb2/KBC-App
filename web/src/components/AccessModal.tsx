@@ -5,7 +5,7 @@ import { Modal } from './Modal'
 
 type ModalStep = 'choose' | 'confirm'
 
-// Ported from mobile/app/(tabs)/home.tsx's AccessModal. Self-service only for
+// Ported from mobile@1cdfada/app/(tabs)/home.tsx's AccessModal. Self-service only for
 // now — the supervisor-only "use another member's punch" option isn't ported
 // (needs the member directory/other-climber flows, deferred like the rest of
 // supervisor-assisted sign-in).

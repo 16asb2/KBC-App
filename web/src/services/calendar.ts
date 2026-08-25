@@ -9,7 +9,7 @@ import {
 } from '@/domain/calendarSession'
 
 // Reads go through the same admin-mediated token service mobile/ uses for
-// WRITES — a deliberate divergence from mobile/services/calendarService.ts,
+// WRITES — a deliberate divergence from mobile@1cdfada/services/calendarService.ts,
 // which reads with the signed-in user's own Google OAuth access token
 // instead. That works for mobile because Google Sign-In already gives it a
 // long-lived, refreshable access token for the calendar.events scope. Doing
@@ -95,7 +95,7 @@ export async function listUpcomingEvents(days = 60, pastDays = 14): Promise<Cale
 
 // ─── Writes ──────────────────────────────────────────────────────────────────
 //
-// Ported from mobile/services/calendarService.ts. Every write goes through the
+// Ported from mobile@1cdfada/services/calendarService.ts. Every write goes through the
 // admin token, so no member needs the KBC calendar shared with them and all
 // changes appear under the KBC admin account.
 //

@@ -1,7 +1,7 @@
 import type { LogEntry } from '@/services/logbook'
 
 // Pure logic for the sign-in book. Ported from the inline filtering in
-// mobile/app/(tabs)/logbook.tsx, pulled out into plain functions so it can be
+// mobile@1cdfada/app/(tabs)/logbook.tsx, pulled out into plain functions so it can be
 // unit tested without Firestore — see the pure-logic-first note in web/CLAUDE.md.
 
 /**

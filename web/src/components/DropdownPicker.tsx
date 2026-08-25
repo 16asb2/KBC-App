@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { KBC } from '@/constants/theme'
 import { Modal } from './Modal'
 
-// Ported from mobile/components/dropdown-picker.tsx, reusing the shared
+// Ported from mobile@1cdfada/components/dropdown-picker.tsx, reusing the shared
 // Modal component (bottom sheet) already used across the web app instead of
 // mobile's own inline Modal/FlatList, for visual consistency with the rest
 // of the KBC web app's modals.

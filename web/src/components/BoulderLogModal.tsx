@@ -11,7 +11,7 @@ function toLocalInputValue(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
-// Ported from mobile/app/(tabs)/boulders.tsx's BoulderLogModal. Date+time use
+// Ported from mobile@1cdfada/app/(tabs)/boulders.tsx's BoulderLogModal. Date+time use
 // a native <input type="datetime-local"> instead of mobile's custom
 // DatePickerModal/TimePickerModal sheets.
 export function BoulderLogModal({

@@ -10,20 +10,20 @@ import { isAdmin } from '@/domain/roles'
 import { getPassLabel } from '@/domain/membershipPass'
 import { checkAndUpdateMembershipStatus, getAllProfiles, updateProfile } from '@/services/profiles'
 import type { MembershipStatus, UserProfile } from '@/types/member'
+import { formatShortDate } from '@/utils/datetime'
 
 const STATUS_LABELS: Record<MembershipStatus, string> = { active: 'Active', pending: 'Pending', inactive: 'Inactive' }
 const STATUS_COLORS: Record<MembershipStatus, string> = { active: KBC.green, pending: KBC.orange, inactive: '#aaa' }
 
 function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+  return iso ? formatShortDate(iso) : '—'
 }
 
 function initials(name: string) {
   return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
 }
 
-// Ported from mobile/app/(tabs)/members.tsx. MemberDetailModal covers
+// Ported from mobile@1cdfada/app/(tabs)/members.tsx. MemberDetailModal covers
 // membership and access; ProfileEditModal covers the rest of the record (names,
 // contact, emergency contact, notes), and MemberHistoryModal shows a member's
 // visits and purchases — mobile reached that through a /member-history/[uid]

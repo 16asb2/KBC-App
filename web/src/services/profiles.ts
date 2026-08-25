@@ -16,7 +16,7 @@ import type { EmergencyContact, UserProfile } from '@/types/member'
 
 // Same Firestore collection mobile/ reads and writes — the schema is shared
 // across both apps, so field shapes here (e.g. JSON-stringified nested
-// objects) must stay wire-compatible with mobile/services/firestore.ts.
+// objects) must stay wire-compatible with mobile@1cdfada/services/firestore.ts.
 const USERS = 'users'
 
 async function findProfileByEmail(email: string): Promise<UserProfile | null> {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AccessModal } from '@/components/AccessModal'
+import { ConnectWithKBC } from '@/components/ConnectWithKBC'
 import { Modal } from '@/components/Modal'
 import { NewMemberModal } from '@/components/NewMemberModal'
 import { KBC } from '@/constants/theme'
@@ -18,8 +19,9 @@ import {
 } from '@/services/logbook'
 import { updateProfile } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
+import { formatShortDate } from '@/utils/datetime'
 
-// Ported from mobile/app/(tabs)/home.tsx — self sign-in, purchase access, and
+// Ported from mobile@1cdfada/app/(tabs)/home.tsx — self sign-in, purchase access, and
 // (as of this pass) adding a new member are covered. Still not ported: signing
 // another *existing* climber in and punch donation between members.
 export function HomePage() {
@@ -110,7 +112,11 @@ export function HomePage() {
     try {
       const remaining = profile.punchPassRemaining - 1
       const now = await logAndMarkSignedIn(`Punch Pass (${remaining} left)`)
-      await updateProfile(profile.uid, { punchPassRemaining: remaining, lastSignInAt: now }, user.email ?? 'unknown')
+      await updateProfile(
+        profile.uid,
+        { punchPassRemaining: remaining, lastSignInAt: now },
+        user.email ?? 'unknown',
+      )
       await reloadProfile()
       setToast(`✓ Signed in! ${remaining} punch${remaining !== 1 ? 'es' : ''} remaining.`)
     } catch (e) {
@@ -153,7 +159,7 @@ export function HomePage() {
           expiry: expiry.toISOString(),
         })
         accessType = 'Active Member'
-        notes += ` — expires ${expiry.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}`
+        notes += ` — expires ${formatShortDate(expiry)}`
       } else if (option.isVoucher) {
         accessType = 'Voucher'
         notes = voucherCode ? `Voucher code: ${voucherCode}` : 'Voucher'
@@ -164,7 +170,13 @@ export function HomePage() {
       await reloadProfile()
 
       // Purchase record (Access Pass History)
-      await addLogEntry({ timestamp: now.toISOString(), userId: profile.uid, userName: displayName, accessType, notes })
+      await addLogEntry({
+        timestamp: now.toISOString(),
+        userId: profile.uid,
+        userName: displayName,
+        accessType,
+        notes,
+      })
       // Sign-in record (Sign-In History) — every purchase also signs the member in
       await addLogEntry({
         timestamp: new Date(now.getTime() + 1).toISOString(),
@@ -197,53 +209,60 @@ export function HomePage() {
 
       <GymStatusCard status={gymStatus} />
 
-      <button
-        type="button"
-        onClick={() => void handleSignIn()}
-        disabled={signingIn}
-        className="w-full rounded-2xl p-5 text-lg font-extrabold text-white shadow-lg disabled:opacity-60"
-        style={{ backgroundColor: KBC.pink }}
-      >
-        {signingIn ? 'Signing in…' : 'Sign In to a Session'}
-      </button>
-
-      {privileged && (
-        <button
-          type="button"
-          onClick={() => setShowNewMember(true)}
-          className="w-full rounded-2xl p-4 text-center text-base font-bold text-white shadow-lg"
-          style={{ backgroundColor: KBC.orange }}
+      {/* One stack, tight: the actions belong together, so they share a size,
+          a weight and a 8px gap rather than floating apart at the page's
+          6-unit rhythm. Sign In and Sign-In Book are the pair a member uses
+          every visit, so they sit adjacent and in the same blue; Add New
+          Member is a supervisor tool and keeps its own colour underneath. */}
+      <div className="space-y-2">
+        <HomeAction
+          as="button"
+          onClick={() => void handleSignIn()}
+          disabled={signingIn}
+          color={KBC.cyan}
         >
-          Add New Member
-        </button>
-      )}
+          {signingIn ? 'Signing in…' : 'Sign In to a Session'}
+        </HomeAction>
 
-      {/* The sign-in book isn't a tab — the bottom bar is already six items
-          wide on a phone. Everyone gets here for "My Visits"; supervisors
-          also confirm pending sign-ins here, so the count is surfaced on the
-          button rather than making them open it to discover work waiting.
-          The count sits absolutely to the right so it never pulls the label
-          off centre — the three buttons on this screen have to line up. */}
-      <Link
-        to="/logbook"
-        className="relative flex w-full items-center justify-center rounded-2xl p-4 text-center text-base font-bold text-white shadow-lg"
-        style={{ backgroundColor: KBC.green }}
-      >
-        <span>Sign-In Book</span>
-        {privileged && pendingSignIns > 0 && (
-          // Just the count: "N pending" is wide enough to run into the centred
-          // label on a narrow phone, and the label's alignment is the point.
-          <span
-            className="absolute right-4 flex size-6 items-center justify-center rounded-full bg-white text-xs font-extrabold"
-            style={{ color: KBC.orange }}
-            title={`${pendingSignIns} sign-in${pendingSignIns !== 1 ? 's' : ''} awaiting confirmation`}
+        {/* The sign-in book isn't a tab — the bottom bar is already six items
+            wide on a phone. Everyone gets here for "My Visits"; supervisors
+            also confirm pending sign-ins here, so the count is surfaced on the
+            button rather than making them open it to discover work waiting.
+            It sits absolutely to the right so it never pulls the label off
+            centre — these buttons have to line up with each other. */}
+        <HomeAction as="link" to="/logbook" color={KBC.cyan}>
+          Sign-In Book
+          {privileged && pendingSignIns > 0 && (
+            <span
+              className="absolute right-4 flex size-6 items-center justify-center rounded-full bg-white text-xs font-extrabold"
+              style={{ color: KBC.orange }}
+              title={`${pendingSignIns} sign-in${pendingSignIns !== 1 ? 's' : ''} awaiting confirmation`}
+            >
+              {pendingSignIns}
+            </span>
+          )}
+        </HomeAction>
+
+        {privileged && (
+          <HomeAction
+            as="button"
+            onClick={() => setShowNewMember(true)}
+            color={KBC.orange}
+            textColor="#fff"
           >
-            {pendingSignIns}
-          </span>
+            Add New Member
+          </HomeAction>
         )}
-      </Link>
+      </div>
 
-      {showAccess && <AccessModal onComplete={(opt, code) => void handleAccessSelected(opt, code)} onClose={() => setShowAccess(false)} />}
+      <ConnectWithKBC />
+
+      {showAccess && (
+        <AccessModal
+          onComplete={(opt, code) => void handleAccessSelected(opt, code)}
+          onClose={() => setShowAccess(false)}
+        />
+      )}
 
       {showNewMember && (
         <NewMemberModal
@@ -263,7 +282,8 @@ export function HomePage() {
         <Modal onClose={() => setShowPunchChoice(false)}>
           <h2 className="text-base font-bold text-black">Sign In</h2>
           <p className="mt-1 text-sm text-neutral-600">
-            You have {profile.punchPassRemaining} punch{profile.punchPassRemaining !== 1 ? 'es' : ''} remaining.
+            You have {profile.punchPassRemaining} punch
+            {profile.punchPassRemaining !== 1 ? 'es' : ''} remaining.
           </p>
           <div className="mt-4 space-y-2">
             <button
@@ -299,6 +319,52 @@ export function HomePage() {
   )
 }
 
+/**
+ * The three actions on this screen, so their size, weight and shape can only
+ * ever be set in one place. They read as a set, which they didn't when each
+ * carried its own padding and font size.
+ *
+ * Black text, not white: KBC cyan is light enough that white on it is about
+ * 2.5:1, under WCAG AA even for large text, while black clears 8:1. The join
+ * and confirm buttons elsewhere in the app already pair cyan with black.
+ */
+function HomeAction({
+  children,
+  color,
+  textColor = '#000',
+  ...props
+}: {
+  children: React.ReactNode
+  color: string
+  textColor?: string
+} & (
+  | { as: 'button'; onClick: () => void; disabled?: boolean; to?: never }
+  | { as: 'link'; to: string; onClick?: never; disabled?: never }
+)) {
+  const className =
+    'relative flex w-full items-center justify-center rounded-2xl p-4 text-center text-base font-extrabold shadow-lg disabled:opacity-60'
+  const style = { backgroundColor: color, color: textColor }
+
+  if (props.as === 'link') {
+    return (
+      <Link to={props.to} className={className} style={style}>
+        {children}
+      </Link>
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      disabled={props.disabled}
+      className={className}
+      style={style}
+    >
+      {children}
+    </button>
+  )
+}
+
 function formatTime(d: Date): string {
   const h = d.getHours()
   const m = d.getMinutes()
@@ -312,8 +378,14 @@ function formatDateTime(date: Date): string {
   const tomorrow = new Date(today)
   tomorrow.setDate(today.getDate() + 1)
   const sameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-  const label = sameDay(date, today) ? 'Today' : sameDay(date, tomorrow) ? 'Tomorrow' : date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  const label = sameDay(date, today)
+    ? 'Today'
+    : sameDay(date, tomorrow)
+      ? 'Tomorrow'
+      : date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
   return `${label} at ${formatTime(date)}`
 }
 
@@ -330,20 +402,24 @@ function GymStatusCard({ status }: { status: GymStatus }) {
         <>
           <p className="mt-3 text-lg font-bold text-white">The gym is open!</p>
           <p className="mt-1 text-sm text-neutral-400">
-            {status.supervisorName ? `Supervisor: ${status.supervisorName}` : 'Come climb!'} · until {formatTime(status.until)}
+            {status.supervisorName ? `Supervisor: ${status.supervisorName}` : 'Come climb!'} · until{' '}
+            {formatTime(status.until)}
           </p>
         </>
       ) : status.next ? (
         <>
           <p className="mt-3 text-lg font-bold text-white">Gym is closed right now.</p>
           <p className="mt-1 text-sm text-neutral-400">
-            Next session opens <span className="font-semibold text-white">{formatDateTime(status.next)}</span>.
+            Next session opens{' '}
+            <span className="font-semibold text-white">{formatDateTime(status.next)}</span>.
           </p>
         </>
       ) : (
         <>
           <p className="mt-3 text-lg font-bold text-white">Gym is closed.</p>
-          <p className="mt-1 text-sm text-neutral-400">No upcoming sessions scheduled. Check back soon!</p>
+          <p className="mt-1 text-sm text-neutral-400">
+            No upcoming sessions scheduled. Check back soon!
+          </p>
         </>
       )}
     </div>

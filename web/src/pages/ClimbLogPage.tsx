@@ -18,7 +18,7 @@ const SORT_OPTIONS: { key: ClimbSort; label: string }[] = [
   { key: 'quality', label: '★ Stars' },
 ]
 
-// Ported from mobile/app/(tabs)/climblog.tsx. Real content replacing the
+// Ported from mobile@1cdfada/app/(tabs)/climblog.tsx. Real content replacing the
 // placeholder ClimbLogPage from Phase 2. The '/climb-summary' stats screen
 // it links out to isn't built (out of scope here, same as boulder-summary).
 export function ClimbLogPage() {

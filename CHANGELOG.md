@@ -4,6 +4,21 @@ All notable changes to KBC Scheduler are documented here.
 
 ---
 
+## [Unreleased] — 2026-08-25
+
+### Added
+- **"Connect with KBC" is back on the Home screen.** The Discord, Facebook and Instagram buttons from `mobile@1cdfada/app/(tabs)/home.tsx`, at the same brand colours and the same three destinations, plus the KBC email underneath. The email differs from mobile in what a tap does: mobile opened a `mailto:`, which on a desktop browser hands off to whatever mail client the machine has registered — often none at all — so it now copies the address to the clipboard instead, which is what you wanted anyway when e-transferring a membership. Falls back to the old select-and-`execCommand` path when `navigator.clipboard` is unavailable, as it is on a dev server reached over the LAN by IP.
+- **`utils/datetime.ts`**: the one place that turns a date into text, with tests. Nine files had reimplemented these formats and they had drifted — two screens hand-rolled a 12-hour clock (`${h % 12 || 12}:${min} ${ampm}` → "9:05 PM") while the rest asked `Intl` for a 2-digit hour ("09:05 PM"), so the same session read differently on the Schedule and in the Calendar list. Everything now routes through here on the no-leading-zero form. Also folds together the three separate today/tomorrow/yesterday checks — two comparing `toDateString()`, one comparing midnight-normalised timestamps — into `relativeDayLabel()`, and absorbs `isSameDay`, which existed identically in `domain/calendarEvent.ts`.
+- **`tint()` / `faintTint()` in `constants/theme.ts`**, replacing `KBC.orange + '22'` written inline in five places. That trailing byte is the alpha channel of an eight-digit hex colour; naming it keeps the intent legible and stops the next caller reaching for a slightly different `'20'`. Two new tokens as well: `KBC.live` (the brighter green of the timeline's current-time line, deliberately not the brand `green`) and `KBC.surface`.
+
+### Changed
+- **Home: the three actions are one stack.** They shared no size, weight or spacing before — a large pink button, then two outlined ones at a different font size, spread on the page's 24px rhythm. They now share a single `HomeAction` component and sit 8px apart. **Sign In to a Session** and **Sign-In Book** are the pair a member uses every visit, so they are adjacent and both in KBC cyan; **Add New Member** is a supervisor tool and keeps orange below them. The cyan buttons take black text rather than white: white on `#00b4d8` is about 2.5:1, under WCAG AA even for large text, while black clears 8:1 — and the join and confirm buttons elsewhere in the app already pair cyan with black.
+- **Every screen past the login page is loaded on demand.** The app built as a single 975 kB chunk, so a member opening Home also downloaded the boulder editor, the waiver text, the admin screens and the sign-in book. Route-level `lazy()` brings the entry chunk to 795 kB (240 kB gzipped) with each tab arriving as you reach it; the remainder is mostly the Firebase SDK, which the auth and profile contexts need before anything renders. `LoginPage` stays eager — it is the one screen a signed-out visitor is guaranteed to see, and a spinner in front of the sign-in button costs more than the few kB it saves.
+- **`// Ported from mobile/...` comments now carry the commit that still has the file.** 50 citations across 44 files became `mobile@1cdfada/...`, which reads as the command that opens them: `mobile@1cdfada/components/timeline-view.tsx` is `git show 1cdfada:mobile/components/timeline-view.tsx`. A bare `mobile/` with no path after it still means the old app in general, and was left alone. `web/CLAUDE.md` documents the convention.
+- **Colours that duplicated the KBC palette now reference it** — `'#4db847'`, `'#f97316'`, `'#00b4d8'` and `'#9b5de5'` written as literals in `BoulderCard`, `ClimbRow`, `BadgeIcon` and `GradeBar`. Deliberately *not* touched: `GRADE_COLORS`, the badge colour table and the `GymMap` wall colours. Those are domain data that happens to overlap the brand palette, and folding them into it would couple a grade scale to a marketing decision.
+
+---
+
 ## [Unreleased] — 2026-08-24
 
 ### Added

@@ -1,4 +1,4 @@
-// Ported verbatim from mobile/constants/waivers.ts — this is signed legal text,
+// Ported verbatim from mobile@1cdfada/constants/waivers.ts — this is signed legal text,
 // do not edit wording without updating both copies together.
 
 export type SectionType = 'heading' | 'body' | 'warning' | 'consent'

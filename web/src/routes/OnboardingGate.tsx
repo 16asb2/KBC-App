@@ -2,7 +2,7 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useProfile } from '@/context/ProfileContext'
 
 /**
- * Mirrors mobile/app/_layout.tsx's RootLayoutNav cascade:
+ * Mirrors mobile@1cdfada/app/_layout.tsx's RootLayoutNav cascade:
  *   no profile / no legalName  → /setup           (brand-new user, or Google-only profile)
  *   no waiverMembership        → /waiver/membership
  *   no waiverLiability         → /waiver/liability

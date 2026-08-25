@@ -4,7 +4,7 @@ import { createNewMemberProfile, updateProfile } from '@/services/profiles'
 import type { EmergencyContact, UserProfile } from '@/types/member'
 import { Modal } from './Modal'
 
-// Ported from mobile/app/(tabs)/home.tsx's NewMemberModal.
+// Ported from mobile@1cdfada/app/(tabs)/home.tsx's NewMemberModal.
 export function NewMemberModal({
   createdByEmail,
   onCreated,

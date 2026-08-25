@@ -1,4 +1,4 @@
-// Ported from mobile/app/(tabs)/boulders.tsx's filter state. Persistence uses
+// Ported from mobile@1cdfada/app/(tabs)/boulders.tsx's filter state. Persistence uses
 // localStorage instead of expo-file-system.
 
 export type SortKey = 'number' | 'name' | 'grade' | 'setter' | 'updatedAt'

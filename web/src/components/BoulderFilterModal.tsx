@@ -7,7 +7,7 @@ import { KBC } from '@/constants/theme'
 import { DEFAULT_BOULDER_FILTER, type BoulderFilterState } from '@/domain/boulderFilters'
 import { BADGE_GROUPS, GRADES, GRADE_COLORS, GRADE_TEXT, LOCATIONS } from '@/services/boulders'
 
-// Ported from mobile/app/(tabs)/boulders.tsx's FilterModal, including its
+// Ported from mobile@1cdfada/app/(tabs)/boulders.tsx's FilterModal, including its
 // GymMap floor-plan picker. The plain chip row is kept below the map rather
 // than replaced by it: the map's chips are rotated to sit alongside the walls
 // they name, which makes them small targets, and the row is the accessible

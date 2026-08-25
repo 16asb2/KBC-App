@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 
-// Ported from mobile/components/effort-bar.tsx.
+// Ported from mobile@1cdfada/components/effort-bar.tsx.
 
 type Props = {
   value: number | null // 0–100; null = not set

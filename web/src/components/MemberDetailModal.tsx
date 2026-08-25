@@ -3,6 +3,7 @@ import { KBC } from '@/constants/theme'
 import { PASS_OPTIONS, addMonths, getPassId, getPassLabel, type PassId } from '@/domain/membershipPass'
 import type { MembershipStatus, UserProfile } from '@/types/member'
 import { Modal } from './Modal'
+import { formatShortDate } from '@/utils/datetime'
 
 const STATUS_COLORS: Record<MembershipStatus, string> = {
   active: KBC.green,
@@ -11,8 +12,7 @@ const STATUS_COLORS: Record<MembershipStatus, string> = {
 }
 
 function formatDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+  return iso ? formatShortDate(iso) : '—'
 }
 
 function toDateInputValue(iso: string): string {
@@ -21,7 +21,7 @@ function toDateInputValue(iso: string): string {
 
 type PendingMembership = { label: string; price: string; start: string; expiry: string }
 
-// Ported from mobile/app/(tabs)/members.tsx's EditModal, scoped down: the
+// Ported from mobile@1cdfada/app/(tabs)/members.tsx's EditModal, scoped down: the
 // "Documents" (waiver viewing), "Personal Information" (full profile edit),
 // and sign-in History sections aren't ported yet — those need
 // services/waiver-doc.ts / a ProfileEditModal port / services/logbook.ts's

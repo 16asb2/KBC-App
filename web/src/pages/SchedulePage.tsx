@@ -4,34 +4,28 @@ import { Modal } from '@/components/Modal'
 import { TimelineView } from '@/components/TimelineView'
 import { KBC } from '@/constants/theme'
 import { useSchedule } from '@/context/ScheduleContext'
-import { isEventOnDay, isSameDay } from '@/domain/calendarEvent'
+import { isEventOnDay } from '@/domain/calendarEvent'
 import { defaultCreateKind } from '@/domain/calendarPermissions'
 import { useSwipe } from '@/hooks/useSwipe'
 import { useCalendarUser } from '@/hooks/useCalendarUser'
 import { EventDetailModal } from '@/components/EventDetailModal'
 import { SessionFormModal, type SessionFormMode } from '@/components/SessionFormModal'
 import type { CalendarEvent } from '@/services/calendar'
-
-function formatHeaderDate(date: Date): string {
-  return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
-}
+import { formatLongDate, relativeDayLabel } from '@/utils/datetime'
 
 function formatHeaderLabel(date: Date): string | null {
-  const today = new Date()
-  if (isSameDay(date, today)) return '(Today)'
-  const tomorrow = new Date(today)
-  tomorrow.setDate(today.getDate() + 1)
-  if (isSameDay(date, tomorrow)) return '(Tomorrow)'
-  return null
+  const label = relativeDayLabel(date, { future: true })
+  return label ? `(${label})` : null
 }
 
-// Ported from mobile/app/(tabs)/index.tsx, day view only, now including its
+// Ported from mobile@1cdfada/app/(tabs)/index.tsx, day view only, now including its
 // write paths: supervisors open sessions and add special events, members
 // request a time, tapping an event opens it to join, leave, edit or delete, and
 // tapping an empty stretch of the timeline starts creating something there.
 // mobile had these as separate add-session/edit-session/add-event routes.
 export function SchedulePage() {
-  const { selectedDate, setSelectedDate, allEvents, loading, error, reload, forgetEvent } = useSchedule()
+  const { selectedDate, setSelectedDate, allEvents, loading, error, reload, forgetEvent } =
+    useSchedule()
   const { calendarUser, actor, privileged } = useCalendarUser()
   const [pickerOpen, setPickerOpen] = useState(false)
   const [form, setForm] = useState<SessionFormMode | null>(null)
@@ -61,23 +55,43 @@ export function SchedulePage() {
 
   return (
     <div className="flex h-full flex-col" {...swipe}>
-      <div className="flex items-center gap-1 px-2 py-2.5" style={{ backgroundColor: KBC.darkGrey }}>
+      <div
+        className="flex items-center gap-1 px-2 py-2.5"
+        style={{ backgroundColor: KBC.darkGrey }}
+      >
         <button type="button" className="flex-1 text-left" onClick={() => setPickerOpen(true)}>
           <span className="flex items-center gap-1.5">
-            <span className="text-[17px] font-bold text-white">{formatHeaderDate(selectedDate)}</span>
+            <span className="text-[17px] font-bold text-white">{formatLongDate(selectedDate)}</span>
             <span className="text-sm opacity-80">📅</span>
           </span>
           {formatHeaderLabel(selectedDate) && (
-            <span className="mt-0.5 block text-[11px] text-neutral-400">{formatHeaderLabel(selectedDate)}</span>
+            <span className="mt-0.5 block text-[11px] text-neutral-400">
+              {formatHeaderLabel(selectedDate)}
+            </span>
           )}
         </button>
-        <button type="button" className="p-2 text-2xl" style={{ color: KBC.pink }} onClick={() => void reload()}>
+        <button
+          type="button"
+          className="p-2 text-2xl"
+          style={{ color: KBC.pink }}
+          onClick={() => void reload()}
+        >
           ↻
         </button>
-        <button type="button" className="p-2 text-3xl leading-none" style={{ color: KBC.pink }} onClick={() => changeDay(-1)}>
+        <button
+          type="button"
+          className="p-2 text-3xl leading-none"
+          style={{ color: KBC.pink }}
+          onClick={() => changeDay(-1)}
+        >
           ‹
         </button>
-        <button type="button" className="p-2 text-3xl leading-none" style={{ color: KBC.pink }} onClick={() => changeDay(1)}>
+        <button
+          type="button"
+          className="p-2 text-3xl leading-none"
+          style={{ color: KBC.pink }}
+          onClick={() => changeDay(1)}
+        >
           ›
         </button>
       </div>
@@ -132,7 +146,12 @@ export function SchedulePage() {
             <p className="text-sm font-semibold" style={{ color: KBC.pink }}>
               {error}
             </p>
-            <button type="button" onClick={() => void reload()} className="rounded-lg px-6 py-2.5 text-sm font-semibold text-white" style={{ backgroundColor: KBC.pink }}>
+            <button
+              type="button"
+              onClick={() => void reload()}
+              className="rounded-lg px-6 py-2.5 text-sm font-semibold text-white"
+              style={{ backgroundColor: KBC.pink }}
+            >
               Retry
             </button>
           </div>
@@ -146,9 +165,7 @@ export function SchedulePage() {
             // climbing session, everyone else a request — the same split the
             // buttons above make, so the two paths never disagree.
             onTimePress={
-              actor
-                ? (start) => openForm({ kind: defaultCreateKind(actor) }, start)
-                : undefined
+              actor ? (start) => openForm({ kind: defaultCreateKind(actor) }, start) : undefined
             }
           />
         )}

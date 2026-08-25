@@ -1,6 +1,6 @@
 import { LOCATIONS, type Location } from '@/services/boulders'
 
-// Ported from the GymMap in mobile/app/(tabs)/boulders.tsx — a floor plan of
+// Ported from the GymMap in mobile@1cdfada/app/(tabs)/boulders.tsx — a floor plan of
 // the gym where each wall is a selectable chip, used to pick locations instead
 // of reading a list of names. Proportions come from the KBC floor sketch;
 // H/W ≈ 0.62.

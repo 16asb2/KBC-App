@@ -16,7 +16,7 @@ function initials(name: string) {
     .toUpperCase()
 }
 
-// Ported from mobile/app/admin-management.tsx.
+// Ported from mobile@1cdfada/app/admin-management.tsx.
 export function AdminManagementPage() {
   const { user } = useAuth()
   const { profile } = useProfile()
