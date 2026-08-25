@@ -85,8 +85,11 @@ export function shouldResetLastSignIn(
 /** Colour key for an access type, matching mobile's accessColor(). */
 export function accessKind(accessType: string): 'member' | 'punch' | 'dropin' | 'other' {
   const t = accessType.toLowerCase()
-  if (t.includes('member')) return 'member'
+  // Punch first: "Punch Pass (4 left)" would otherwise be caught by the pass
+  // check below. Membership entries are named after the pass now rather than
+  // logged as "Active Member", so 'pass' has to count as a membership.
   if (t.includes('punch')) return 'punch'
   if (t.includes('drop')) return 'dropin'
+  if (t.includes('member') || t.includes('pass')) return 'member'
   return 'other'
 }

@@ -268,7 +268,9 @@ export function HomePage() {
           start: now.toISOString(),
           expiry: expiry.toISOString(),
         })
-        accessType = 'Active Member'
+        // The pass they actually bought — "Active Member" threw that away, and
+        // said "active" of a purchase still waiting on admin confirmation.
+        accessType = option.label
         notes += ` — expires ${formatShortDate(expiry)}`
       } else if (option.isVoucher) {
         accessType = 'Voucher'
