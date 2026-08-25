@@ -23,12 +23,20 @@ function accessSummary(m: UserProfile): { label: string; color: string } {
 export function MemberPickerModal({
   title,
   excludeUid,
+  filter,
+  badgeFor = accessSummary,
+  emptyLabel = 'No members found.',
   onSelect,
   onClose,
 }: {
   title: string
   /** Usually the signed-in supervisor — they have their own button for that. */
   excludeUid?: string
+  /** Narrow the list, e.g. to members who actually have a punch to give. */
+  filter?: (member: UserProfile) => boolean
+  /** What the badge on each row says. Defaults to the member's access. */
+  badgeFor?: (member: UserProfile) => { label: string; color: string }
+  emptyLabel?: string
   onSelect: (member: UserProfile) => void
   onClose: () => void
 }) {
@@ -58,6 +66,7 @@ export function MemberPickerModal({
     const q = search.trim().toLowerCase()
     return members
       .filter((m) => m.uid !== excludeUid)
+      .filter((m) => !filter || filter(m))
       .filter(
         (m) =>
           !q ||
@@ -65,13 +74,18 @@ export function MemberPickerModal({
           m.name.toLowerCase().includes(q) ||
           m.email.toLowerCase().includes(q),
       )
-  }, [members, search, excludeUid])
+  }, [members, search, excludeUid, filter])
 
   return (
     <Modal onClose={onClose}>
       <div className="flex items-center justify-between pb-3">
         <h2 className="text-base font-bold text-black">{title}</h2>
-        <button type="button" onClick={onClose} className="text-sm font-semibold" style={{ color: KBC.pink }}>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-sm font-semibold"
+          style={{ color: KBC.pink }}
+        >
           Cancel
         </button>
       </div>
@@ -89,11 +103,11 @@ export function MemberPickerModal({
       ) : error ? (
         <p className="py-8 text-center text-sm font-semibold text-red-600">{error}</p>
       ) : filtered.length === 0 ? (
-        <p className="py-8 text-center text-sm text-neutral-400">No members found.</p>
+        <p className="py-8 text-center text-sm text-neutral-400">{emptyLabel}</p>
       ) : (
         <ul className="mt-2 max-h-[45svh] divide-y divide-neutral-100 overflow-y-auto">
           {filtered.map((m) => {
-            const access = accessSummary(m)
+            const access = badgeFor(m)
             return (
               <li key={m.uid}>
                 <button

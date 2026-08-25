@@ -19,9 +19,11 @@ Phases 1-4 are done — domain layer, auth + shell, all four Phase 3 workflows, 
 
 All six tabs have real content: Home, Schedule, Calendar, Members, Boulders (KBC mode), Log Book.
 
-**Remaining feature gaps.** These were originally deferred as "mobile has it, web doesn't" — but since mobile never shipped and is now gone, they are simply *missing features of the product*, not parity debt. Each can still be read out of git history at `1cdfada` if you want the original implementation as a starting point:
+**Remaining feature gaps.** These were originally deferred as "mobile has it, web doesn't" — but since mobile never shipped and is now gone, they are simply *missing features of the product*, not parity debt. Each can still be read out of git history at `1cdfada` if you want the original implementation as a starting point.
+
+The Home screen's supervisor conveniences are no longer among them — adding a new member, signing in an existing other climber, and punch donation are all ported. Punch donation is supervisor-only *by necessity* rather than by choice: it writes to two members' profiles, and `firestore.rules` permits a `users/{uid}` update only for yourself or as a supervisor, so a member attempting it would have the write rejected.
+
 - **Boulders → Personal mode**: logging climbs at non-KBC locations/problems. Self-contained (`personalProblems`, `climbLocations` collections); needs its own list/card/editor UI.
-- **Punch donation between members** on Home — one member spending a punch off another's account. (Adding a new member, and a supervisor signing in an existing other climber, are both done.)
 - **Summary screens**: `boulder-summary` and `climb-summary` — bar-chart stats views both tabs used to link out to.
 - **Session fulfilment**: a supervisor can open a session and members can
   request one, but mobile's `fulfillSessionRequest` — a supervisor adopting an

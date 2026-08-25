@@ -49,6 +49,8 @@ export function HomePage() {
   const [askWho, setAskWho] = useState(false)
   const [pickingMember, setPickingMember] = useState(false)
   const [accessTarget, setAccessTarget] = useState<SignInTarget | null>(null)
+  /** Who is being signed in while we ask whose punch pays for it. */
+  const [donorFor, setDonorFor] = useState<SignInTarget | null>(null)
   const [showNewMember, setShowNewMember] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [pendingSignIns, setPendingSignIns] = useState(0)
@@ -171,6 +173,59 @@ export function HomePage() {
       if (target.isSelf) await reloadProfile()
       setToast(
         signedInMessage(target, `${remaining} punch${remaining !== 1 ? 'es' : ''} remaining.`),
+      )
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'Something went wrong.')
+    } finally {
+      setSigningIn(false)
+    }
+  }
+
+  /**
+   * Sign `target` in on a punch from `donor`'s account.
+   *
+   * Two profile writes, so it is supervisor-only in practice as well as by
+   * intent: firestore.rules lets you update `users/{uid}` for yourself or as a
+   * supervisor, and this touches two different people.
+   */
+  async function signInWithDonatedPunch(target: SignInTarget, donor: UserProfile) {
+    if (!profile || !user) return
+    const donorName = donor.preferredName || donor.name
+    if (donor.punchPassRemaining < 1) {
+      setToast(`${donorName} has no punch passes remaining.`)
+      return
+    }
+    if (hasSignedInToday(target.profile.lastSignInAt)) {
+      setToast(
+        target.isSelf
+          ? 'You have already signed in today. Sign-ins reset at midnight.'
+          : `${nameOf(target)} has already signed in today. Sign-ins reset at midnight.`,
+      )
+      return
+    }
+
+    setSigningIn(true)
+    try {
+      const now = new Date().toISOString()
+      const donorLeft = donor.punchPassRemaining - 1
+      const pendingStatus = privileged ? undefined : ('pending' as const)
+
+      await updateProfile(donor.uid, { punchPassRemaining: donorLeft }, user.email ?? 'unknown')
+      await updateProfile(target.profile.uid, { lastSignInAt: now }, user.email ?? 'unknown')
+      await addLogEntry({
+        timestamp: now,
+        userId: target.profile.uid,
+        userName: nameOf(target),
+        accessType: `Punch Pass (from ${donorName})`,
+        notes: `Punch donated by ${donorName} — ${donorLeft} punch${donorLeft !== 1 ? 'es' : ''} remaining on their account`,
+        ...(pendingStatus ? { status: pendingStatus } : {}),
+      })
+
+      // Reload if either side of the donation is the viewer: the recipient's
+      // lastSignInAt or the donor's punch count is now on screen and stale.
+      if (target.isSelf || donor.uid === profile.uid) await reloadProfile()
+      setToast(
+        `✓ ${target.isSelf ? 'Signed in' : `${nameOf(target)} signed in`} using ${donorName}'s punch — ${donorLeft} left on their account.`,
       )
     } catch (e) {
       setToast(e instanceof Error ? e.message : 'Something went wrong.')
@@ -315,6 +370,16 @@ export function HomePage() {
       {showAccess && (
         <AccessModal
           onComplete={(opt, code) => void handleAccessSelected(opt, code)}
+          onUseOtherPunch={
+            privileged
+              ? () => {
+                  const target = accessTarget ?? { profile, isSelf: true }
+                  setShowAccess(false)
+                  setAccessTarget(null)
+                  setDonorFor(target)
+                }
+              : undefined
+          }
           onClose={() => {
             setShowAccess(false)
             setAccessTarget(null)
@@ -374,6 +439,27 @@ export function HomePage() {
             </button>
           </div>
         </Modal>
+      )}
+
+      {donorFor && (
+        <MemberPickerModal
+          title="Select Punch Donor"
+          // Not the person being signed in — spending your own punch on
+          // yourself is the ordinary punch flow, not a donation.
+          excludeUid={donorFor.profile.uid}
+          filter={(m) => m.punchPassRemaining > 0}
+          emptyLabel="No other member has a punch left to give."
+          badgeFor={(m) => ({
+            label: `${m.punchPassRemaining} punch${m.punchPassRemaining !== 1 ? 'es' : ''}`,
+            color: KBC.cyan,
+          })}
+          onSelect={(donor) => {
+            const target = donorFor
+            setDonorFor(null)
+            void signInWithDonatedPunch(target, donor)
+          }}
+          onClose={() => setDonorFor(null)}
+        />
       )}
 
       {pickingMember && (
