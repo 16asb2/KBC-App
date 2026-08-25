@@ -1,26 +1,43 @@
-import { useEffect, useRef, useState } from 'react'
-import { isAllDayEvent, isSameDay, layoutEvents, minutesToY, TIMELINE_END_HOUR, TIMELINE_HOUR_HEIGHT, TIMELINE_START_HOUR } from '@/domain/calendarEvent'
-import { eventColor } from '@/domain/calendarEvent'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import {
+  eventColor,
+  eventKind,
+  isAllDayEvent,
+  isSameDay,
+  layoutEvents,
+  minutesToY,
+  TIMELINE_END_HOUR,
+  TIMELINE_HOUR_HEIGHT,
+  TIMELINE_START_HOUR,
+  yToMinutes,
+} from '@/domain/calendarEvent'
 import type { CalendarEvent } from '@/services/calendar'
 
 const TOTAL_HOURS = TIMELINE_END_HOUR - TIMELINE_START_HOUR
 
-function allDayColor(event: CalendarEvent): string {
-  return eventColor(event)
-}
+/** New events start on the nearest quarter hour, like every other day view. */
+const SNAP_MINUTES = 15
+
+/** Gap between two side-by-side events, so the boundary is visible. */
+const COLUMN_GAP_PX = 3
+
+/** How far a press may travel and still count as a tap rather than a swipe. */
+const TAP_SLOP_PX = 8
 
 type Props = {
   events: CalendarEvent[]
   onEventPress?: (event: CalendarEvent) => void
+  /** Tap an empty stretch of the grid to start creating something there. */
+  onTimePress?: (start: Date) => void
   selectedDate?: Date
   scrollToFirstEvent?: boolean
 }
 
-// Ported from mobile/components/timeline-view.tsx. onTimePress (tap an empty
-// slot to start adding a session) isn't ported — there's no add-session route
-// yet, that's write-side calendar work for a later pass.
-export function TimelineView({ events, onEventPress, selectedDate, scrollToFirstEvent }: Props) {
+// Ported from mobile/components/timeline-view.tsx, including its onTimePress —
+// tap an empty slot to open the create form already seeded with that time.
+export function TimelineView({ events, onEventPress, onTimePress, selectedDate, scrollToFirstEvent }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const pressStart = useRef<{ x: number; y: number } | null>(null)
   const [now, setNow] = useState(new Date())
 
   useEffect(() => {
@@ -60,6 +77,31 @@ export function TimelineView({ events, onEventPress, selectedDate, scrollToFirst
 
   const hours = Array.from({ length: TOTAL_HOURS }, (_, i) => TIMELINE_START_HOUR + i)
 
+  /**
+   * Turn a click on the empty grid into the time that was clicked.
+   *
+   * Clicks on an event bubble up to this same handler, so the event buttons
+   * stop propagation — otherwise opening an event would also open the create
+   * form behind it.
+   *
+   * A swipe across the timeline to change day still ends in a `click` here,
+   * since nothing scrolled horizontally to suppress it — so a press that
+   * travelled more than a few pixels is treated as a gesture, not a tap.
+   */
+  function handleGridClick(e: MouseEvent<HTMLDivElement>) {
+    if (!onTimePress || !selectedDate) return
+    const from = pressStart.current
+    pressStart.current = null
+    if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > TAP_SLOP_PX) return
+    const bounds = e.currentTarget.getBoundingClientRect()
+    const minutes = yToMinutes(e.clientY - bounds.top)
+    const snapped = Math.round(minutes / SNAP_MINUTES) * SNAP_MINUTES
+    const clamped = Math.min(Math.max(snapped, TIMELINE_START_HOUR * 60), TIMELINE_END_HOUR * 60 - 60)
+    const start = new Date(selectedDate)
+    start.setHours(Math.floor(clamped / 60), clamped % 60, 0, 0)
+    onTimePress(start)
+  }
+
   return (
     <div className="flex h-full flex-col">
       {allDayEvents.length > 0 && (
@@ -72,7 +114,7 @@ export function TimelineView({ events, onEventPress, selectedDate, scrollToFirst
                 type="button"
                 onClick={() => onEventPress?.(e)}
                 className="truncate rounded px-3 py-2 text-[13px] font-bold text-white"
-                style={{ backgroundColor: allDayColor(e) }}
+                style={{ backgroundColor: eventColor(e) }}
               >
                 {e.summary}
               </button>
@@ -95,7 +137,14 @@ export function TimelineView({ events, onEventPress, selectedDate, scrollToFirst
           </div>
 
           {/* Events area */}
-          <div className="relative flex-1 bg-white" style={{ height: TOTAL_HOURS * TIMELINE_HOUR_HEIGHT }}>
+          <div
+            className={`relative flex-1 bg-white ${onTimePress ? 'cursor-copy' : ''}`}
+            style={{ height: TOTAL_HOURS * TIMELINE_HOUR_HEIGHT }}
+            onPointerDown={(e) => {
+              pressStart.current = { x: e.clientX, y: e.clientY }
+            }}
+            onClick={handleGridClick}
+          >
             {hours.map((h) => (
               <div
                 key={h}
@@ -111,28 +160,42 @@ export function TimelineView({ events, onEventPress, selectedDate, scrollToFirst
               </div>
             )}
 
-            {positioned.map((event) => (
-              <button
-                key={event.id}
-                type="button"
-                onClick={() => onEventPress?.(event)}
-                className="absolute overflow-hidden rounded-md border-l-4 border-black/20 p-1.5 text-left"
-                style={{
-                  top: event.top,
-                  height: event.height,
-                  width: `${100 / event.numColumns}%`,
-                  left: `${(event.column / event.numColumns) * 100}%`,
-                  backgroundColor: eventColor(event),
-                }}
-              >
-                <p className="line-clamp-2 text-xs font-bold text-white">{event.summary}</p>
-                <p className="mt-0.5 truncate text-[10px] text-white/85">
-                  {new Date(event.start.dateTime!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  {' – '}
-                  {new Date(event.end.dateTime!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
-              </button>
-            ))}
+            {positioned.map((event) => {
+              const special = eventKind(event) === 'special'
+              return (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onEventPress?.(event)
+                  }}
+                  className="absolute overflow-hidden rounded-md border-l-4 border-black/20 p-1.5 text-left"
+                  style={{
+                    top: event.top,
+                    height: Math.max(event.height - 2, 18),
+                    // Percentage width with a pixel gutter: calc keeps the
+                    // columns exact while still separating neighbours visually.
+                    left: `calc(${(event.column / event.numColumns) * 100}% + ${event.column === 0 ? 0 : COLUMN_GAP_PX}px)`,
+                    width: `calc(${(event.span / event.numColumns) * 100}% - ${event.column === 0 ? COLUMN_GAP_PX : COLUMN_GAP_PX * 2}px)`,
+                    backgroundColor: eventColor(event),
+                    // Narrow events sit above wide ones, so a short request
+                    // inside a long session is never covered by it.
+                    zIndex: 10 - Math.min(event.span, 9),
+                  }}
+                >
+                  <p className="line-clamp-2 text-xs font-bold text-white">
+                    {special && <span aria-hidden>★ </span>}
+                    {event.summary}
+                  </p>
+                  <p className="mt-0.5 truncate text-[10px] text-white/85">
+                    {new Date(event.start.dateTime!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {' – '}
+                    {new Date(event.end.dateTime!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>

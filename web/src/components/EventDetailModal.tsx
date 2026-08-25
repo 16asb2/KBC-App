@@ -1,45 +1,63 @@
 import { useState } from 'react'
 import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
-import { isRequestedEvent, isSupervisorEvent } from '@/domain/calendarEvent'
+import { eventColor, eventKind, EVENT_KIND_LABEL, isAllDayEvent } from '@/domain/calendarEvent'
+import { canDeleteEvent, canEditEvent, canJoinEvent, type CalendarActor } from '@/domain/calendarPermissions'
 import { hasSupervisor, participantsFor } from '@/domain/calendarSession'
-import { joinSession, leaveSession, type CalendarEvent, type CalendarUser } from '@/services/calendar'
+import { deleteEvent, joinSession, leaveSession, type CalendarEvent, type CalendarUser } from '@/services/calendar'
 
-// Tapping an event on the Schedule opens this. mobile reached edit-session by
-// tapping an event too; join and leave were separate buttons on the timeline.
+// Tapping an event on the Schedule — or a row in the Calendar tab's Upcoming
+// Events list — opens this. Everyone can open it and read what is on: what a
+// viewer may then *do* is the only thing that varies, and it varies by
+// domain/calendarPermissions.ts.
 
 function formatRange(e: CalendarEvent): string {
-  if (e.start.date) return 'All day'
+  if (isAllDayEvent(e)) return 'All day'
   const opts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' }
   const s = e.start.dateTime ? new Date(e.start.dateTime).toLocaleTimeString([], opts) : '?'
   const t = e.end.dateTime ? new Date(e.end.dateTime).toLocaleTimeString([], opts) : '?'
   return `${s} – ${t}`
 }
 
+function formatDay(e: CalendarEvent): string {
+  const iso = e.start.dateTime ?? e.start.date
+  if (!iso) return ''
+  const d = e.start.dateTime ? new Date(iso) : new Date(`${iso}T00:00`)
+  return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
+}
+
 export function EventDetailModal({
   event,
   user,
-  canEdit,
+  actor,
   onEdit,
   onChanged,
+  onDeleted,
   onClose,
 }: {
   event: CalendarEvent
   user: CalendarUser
-  canEdit: boolean
+  actor: CalendarActor
   onEdit: () => void
   onChanged: () => void
+  /** Called with the id once it is gone from Google, so the cache can drop it. */
+  onDeleted: (eventId: string) => void
   onClose: () => void
 }) {
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
+  const kind = eventKind(event)
   const participants = participantsFor(event)
   const onIt = participants.some(
     (p) => p.uid === user.uid || p.name.toLowerCase() === user.name.toLowerCase(),
   )
   const supervised = hasSupervisor(participants)
-  const isSession = isSupervisorEvent(event.summary) || isRequestedEvent(event.summary)
+
+  const joinable = canJoinEvent(event)
+  const editable = canEditEvent(event, actor)
+  const deletable = canDeleteEvent(event, actor)
+  const deleteLabel = kind === 'special' ? 'Delete Event' : 'Delete Session'
 
   async function run(fn: () => Promise<void>) {
     setBusy(true)
@@ -54,15 +72,36 @@ export function EventDetailModal({
     }
   }
 
+  function remove() {
+    if (!window.confirm(`Delete "${event.summary ?? 'this event'}" from the calendar?`)) return
+    void run(async () => {
+      await deleteEvent(event, user)
+      onDeleted(event.id)
+    })
+  }
+
   return (
     <Modal onClose={onClose}>
-      <h2 className="text-lg font-black text-neutral-900">{event.summary ?? 'Untitled event'}</h2>
-      <p className="mt-0.5 text-sm text-neutral-500">{formatRange(event)}</p>
-      {event.description && (
-        <p className="mt-2 text-sm text-neutral-600">{event.description}</p>
+      <span
+        className="inline-block rounded-full px-2.5 py-1 text-[11px] font-extrabold tracking-wide uppercase"
+        style={{ backgroundColor: eventColor(event) + '22', color: eventColor(event) }}
+      >
+        {EVENT_KIND_LABEL[kind]}
+      </span>
+      <h2 className="mt-2 text-lg font-black text-neutral-900">{event.summary ?? 'Untitled event'}</h2>
+      <p className="mt-0.5 text-sm text-neutral-500">
+        {formatDay(event)} · {formatRange(event)}
+      </p>
+      {event.description && <p className="mt-2 text-sm text-neutral-600">{event.description}</p>}
+
+      {kind === 'special' && (
+        <p className="mt-3 rounded-lg bg-neutral-100 p-3 text-xs text-neutral-500">
+          A special event, not a climbing session — there is no sign-up list to join. Check the
+          schedule for a supervised session around it.
+        </p>
       )}
 
-      {participants.length > 0 && (
+      {kind !== 'special' && participants.length > 0 && (
         <>
           <h3 className="mt-4 mb-1 text-[11px] font-bold tracking-wide text-neutral-500 uppercase">
             Who is coming
@@ -94,13 +133,13 @@ export function EventDetailModal({
       {err && <p className="mt-4 text-sm font-semibold text-red-600">{err}</p>}
 
       <div className="mt-5 space-y-2">
-        {isSession &&
+        {joinable &&
           (onIt ? (
             <button
               type="button"
               onClick={() => void run(() => leaveSession(event.id, user))}
               disabled={busy}
-              className="w-full rounded-xl border p-3 text-sm font-bold disabled:opacity-60"
+              className="w-full rounded-xl border p-3 text-center text-sm font-bold disabled:opacity-60"
               style={{ borderColor: KBC.pink, color: KBC.pink }}
             >
               Leave this session
@@ -110,28 +149,40 @@ export function EventDetailModal({
               type="button"
               onClick={() => void run(() => joinSession(event.id, user))}
               disabled={busy}
-              className="w-full rounded-xl p-3 text-sm font-extrabold text-black disabled:opacity-60"
+              className="w-full rounded-xl p-3 text-center text-sm font-extrabold text-black disabled:opacity-60"
               style={{ backgroundColor: KBC.cyan }}
             >
               Join this session
             </button>
           ))}
 
-        {canEdit && (
+        {editable && (
           <button
             type="button"
             onClick={onEdit}
             disabled={busy}
-            className="w-full rounded-xl border border-neutral-300 p-3 text-sm font-semibold text-neutral-600 disabled:opacity-60"
+            className="w-full rounded-xl border border-neutral-300 p-3 text-center text-sm font-semibold text-neutral-600 disabled:opacity-60"
           >
-            Edit or delete
+            Edit {kind === 'special' ? 'event' : 'session'}
+          </button>
+        )}
+
+        {deletable && (
+          <button
+            type="button"
+            onClick={remove}
+            disabled={busy}
+            className="w-full rounded-xl border p-3 text-center text-sm font-bold disabled:opacity-60"
+            style={{ borderColor: KBC.pink, color: KBC.pink }}
+          >
+            {busy ? 'Working…' : deleteLabel}
           </button>
         )}
 
         <button
           type="button"
           onClick={onClose}
-          className="w-full rounded-xl p-3 text-sm font-semibold text-neutral-500"
+          className="w-full rounded-xl p-3 text-center text-sm font-semibold text-neutral-500"
         >
           Close
         </button>

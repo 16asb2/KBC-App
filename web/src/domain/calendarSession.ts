@@ -40,7 +40,10 @@ export function reconstructParticipantsFromTitle(summary: string): CalendarParti
   return summary.split(' + ').map((part, i) => {
     const trimmed = part.trim()
     const isSup = /\(sup(er)?\)$/i.test(trimmed)
-    const name = trimmed.replace(/\s*\(sup(er)?\)$/i, '').trim()
+    // "(requested)" comes off too — it is a status marker on the title, not
+    // part of anyone's name, and leaving it on shows "Garry (requested)" as the
+    // person in the roster.
+    const name = trimmed.replace(/\s*\((?:sup(?:er)?|requested)\)$/i, '').trim()
     return {
       uid: `legacy_${i}_${name.toLowerCase().replace(/\s+/g, '_')}`,
       name,
