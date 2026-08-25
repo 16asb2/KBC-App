@@ -4,18 +4,13 @@ import { Modal } from '@/components/Modal'
 import { TimelineView } from '@/components/TimelineView'
 import { KBC } from '@/constants/theme'
 import { useSchedule } from '@/context/ScheduleContext'
-import { isEventOnDay } from '@/domain/calendarEvent'
+import { isEventOnDay, isSameDay } from '@/domain/calendarEvent'
+import { defaultCreateKind } from '@/domain/calendarPermissions'
 import { useSwipe } from '@/hooks/useSwipe'
-import { useAuth } from '@/context/AuthContext'
-import { useProfile } from '@/context/ProfileContext'
-import { isPrivileged } from '@/domain/roles'
+import { useCalendarUser } from '@/hooks/useCalendarUser'
 import { EventDetailModal } from '@/components/EventDetailModal'
 import { SessionFormModal, type SessionFormMode } from '@/components/SessionFormModal'
-import type { CalendarEvent, CalendarUser } from '@/services/calendar'
-
-function isSameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
+import type { CalendarEvent } from '@/services/calendar'
 
 function formatHeaderDate(date: Date): string {
   return date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
@@ -32,28 +27,17 @@ function formatHeaderLabel(date: Date): string | null {
 
 // Ported from mobile/app/(tabs)/index.tsx, day view only, now including its
 // write paths: supervisors open sessions and add special events, members
-// request a time, and tapping an event opens it to join, leave, edit or delete.
+// request a time, tapping an event opens it to join, leave, edit or delete, and
+// tapping an empty stretch of the timeline starts creating something there.
 // mobile had these as separate add-session/edit-session/add-event routes.
 export function SchedulePage() {
-  const { selectedDate, setSelectedDate, allEvents, loading, error, reload } = useSchedule()
-  const { user } = useAuth()
-  const { profile } = useProfile()
+  const { selectedDate, setSelectedDate, allEvents, loading, error, reload, forgetEvent } = useSchedule()
+  const { calendarUser, actor, privileged } = useCalendarUser()
   const [pickerOpen, setPickerOpen] = useState(false)
   const [form, setForm] = useState<SessionFormMode | null>(null)
+  /** Time tapped on the timeline, seeded into the form that opens. */
+  const [formSeed, setFormSeed] = useState<Date | undefined>(undefined)
   const [viewing, setViewing] = useState<CalendarEvent | null>(null)
-
-  const privileged = isPrivileged(user?.email ?? null, profile)
-  // Calendar identity is separate from the Firestore profile: the name here is
-  // what gets written into the event title and roster.
-  const calendarUser: CalendarUser | null =
-    user && profile
-      ? {
-          uid: profile.uid,
-          name: profile.preferredName || profile.name,
-          isSupervisor: profile.isSupervisor,
-          isAdmin: profile.isAdmin,
-        }
-      : null
 
   function changeDay(offset: number) {
     const next = new Date(selectedDate)
@@ -67,6 +51,11 @@ export function SchedulePage() {
     onSwipeLeft: () => changeDay(1),
     onSwipeRight: () => changeDay(-1),
   })
+
+  function openForm(mode: SessionFormMode, seed?: Date) {
+    setFormSeed(seed)
+    setForm(mode)
+  }
 
   const dayEvents = allEvents.filter((e) => isEventOnDay(e, selectedDate))
 
@@ -94,9 +83,9 @@ export function SchedulePage() {
       </div>
 
       <div className="flex gap-4 border-b border-neutral-200 bg-neutral-100 px-3.5 py-1.5">
-        <LegendItem color={KBC.pink} label="Supervisor" />
+        <LegendItem color={KBC.pink} label="Climb Session" />
         <LegendItem color={KBC.purple} label="Requested" />
-        <LegendItem color={KBC.cyan} label="Events" />
+        <LegendItem color={KBC.cyan} label="Special Event" />
       </div>
 
       {calendarUser && (
@@ -105,16 +94,16 @@ export function SchedulePage() {
             <>
               <button
                 type="button"
-                onClick={() => setForm({ kind: 'session' })}
-                className="flex-1 rounded-lg p-2 text-[13px] font-bold text-white"
+                onClick={() => openForm({ kind: 'session' })}
+                className="flex-1 rounded-lg p-2 text-center text-[13px] font-bold text-white"
                 style={{ backgroundColor: KBC.pink }}
               >
                 + Climb Session
               </button>
               <button
                 type="button"
-                onClick={() => setForm({ kind: 'special' })}
-                className="flex-1 rounded-lg border p-2 text-[13px] font-bold"
+                onClick={() => openForm({ kind: 'special' })}
+                className="flex-1 rounded-lg border p-2 text-center text-[13px] font-bold"
                 style={{ borderColor: KBC.cyan, color: KBC.cyan }}
               >
                 + Special Event
@@ -123,8 +112,8 @@ export function SchedulePage() {
           ) : (
             <button
               type="button"
-              onClick={() => setForm({ kind: 'request' })}
-              className="flex-1 rounded-lg p-2 text-[13px] font-bold text-white"
+              onClick={() => openForm({ kind: 'request' })}
+              className="flex-1 rounded-lg p-2 text-center text-[13px] font-bold text-white"
               style={{ backgroundColor: KBC.purple }}
             >
               Request a Climb Session
@@ -153,6 +142,14 @@ export function SchedulePage() {
             selectedDate={selectedDate}
             scrollToFirstEvent
             onEventPress={calendarUser ? setViewing : undefined}
+            // Tap an empty slot to create at that time. Supervisors get a
+            // climbing session, everyone else a request — the same split the
+            // buttons above make, so the two paths never disagree.
+            onTimePress={
+              actor
+                ? (start) => openForm({ kind: defaultCreateKind(actor) }, start)
+                : undefined
+            }
           />
         )}
       </div>
@@ -170,26 +167,30 @@ export function SchedulePage() {
         </Modal>
       )}
 
-      {viewing && calendarUser && (
+      {viewing && calendarUser && actor && (
         <EventDetailModal
           event={viewing}
           user={calendarUser}
-          canEdit={privileged}
+          actor={actor}
           onEdit={() => {
-            setForm({ kind: 'edit', event: viewing })
+            openForm({ kind: 'edit', event: viewing })
             setViewing(null)
           }}
           onChanged={() => void reload()}
+          onDeleted={forgetEvent}
           onClose={() => setViewing(null)}
         />
       )}
 
-      {form && calendarUser && (
+      {form && calendarUser && actor && (
         <SessionFormModal
           mode={form}
           user={calendarUser}
+          actor={actor}
           seedDate={selectedDate}
+          seedStart={formSeed}
           onDone={() => void reload()}
+          onDeleted={forgetEvent}
           onClose={() => setForm(null)}
         />
       )}
@@ -200,7 +201,7 @@ export function SchedulePage() {
 function LegendItem({ color, label }: { color: string; label: string }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="size-2.5 rounded-full" style={{ backgroundColor: color }} />
+      <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
       <span className="text-[11px] font-medium text-neutral-500">{label}</span>
     </div>
   )

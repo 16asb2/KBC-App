@@ -211,8 +211,8 @@ export function HomePage() {
         <button
           type="button"
           onClick={() => setShowNewMember(true)}
-          className="w-full rounded-2xl border p-4 text-base font-bold"
-          style={{ borderColor: KBC.orange, color: KBC.orange }}
+          className="w-full rounded-2xl p-4 text-center text-base font-bold text-white shadow-lg"
+          style={{ backgroundColor: KBC.orange }}
         >
           Add New Member
         </button>
@@ -221,19 +221,24 @@ export function HomePage() {
       {/* The sign-in book isn't a tab — the bottom bar is already six items
           wide on a phone. Everyone gets here for "My Visits"; supervisors
           also confirm pending sign-ins here, so the count is surfaced on the
-          button rather than making them open it to discover work waiting. */}
+          button rather than making them open it to discover work waiting.
+          The count sits absolutely to the right so it never pulls the label
+          off centre — the three buttons on this screen have to line up. */}
       <Link
         to="/logbook"
-        className="flex w-full items-center justify-between rounded-2xl border p-4 text-base font-bold"
-        style={{ borderColor: KBC.green, color: KBC.green }}
+        className="relative flex w-full items-center justify-center rounded-2xl p-4 text-center text-base font-bold text-white shadow-lg"
+        style={{ backgroundColor: KBC.green }}
       >
         <span>Sign-In Book</span>
         {privileged && pendingSignIns > 0 && (
+          // Just the count: "N pending" is wide enough to run into the centred
+          // label on a narrow phone, and the label's alignment is the point.
           <span
-            className="rounded-full px-2.5 py-1 text-xs font-bold"
-            style={{ backgroundColor: KBC.orange + '22', color: KBC.orange }}
+            className="absolute right-4 flex size-6 items-center justify-center rounded-full bg-white text-xs font-extrabold"
+            style={{ color: KBC.orange }}
+            title={`${pendingSignIns} sign-in${pendingSignIns !== 1 ? 's' : ''} awaiting confirmation`}
           >
-            {pendingSignIns} pending
+            {pendingSignIns}
           </span>
         )}
       </Link>

@@ -1,5 +1,6 @@
 import { auth } from '@/lib/firebase'
-import { isRequestedEvent, isSupervisorEvent } from '@/domain/calendarEvent'
+import { eventKind, isRequestedEvent, isSupervisorEvent } from '@/domain/calendarEvent'
+import { canDeleteEvent, canEditEvent, type CalendarActor } from '@/domain/calendarPermissions'
 import {
   buildTitle,
   classifyOverlap,
@@ -114,6 +115,11 @@ export type CalendarUser = {
   uid: string
   name: string
   isSupervisor: boolean
+  /**
+   * Already resolved through domain/roles.ts#isAdmin, so the hardcoded
+   * super-admin counts here even without `isAdmin: true` on their profile.
+   * Build one with hooks/useCalendarUser.ts rather than reading the raw field.
+   */
   isAdmin: boolean
 }
 
@@ -121,15 +127,49 @@ function roleOf(user: CalendarUser): CalendarParticipant['role'] {
   return user.isAdmin ? 'admin' : user.isSupervisor ? 'supervisor' : 'member'
 }
 
+/** Every admin counts as a supervisor — see domain/roles.ts#isPrivileged. */
+function isPrivilegedUser(user: CalendarUser): boolean {
+  return user.isAdmin || user.isSupervisor
+}
+
+function actorOf(user: CalendarUser): CalendarActor {
+  return { uid: user.uid, name: user.name, privileged: isPrivilegedUser(user) }
+}
+
+// firestore.rules cannot guard Google Calendar, and the Worker hands the same
+// token to anyone signed in — so the three guards below are the only checks
+// there are. They are still client-side: a determined member could call the
+// Calendar API directly with a token the Worker gave them. Moving writes behind
+// the Worker is the fix, noted as an open question in DESIGN.md.
+
 function requirePrivileged(user: CalendarUser, action: string): void {
-  // firestore.rules cannot guard Google Calendar, and the Worker hands the same
-  // token to anyone signed in — so this is the only check there is. It is still
-  // client-side: a determined member could call the Calendar API directly with
-  // a token the Worker gave them. Moving writes behind the Worker is the fix,
-  // noted as an open question in DESIGN.md.
-  if (!user.isSupervisor && !user.isAdmin) {
+  if (!isPrivilegedUser(user)) {
     throw new Error(`Only supervisors and admins can ${action}.`)
   }
+}
+
+/**
+ * Only a climb session has a roster to be on. A special event is something the
+ * gym is putting on, not a slot to sign up for, so there is nothing to join.
+ */
+function requireJoinable(event: CalendarEvent): void {
+  if (eventKind(event) === 'special') {
+    throw new Error('This is a special event, not a climbing session — there is nothing to join.')
+  }
+}
+
+/**
+ * Supervisors and admins may change anything on the calendar; everyone else may
+ * only touch a session request that is their own.
+ */
+function requireCanEdit(event: CalendarEvent, user: CalendarUser, verb: 'change' | 'delete'): void {
+  const allowed =
+    verb === 'delete' ? canDeleteEvent(event, actorOf(user)) : canEditEvent(event, actorOf(user))
+  if (allowed) return
+  const what = eventKind(event) === 'special' ? 'special events' : 'sessions'
+  throw new Error(
+    `Only supervisors and admins can ${verb} ${what}. You can ${verb} your own session requests.`,
+  )
 }
 
 async function calendarFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -366,9 +406,13 @@ export async function createSessionRequest(
   return created
 }
 
-/** Add yourself to an existing session. Idempotent. */
+/**
+ * Add yourself to an existing session. Idempotent, and open to every member —
+ * joining is the one calendar write that needs no supervisor status.
+ */
 export async function joinSession(eventId: string, user: CalendarUser): Promise<void> {
   const existing = await getEvent(eventId)
+  requireJoinable(existing)
   const participants = participantsFor(existing)
 
   // Match on name as well as uid: legacy events carry synthetic uids, so the
@@ -385,6 +429,7 @@ export async function joinSession(eventId: string, user: CalendarUser): Promise<
 /** Remove yourself from a session. */
 export async function leaveSession(eventId: string, user: CalendarUser): Promise<void> {
   const existing = await getEvent(eventId)
+  requireJoinable(existing)
   const participants = participantsFor(existing)
   if (participants.length === 0) {
     throw new Error('Cannot leave this session — its participant list is unavailable.')
@@ -399,35 +444,67 @@ export async function leaveSession(eventId: string, user: CalendarUser): Promise
   await patchParticipants(existing, remaining)
 }
 
-/** Change a session's time or description. */
-export async function updateSession(
-  eventId: string,
-  data: { start: string; end: string; description?: string },
+/**
+ * The `start`/`end` pair for a PATCH, with the shape being replaced explicitly
+ * nulled.
+ *
+ * Google merges a patched `start` into the stored one rather than swapping it
+ * out, so leaving the counterpart alone means a timed event retitled all-day
+ * keeps its old `dateTime` alongside the new `date` and the API rejects the
+ * whole request. Sending `null` for the field that no longer applies clears it.
+ */
+function timesPatch(start: string, end: string, allDay: boolean) {
+  return allDay
+    ? { start: { date: start, dateTime: null }, end: { date: end, dateTime: null } }
+    : {
+        start: { dateTime: start, timeZone: TIME_ZONE, date: null },
+        end: { dateTime: end, timeZone: TIME_ZONE, date: null },
+      }
+}
+
+/**
+ * Change an event's time, name or notes.
+ *
+ * Covers climb sessions and special events alike — the two used to have only
+ * the session path, so editing a special event rewrote it as a timed event and
+ * silently dropped an all-day one onto midnight.
+ */
+export async function updateEvent(
+  event: CalendarEvent,
+  data: { start: string; end: string; description?: string; summary?: string; allDay?: boolean },
   user: CalendarUser,
 ): Promise<void> {
-  requirePrivileged(user, 'change a session')
+  requireCanEdit(event, user, 'change')
   await calendarJson(
-    `/events/${eventId}`,
+    `/events/${event.id}`,
     {
       method: 'PATCH',
       body: JSON.stringify({
-        start: { dateTime: data.start, timeZone: TIME_ZONE },
-        end: { dateTime: data.end, timeZone: TIME_ZONE },
+        ...timesPatch(data.start, data.end, data.allDay ?? false),
+        ...(data.summary !== undefined ? { summary: data.summary } : {}),
         ...(data.description !== undefined ? { description: data.description } : {}),
       }),
     },
-    'change that session',
+    'change that event',
   )
 }
 
-export async function deleteSession(eventId: string, user: CalendarUser): Promise<void> {
-  requirePrivileged(user, 'delete a session')
-  await deleteEventRaw(eventId)
+/**
+ * Remove an event from the Google Calendar for good.
+ *
+ * Callers should also drop the id from the ScheduleContext cache: Google's list
+ * endpoint is eventually consistent and will happily hand back an event it has
+ * already deleted for a few seconds afterwards, which is what made a deleted
+ * session reappear on the next refresh.
+ */
+export async function deleteEvent(event: CalendarEvent, user: CalendarUser): Promise<void> {
+  requireCanEdit(event, user, 'delete')
+  await deleteEventRaw(event.id)
 }
 
 /** A named event — Ladies Night, a competition, a closure — rather than a session. */
 export async function createSpecialEvent(
-  data: { summary: string; start: string; end: string; allDay?: boolean },
+  data: { summary: string; start: string; end: string; allDay?: boolean; description?: string },
   user: CalendarUser,
 ): Promise<CalendarEvent> {
   requirePrivileged(user, 'create a special event')
@@ -443,6 +520,7 @@ export async function createSpecialEvent(
       method: 'POST',
       body: JSON.stringify({
         summary: data.summary,
+        ...(data.description ? { description: data.description } : {}),
         ...times,
         extendedProperties: {
           private: {

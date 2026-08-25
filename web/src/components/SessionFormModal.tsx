@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
+import { eventKind, isAllDayEvent } from '@/domain/calendarEvent'
+import { canDeleteEvent, type CalendarActor } from '@/domain/calendarPermissions'
 import {
   createSessionRequest,
   createSpecialEvent,
   createSupervisorSession,
-  deleteSession,
-  updateSession,
+  deleteEvent,
+  updateEvent,
   type CalendarEvent,
   type CalendarUser,
 } from '@/services/calendar'
@@ -22,15 +24,8 @@ export type SessionFormMode =
   | { kind: 'request' }
   /** A named event rather than a climbing session. */
   | { kind: 'special' }
-  /** Change or delete an existing session. */
+  /** Change or delete something already on the calendar. */
   | { kind: 'edit'; event: CalendarEvent }
-
-const TITLES: Record<SessionFormMode['kind'], string> = {
-  session: 'Open a climbing session',
-  request: 'Request a climbing session',
-  special: 'Add a special event',
-  edit: 'Edit session',
-}
 
 /**
  * `<input type="datetime-local">` wants "YYYY-MM-DDTHH:mm" in local time, which
@@ -40,6 +35,14 @@ const TITLES: Record<SessionFormMode['kind'], string> = {
 function toLocalInput(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** Move a "YYYY-MM-DD" string by whole days, staying in local time. */
+function shiftDay(day: string, days: number): string {
+  const [y, m, d] = day.split('-').map(Number)
+  const date = new Date(y, m - 1, d + days)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 function defaultStart(seed?: Date): Date {
@@ -52,71 +55,113 @@ function defaultStart(seed?: Date): Date {
 export function SessionFormModal({
   mode,
   user,
+  actor,
   seedDate,
+  seedStart,
   onDone,
+  onDeleted,
   onClose,
 }: {
   mode: SessionFormMode
   user: CalendarUser
+  actor: CalendarActor
   /** Day the schedule is showing, so a new session starts on it. */
   seedDate?: Date
+  /** Exact time tapped on the timeline — takes precedence over seedDate. */
+  seedStart?: Date
   onDone: () => void
+  /** Called with the id once it is gone from Google, so the cache can drop it. */
+  onDeleted: (eventId: string) => void
   onClose: () => void
 }) {
   const editing = mode.kind === 'edit' ? mode.event : null
+  // What is being edited decides the form, not how the modal was opened: a
+  // special event needs its name and its all-day switch, a session does not.
+  const kind = editing ? eventKind(editing) : mode.kind
+  const isSpecial = kind === 'special'
+  const isRequest = kind === 'request'
 
+  const initialAllDay = editing ? isAllDayEvent(editing) : false
   const initialStart = editing?.start.dateTime
     ? new Date(editing.start.dateTime)
-    : defaultStart(seedDate)
+    : defaultStart(seedStart ?? seedDate)
   const initialEnd = editing?.end.dateTime
     ? new Date(editing.end.dateTime)
     : new Date(initialStart.getTime() + 2 * 60 * 60 * 1000)
 
-  const [start, setStart] = useState(toLocalInput(initialStart))
-  const [end, setEnd] = useState(toLocalInput(initialEnd))
-  const [summary, setSummary] = useState(mode.kind === 'special' ? '' : (editing?.summary ?? ''))
+  const [start, setStart] = useState(
+    initialAllDay && editing?.start.date ? `${editing.start.date}T00:00` : toLocalInput(initialStart),
+  )
+  const [end, setEnd] = useState(() => {
+    // Google stores an all-day end date as *exclusive*; the field asks for the
+    // last day the event runs, so it comes back a day.
+    if (initialAllDay && editing?.end.date) return `${shiftDay(editing.end.date, -1)}T00:00`
+    return toLocalInput(initialEnd)
+  })
+  const [summary, setSummary] = useState(isSpecial ? (editing?.summary ?? '') : '')
   const [description, setDescription] = useState(editing?.description ?? '')
-  const [allDay, setAllDay] = useState(false)
+  const [allDay, setAllDay] = useState(initialAllDay)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
+  const title = editing
+    ? isSpecial
+      ? 'Edit special event'
+      : isRequest
+        ? 'Edit session request'
+        : 'Edit climbing session'
+    : mode.kind === 'session'
+      ? 'Open a climbing session'
+      : mode.kind === 'request'
+        ? 'Request a climbing session'
+        : 'Add a special event'
+
+  const deleteLabel = isSpecial ? 'Delete Event' : 'Delete Session'
+  const canDelete = editing ? canDeleteEvent(editing, actor) : false
+
   async function submit() {
     setErr(null)
-    const startDate = new Date(start)
-    const endDate = new Date(end)
-    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
-      return setErr('Please pick a valid start and end time.')
+    const startDay = start.slice(0, 10)
+    const endDay = end.slice(0, 10)
+
+    if (allDay) {
+      if (!startDay || !endDay) return setErr('Please pick a first and last day.')
+      if (endDay < startDay) return setErr('The last day has to be on or after the first day.')
+    } else {
+      const startDate = new Date(start)
+      const endDate = new Date(end)
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        return setErr('Please pick a valid start and end time.')
+      }
+      if (endDate <= startDate) return setErr('The end time has to be after the start time.')
     }
-    if (endDate <= startDate) return setErr('The end time has to be after the start time.')
-    if (mode.kind === 'special' && !summary.trim()) return setErr('Please give the event a name.')
+    if (isSpecial && !summary.trim()) return setErr('Please give the event a name.')
+
+    // All-day events take plain dates, and Google wants the end date exclusive.
+    const startValue = allDay ? startDay : new Date(start).toISOString()
+    const endValue = allDay ? shiftDay(endDay, 1) : new Date(end).toISOString()
 
     setSaving(true)
     try {
-      if (mode.kind === 'edit') {
-        await updateSession(
-          mode.event.id,
-          { start: startDate.toISOString(), end: endDate.toISOString(), description },
+      if (editing) {
+        await updateEvent(
+          editing,
+          {
+            start: startValue,
+            end: endValue,
+            allDay,
+            description,
+            ...(isSpecial ? { summary: summary.trim() } : {}),
+          },
           user,
         )
       } else if (mode.kind === 'session') {
-        await createSupervisorSession(
-          { start: startDate.toISOString(), end: endDate.toISOString(), description },
-          user,
-        )
+        await createSupervisorSession({ start: startValue, end: endValue, description }, user)
       } else if (mode.kind === 'request') {
-        await createSessionRequest(
-          { start: startDate.toISOString(), end: endDate.toISOString() },
-          user,
-        )
+        await createSessionRequest({ start: startValue, end: endValue }, user)
       } else {
         await createSpecialEvent(
-          {
-            summary: summary.trim(),
-            // All-day events take plain dates, not timestamps.
-            start: allDay ? start.slice(0, 10) : startDate.toISOString(),
-            end: allDay ? end.slice(0, 10) : endDate.toISOString(),
-            allDay,
-          },
+          { summary: summary.trim(), start: startValue, end: endValue, allDay, description },
           user,
         )
       }
@@ -130,30 +175,31 @@ export function SessionFormModal({
 
   async function remove() {
     if (!editing) return
-    if (!window.confirm(`Delete "${editing.summary ?? 'this session'}" from the calendar?`)) return
+    if (!window.confirm(`Delete "${editing.summary ?? 'this event'}" from the calendar?`)) return
     setSaving(true)
     setErr(null)
     try {
-      await deleteSession(editing.id, user)
+      await deleteEvent(editing, user)
+      onDeleted(editing.id)
       onDone()
       onClose()
     } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not delete that session.')
+      setErr(e instanceof Error ? e.message : 'Could not delete that event.')
       setSaving(false)
     }
   }
 
   return (
     <Modal onClose={onClose}>
-      <h2 className="text-lg font-black text-neutral-900">{TITLES[mode.kind]}</h2>
-      {mode.kind === 'request' && (
+      <h2 className="text-lg font-black text-neutral-900">{title}</h2>
+      {mode.kind === 'request' && !editing && (
         <p className="mt-1 text-sm text-neutral-500">
           Any part of this time a supervisor already covers is skipped — you will only be asking for
           what is still uncovered.
         </p>
       )}
 
-      {mode.kind === 'special' && (
+      {isSpecial && (
         <>
           <Label>Event name</Label>
           <input
@@ -184,8 +230,13 @@ export function SessionFormModal({
         value={allDay ? end.slice(0, 10) : end}
         onChange={(e) => setEnd(allDay ? `${e.target.value}T00:00` : e.target.value)}
       />
+      {allDay && (
+        <p className="mt-1 text-xs text-neutral-400">
+          The last day is included — set it to the first day for a single-day event.
+        </p>
+      )}
 
-      {mode.kind !== 'request' && mode.kind !== 'special' && (
+      {!isRequest && (
         <>
           <Label>Notes (optional)</Label>
           <input
@@ -203,7 +254,7 @@ export function SessionFormModal({
         <button
           type="button"
           onClick={onClose}
-          className="flex-1 rounded-xl border border-neutral-300 p-3 text-sm font-bold text-neutral-600"
+          className="flex-1 rounded-xl border border-neutral-300 p-3 text-center text-sm font-bold text-neutral-600"
         >
           Cancel
         </button>
@@ -211,22 +262,22 @@ export function SessionFormModal({
           type="button"
           onClick={() => void submit()}
           disabled={saving}
-          className="flex-1 rounded-xl p-3 text-sm font-extrabold text-black disabled:opacity-60"
+          className="flex-1 rounded-xl p-3 text-center text-sm font-extrabold text-black disabled:opacity-60"
           style={{ backgroundColor: KBC.cyan }}
         >
-          {saving ? 'Saving…' : mode.kind === 'edit' ? 'Save changes' : 'Confirm'}
+          {saving ? 'Saving…' : editing ? 'Save changes' : 'Confirm'}
         </button>
       </div>
 
-      {editing && (
+      {canDelete && (
         <button
           type="button"
           onClick={() => void remove()}
           disabled={saving}
-          className="mt-2 w-full rounded-xl border p-3 text-sm font-bold disabled:opacity-60"
+          className="mt-2 w-full rounded-xl border p-3 text-center text-sm font-bold disabled:opacity-60"
           style={{ borderColor: KBC.pink, color: KBC.pink }}
         >
-          Delete session
+          {deleteLabel}
         </button>
       )}
     </Modal>
