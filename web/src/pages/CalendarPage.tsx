@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CalendarPicker } from '@/components/CalendarPicker'
 import { EventDetailModal } from '@/components/EventDetailModal'
@@ -51,35 +51,38 @@ export function CalendarPage() {
   const [lastTapped, setLastTapped] = useState<Date | null>(null)
 
   const listRef = useRef<HTMLDivElement>(null)
-  const stickyHeaderRef = useRef<HTMLDivElement>(null)
   const groupRefs = useRef(new Map<string, HTMLDivElement>())
+  const openedOnToday = useRef(false)
 
-  const today = startOfDay()
-
-  const futureEvents = allEvents
-    .filter((e) => eventStartMs(e) > 0 && localDayStart(e).getTime() >= today.getTime())
+  // Everything in the cache, past included -- ScheduleContext fetches a month
+  // back. The list opens scrolled to today, so recent sessions are a scroll up
+  // rather than gone: handy for "who was supervising last Tuesday".
+  const dated = allEvents
+    .filter((e) => eventStartMs(e) > 0)
     .sort((a, b) => eventStartMs(a) - eventStartMs(b))
 
-  const groups = groupEventsByDate(futureEvents)
+  const groups = groupEventsByDate(dated)
 
   /** Roll the list to `day`, or to the first day after it that has anything on. */
-  function scrollListToDay(day: Date) {
+  function scrollListToDay(day: Date, behavior: ScrollBehavior = 'smooth') {
     const container = listRef.current
     if (!container) return
     const target = startOfDay(day)
     const group = groups.find((g) => g.date.getTime() >= target.getTime())
     const el = group ? groupRefs.current.get(group.date.toDateString()) : undefined
-    if (!el) {
-      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
-      return
-    }
     // offsetTop is measured against the `relative` wrapper, so it is already
-    // the container's scroll offset — but the "Upcoming Events" heading is
-    // sticky and would sit on top of the day heading at exactly that offset,
-    // so back off by its height.
-    const stickyHeight = stickyHeaderRef.current?.offsetHeight ?? 0
-    container.scrollTo({ top: Math.max(el.offsetTop - stickyHeight, 0), behavior: 'smooth' })
+    // the offset the container needs to scroll to.
+    container.scrollTo({ top: el ? el.offsetTop : container.scrollHeight, behavior })
   }
+
+  // Land on today once the events arrive. Without this the list opens on the
+  // oldest event in the window, which is a month of history nobody asked for.
+  useEffect(() => {
+    if (openedOnToday.current || groups.length === 0) return
+    openedOnToday.current = true
+    scrollListToDay(new Date(), 'auto')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups.length])
 
   function handleDayPress(day: Date) {
     if (lastTapped && isSameDay(lastTapped, day)) {
@@ -127,23 +130,19 @@ export function CalendarPage() {
         {/* `relative` is load-bearing: it makes each day group's offsetTop
             measure from here, which is what scrollListToDay scrolls to. */}
         <div className="relative pb-10">
-          <div ref={stickyHeaderRef} className="sticky top-0 z-10 bg-white pt-3 pb-1.5">
-            <h2 className="ml-0.5 text-[11px] font-bold tracking-wide text-neutral-400 uppercase">
-              Upcoming Events
-            </h2>
-            <p className="mt-0.5 ml-0.5 text-[11px] text-neutral-400">
-              Tap a day to jump here · tap it again to open it on the Schedule
-            </p>
-          </div>
-
           {groups.length === 0 ? (
-            <p className="py-6 text-center text-sm text-neutral-300">No upcoming events</p>
+            <p className="py-6 text-center text-sm text-neutral-300">No events</p>
           ) : (
             groups.map((group) => {
               const isSelected = isSameDay(group.date, selectedDate)
+              // Days gone by are dimmed. With past and future in one list and
+              // no heading between them, this is the only thing marking where
+              // now is — and it costs no vertical space, which the heading did.
+              const isPast = group.date.getTime() < startOfDay().getTime()
               return (
                 <div
                   key={group.date.toDateString()}
+                  className={isPast ? "opacity-55" : undefined}
                   ref={(el) => {
                     if (el) groupRefs.current.set(group.date.toDateString(), el)
                     else groupRefs.current.delete(group.date.toDateString())
