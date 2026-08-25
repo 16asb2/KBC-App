@@ -46,7 +46,6 @@ export function HomePage() {
   // Who a sign-in is *for*. A supervisor can sign in another climber, so every
   // step of the flow below carries its target rather than assuming the viewer.
   const [punchChoice, setPunchChoice] = useState<SignInTarget | null>(null)
-  const [askWho, setAskWho] = useState(false)
   const [pickingMember, setPickingMember] = useState(false)
   const [accessTarget, setAccessTarget] = useState<SignInTarget | null>(null)
   /** Who is being signed in while we ask whose punch pays for it. */
@@ -147,14 +146,15 @@ export function HomePage() {
     setShowAccess(true)
   }
 
+  /**
+   * The blue button: always signs *you* in, whoever you are.
+   *
+   * Signing another climber in used to be an interstitial on this button —
+   * supervisors were asked "you or someone else?" every single time, taxing the
+   * common case to reach the rare one. It has its own button now.
+   */
   function handleSignIn() {
     if (!profile || !user) return
-    // Supervisors and admins are the only ones who can sign anybody else in,
-    // so they are the only ones asked the question.
-    if (privileged) {
-      setAskWho(true)
-      return
-    }
     void processSignIn({ profile, isSelf: true })
   }
 
@@ -321,9 +321,12 @@ export function HomePage() {
 
       {/* One stack, tight: the actions belong together, so they share a size,
           a weight and a 8px gap rather than floating apart at the page's
-          6-unit rhythm. Sign In and Sign-In Book are the pair a member uses
-          every visit, so they sit adjacent and in the same blue; Add New
-          Member is a supervisor tool and keeps its own colour underneath. */}
+          6-unit rhythm.
+
+          Colour splits it by audience rather than by kind: blue is what every
+          member uses on every visit, orange is the supervisor's desk work. So
+          a member sees two blue buttons and nothing else, and a supervisor
+          reads the orange pair as a group without having to think about it. */}
       <div className="space-y-2">
         <HomeAction
           as="button"
@@ -352,6 +355,17 @@ export function HomePage() {
             </span>
           )}
         </HomeAction>
+
+        {privileged && (
+          <HomeAction
+            as="button"
+            onClick={() => setPickingMember(true)}
+            color={KBC.orange}
+            textColor="#fff"
+          >
+            Sign In Another Climber
+          </HomeAction>
+        )}
 
         {privileged && (
           <HomeAction
@@ -399,46 +413,6 @@ export function HomePage() {
           }}
           onClose={() => setShowNewMember(false)}
         />
-      )}
-
-      {/* Supervisors are asked who they are signing in; everyone else goes
-          straight through, since signing in another climber is theirs alone. */}
-      {askWho && (
-        <Modal onClose={() => setAskWho(false)}>
-          <h2 className="text-base font-bold text-black">Session Sign-In</h2>
-          <p className="mt-1 text-sm text-neutral-600">Who are you signing in?</p>
-          <div className="mt-4 space-y-2">
-            <button
-              type="button"
-              onClick={() => {
-                setAskWho(false)
-                void processSignIn({ profile, isSelf: true })
-              }}
-              className="w-full rounded-xl p-3 font-bold text-white"
-              style={{ backgroundColor: KBC.cyan }}
-            >
-              Myself
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAskWho(false)
-                setPickingMember(true)
-              }}
-              className="w-full rounded-xl border p-3 font-bold"
-              style={{ borderColor: KBC.pink, color: KBC.pink }}
-            >
-              Another Climber
-            </button>
-            <button
-              type="button"
-              onClick={() => setAskWho(false)}
-              className="w-full rounded-xl p-3 font-semibold text-neutral-500"
-            >
-              Cancel
-            </button>
-          </div>
-        </Modal>
       )}
 
       {donorFor && (
