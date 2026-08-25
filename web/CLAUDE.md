@@ -21,7 +21,7 @@ All six tabs have real content: Home, Schedule, Calendar, Members, Boulders (KBC
 
 **Remaining feature gaps.** These were originally deferred as "mobile has it, web doesn't" — but since mobile never shipped and is now gone, they are simply *missing features of the product*, not parity debt. Each can still be read out of git history at `1cdfada` if you want the original implementation as a starting point:
 - **Boulders → Personal mode**: logging climbs at non-KBC locations/problems. Self-contained (`personalProblems`, `climbLocations` collections); needs its own list/card/editor UI.
-- **Supervisor conveniences on Home**: signing in an *existing* other climber, and punch donation between members. (Adding a *new* member is done.)
+- **Punch donation between members** on Home — one member spending a punch off another's account. (Adding a new member, and a supervisor signing in an existing other climber, are both done.)
 - **Summary screens**: `boulder-summary` and `climb-summary` — bar-chart stats views both tabs used to link out to.
 - **Session fulfilment**: a supervisor can open a session and members can
   request one, but mobile's `fulfillSessionRequest` — a supervisor adopting an
