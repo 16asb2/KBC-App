@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AccessModal } from '@/components/AccessModal'
 import { ConnectWithKBC } from '@/components/ConnectWithKBC'
 import { Modal } from '@/components/Modal'
+import { MemberPickerModal } from '@/components/MemberPickerModal'
 import { NewMemberModal } from '@/components/NewMemberModal'
 import { KBC } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
@@ -21,9 +22,18 @@ import { updateProfile } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
 import { formatShortDate } from '@/utils/datetime'
 
-// Ported from mobile@1cdfada/app/(tabs)/home.tsx — self sign-in, purchase access, and
-// (as of this pass) adding a new member are covered. Still not ported: signing
-// another *existing* climber in and punch donation between members.
+/**
+ * Who a sign-in is for.
+ *
+ * `isSelf` is not just `profile.uid === target.uid` bookkeeping: it decides
+ * whether to reload the viewer's own profile afterwards, and whether the
+ * confirmation reads "Signed in!" or "Jane signed in!".
+ */
+type SignInTarget = { profile: UserProfile; isSelf: boolean }
+
+// Ported from mobile@1cdfada/app/(tabs)/home.tsx — self sign-in, signing in
+// another climber, purchase access and adding a new member are covered. Still
+// not ported: punch donation between members.
 export function HomePage() {
   const { user } = useAuth()
   const { profile, reloadProfile } = useProfile()
@@ -33,7 +43,13 @@ export function HomePage() {
   const gymStatus: GymStatus = getGymStatusFromEvents(allEvents)
   const [signingIn, setSigningIn] = useState(false)
   const [showAccess, setShowAccess] = useState(false)
-  const [showPunchChoice, setShowPunchChoice] = useState(false)
+  // Who a sign-in is *for*. A supervisor can sign in another climber, so every
+  // step of the flow below carries its target rather than assuming the viewer.
+  const [punchChoice, setPunchChoice] = useState<SignInTarget | null>(null)
+  const [pickingMember, setPickingMember] = useState(false)
+  const [accessTarget, setAccessTarget] = useState<SignInTarget | null>(null)
+  /** Who is being signed in while we ask whose punch pays for it. */
+  const [donorFor, setDonorFor] = useState<SignInTarget | null>(null)
   const [showNewMember, setShowNewMember] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [pendingSignIns, setPendingSignIns] = useState(0)
@@ -59,36 +75,60 @@ export function HomePage() {
   const privileged = isPrivileged(user.email, profile)
   const displayName = profile.preferredName || user.displayName || user.email || 'Unknown'
 
-  async function logAndMarkSignedIn(accessType: string) {
+  function nameOf(target: SignInTarget) {
+    return target.isSelf ? displayName : target.profile.preferredName || target.profile.name
+  }
+
+  /** "Signed in!" for yourself, "Jane signed in!" for anyone else. */
+  function signedInMessage(target: SignInTarget, detail: string) {
+    return target.isSelf ? `✓ Signed in! ${detail}` : `✓ ${nameOf(target)} signed in! ${detail}`
+  }
+
+  async function logAndMarkSignedIn(target: SignInTarget, accessType: string) {
     const now = new Date().toISOString()
+    // Whether an entry needs confirming depends on who is *doing* the sign-in,
+    // not who it is for: a supervisor signing a member in has already vouched
+    // for them, so it lands confirmed.
     const pendingStatus = privileged ? undefined : ('pending' as const)
     await addLogEntry({
       timestamp: now,
-      userId: profile!.uid,
-      userName: displayName,
+      userId: target.profile.uid,
+      userName: nameOf(target),
       accessType,
       ...(pendingStatus ? { status: pendingStatus } : {}),
     })
-    if (profile!.isSupervisor) setGymOpen(displayName).catch(() => {})
+    if (target.profile.isSupervisor) setGymOpen(nameOf(target)).catch(() => {})
     return now
   }
 
-  async function handleSignIn() {
+  /**
+   * Sign `target` in, taking whichever route their access allows.
+   *
+   * Reloads the viewer's own profile only when the target *is* the viewer —
+   * signing someone else in must not overwrite what is on screen.
+   */
+  async function processSignIn(target: SignInTarget) {
     if (!profile || !user) return
 
-    if (hasSignedInToday(profile.lastSignInAt)) {
-      setToast('You have already signed in today. Sign-ins reset at midnight.')
+    if (hasSignedInToday(target.profile.lastSignInAt)) {
+      setToast(
+        target.isSelf
+          ? 'You have already signed in today. Sign-ins reset at midnight.'
+          : `${nameOf(target)} has already signed in today. Sign-ins reset at midnight.`,
+      )
       return
     }
 
-    if (profile.membershipStatus === 'active' || profile.membershipStatus === 'pending') {
+    const { membershipStatus, punchPassRemaining } = target.profile
+
+    if (membershipStatus === 'active' || membershipStatus === 'pending') {
       setSigningIn(true)
       try {
-        const label = passLabel(profile.membershipStart, profile.membershipExpiry)
-        const now = await logAndMarkSignedIn(label)
-        await updateProfile(profile.uid, { lastSignInAt: now }, user.email ?? 'unknown')
-        await reloadProfile()
-        setToast('✓ Signed in! Session logged.')
+        const label = passLabel(target.profile.membershipStart, target.profile.membershipExpiry)
+        const now = await logAndMarkSignedIn(target, label)
+        await updateProfile(target.profile.uid, { lastSignInAt: now }, user.email ?? 'unknown')
+        if (target.isSelf) await reloadProfile()
+        setToast(signedInMessage(target, 'Session logged.'))
       } catch (e) {
         setToast(e instanceof Error ? e.message : 'Something went wrong.')
       } finally {
@@ -97,28 +137,96 @@ export function HomePage() {
       return
     }
 
-    if (profile.punchPassRemaining > 0) {
-      setShowPunchChoice(true)
+    if (punchPassRemaining > 0) {
+      setPunchChoice(target)
       return
     }
 
+    setAccessTarget(target)
     setShowAccess(true)
   }
 
-  async function signInWithPunchPass() {
+  /**
+   * The blue button: always signs *you* in, whoever you are.
+   *
+   * Signing another climber in used to be an interstitial on this button —
+   * supervisors were asked "you or someone else?" every single time, taxing the
+   * common case to reach the rare one. It has its own button now.
+   */
+  function handleSignIn() {
     if (!profile || !user) return
-    setShowPunchChoice(false)
+    void processSignIn({ profile, isSelf: true })
+  }
+
+  async function signInWithPunchPass(target: SignInTarget) {
+    if (!profile || !user) return
+    setPunchChoice(null)
     setSigningIn(true)
     try {
-      const remaining = profile.punchPassRemaining - 1
-      const now = await logAndMarkSignedIn(`Punch Pass (${remaining} left)`)
+      const remaining = target.profile.punchPassRemaining - 1
+      const now = await logAndMarkSignedIn(target, `Punch Pass (${remaining} left)`)
       await updateProfile(
-        profile.uid,
+        target.profile.uid,
         { punchPassRemaining: remaining, lastSignInAt: now },
         user.email ?? 'unknown',
       )
-      await reloadProfile()
-      setToast(`✓ Signed in! ${remaining} punch${remaining !== 1 ? 'es' : ''} remaining.`)
+      if (target.isSelf) await reloadProfile()
+      setToast(
+        signedInMessage(target, `${remaining} punch${remaining !== 1 ? 'es' : ''} remaining.`),
+      )
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'Something went wrong.')
+    } finally {
+      setSigningIn(false)
+    }
+  }
+
+  /**
+   * Sign `target` in on a punch from `donor`'s account.
+   *
+   * Two profile writes, so it is supervisor-only in practice as well as by
+   * intent: firestore.rules lets you update `users/{uid}` for yourself or as a
+   * supervisor, and this touches two different people.
+   */
+  async function signInWithDonatedPunch(target: SignInTarget, donor: UserProfile) {
+    if (!profile || !user) return
+    const donorName = donor.preferredName || donor.name
+    if (donor.punchPassRemaining < 1) {
+      setToast(`${donorName} has no punch passes remaining.`)
+      return
+    }
+    if (hasSignedInToday(target.profile.lastSignInAt)) {
+      setToast(
+        target.isSelf
+          ? 'You have already signed in today. Sign-ins reset at midnight.'
+          : `${nameOf(target)} has already signed in today. Sign-ins reset at midnight.`,
+      )
+      return
+    }
+
+    setSigningIn(true)
+    try {
+      const now = new Date().toISOString()
+      const donorLeft = donor.punchPassRemaining - 1
+      const pendingStatus = privileged ? undefined : ('pending' as const)
+
+      await updateProfile(donor.uid, { punchPassRemaining: donorLeft }, user.email ?? 'unknown')
+      await updateProfile(target.profile.uid, { lastSignInAt: now }, user.email ?? 'unknown')
+      await addLogEntry({
+        timestamp: now,
+        userId: target.profile.uid,
+        userName: nameOf(target),
+        accessType: `Punch Pass (from ${donorName})`,
+        notes: `Punch donated by ${donorName} — ${donorLeft} punch${donorLeft !== 1 ? 'es' : ''} remaining on their account`,
+        ...(pendingStatus ? { status: pendingStatus } : {}),
+      })
+
+      // Reload if either side of the donation is the viewer: the recipient's
+      // lastSignInAt or the donor's punch count is now on screen and stale.
+      if (target.isSelf || donor.uid === profile.uid) await reloadProfile()
+      setToast(
+        `✓ ${target.isSelf ? 'Signed in' : `${nameOf(target)} signed in`} using ${donorName}'s punch — ${donorLeft} left on their account.`,
+      )
     } catch (e) {
       setToast(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
@@ -128,7 +236,9 @@ export function HomePage() {
 
   async function handleAccessSelected(option: AccessOption, voucherCode?: string) {
     if (!profile || !user) return
+    const target = accessTarget ?? { profile, isSelf: true }
     setShowAccess(false)
+    setAccessTarget(null)
     setSigningIn(true)
 
     try {
@@ -166,27 +276,27 @@ export function HomePage() {
       }
 
       profileUpdates.lastSignInAt = now.toISOString()
-      await updateProfile(profile.uid, profileUpdates, user.email ?? 'unknown')
-      await reloadProfile()
+      await updateProfile(target.profile.uid, profileUpdates, user.email ?? 'unknown')
+      if (target.isSelf) await reloadProfile()
 
       // Purchase record (Access Pass History)
       await addLogEntry({
         timestamp: now.toISOString(),
-        userId: profile.uid,
-        userName: displayName,
+        userId: target.profile.uid,
+        userName: nameOf(target),
         accessType,
         notes,
       })
       // Sign-in record (Sign-In History) — every purchase also signs the member in
       await addLogEntry({
         timestamp: new Date(now.getTime() + 1).toISOString(),
-        userId: profile.uid,
-        userName: displayName,
+        userId: target.profile.uid,
+        userName: nameOf(target),
         accessType,
         ...(privileged ? {} : { status: 'pending' as const }),
       })
 
-      setToast('✓ Signed in! Session logged.')
+      setToast(signedInMessage(target, 'Session logged.'))
     } catch (e) {
       setToast(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
@@ -211,9 +321,12 @@ export function HomePage() {
 
       {/* One stack, tight: the actions belong together, so they share a size,
           a weight and a 8px gap rather than floating apart at the page's
-          6-unit rhythm. Sign In and Sign-In Book are the pair a member uses
-          every visit, so they sit adjacent and in the same blue; Add New
-          Member is a supervisor tool and keeps its own colour underneath. */}
+          6-unit rhythm.
+
+          Colour splits it by audience rather than by kind: blue is what every
+          member uses on every visit, orange is the supervisor's desk work. So
+          a member sees two blue buttons and nothing else, and a supervisor
+          reads the orange pair as a group without having to think about it. */}
       <div className="space-y-2">
         <HomeAction
           as="button"
@@ -246,6 +359,17 @@ export function HomePage() {
         {privileged && (
           <HomeAction
             as="button"
+            onClick={() => setPickingMember(true)}
+            color={KBC.orange}
+            textColor="#fff"
+          >
+            Sign In Another Climber
+          </HomeAction>
+        )}
+
+        {privileged && (
+          <HomeAction
+            as="button"
             onClick={() => setShowNewMember(true)}
             color={KBC.orange}
             textColor="#fff"
@@ -260,7 +384,20 @@ export function HomePage() {
       {showAccess && (
         <AccessModal
           onComplete={(opt, code) => void handleAccessSelected(opt, code)}
-          onClose={() => setShowAccess(false)}
+          onUseOtherPunch={
+            privileged
+              ? () => {
+                  const target = accessTarget ?? { profile, isSelf: true }
+                  setShowAccess(false)
+                  setAccessTarget(null)
+                  setDonorFor(target)
+                }
+              : undefined
+          }
+          onClose={() => {
+            setShowAccess(false)
+            setAccessTarget(null)
+          }}
         />
       )}
 
@@ -278,17 +415,51 @@ export function HomePage() {
         />
       )}
 
-      {showPunchChoice && (
-        <Modal onClose={() => setShowPunchChoice(false)}>
+      {donorFor && (
+        <MemberPickerModal
+          title="Select Punch Donor"
+          // Not the person being signed in — spending your own punch on
+          // yourself is the ordinary punch flow, not a donation.
+          excludeUid={donorFor.profile.uid}
+          filter={(m) => m.punchPassRemaining > 0}
+          emptyLabel="No other member has a punch left to give."
+          badgeFor={(m) => ({
+            label: `${m.punchPassRemaining} punch${m.punchPassRemaining !== 1 ? 'es' : ''}`,
+            color: KBC.cyan,
+          })}
+          onSelect={(donor) => {
+            const target = donorFor
+            setDonorFor(null)
+            void signInWithDonatedPunch(target, donor)
+          }}
+          onClose={() => setDonorFor(null)}
+        />
+      )}
+
+      {pickingMember && (
+        <MemberPickerModal
+          title="Sign In Another Climber"
+          excludeUid={profile.uid}
+          onSelect={(member) => {
+            setPickingMember(false)
+            void processSignIn({ profile: member, isSelf: false })
+          }}
+          onClose={() => setPickingMember(false)}
+        />
+      )}
+
+      {punchChoice && (
+        <Modal onClose={() => setPunchChoice(null)}>
           <h2 className="text-base font-bold text-black">Sign In</h2>
           <p className="mt-1 text-sm text-neutral-600">
-            You have {profile.punchPassRemaining} punch
-            {profile.punchPassRemaining !== 1 ? 'es' : ''} remaining.
+            {punchChoice.isSelf ? 'You have' : `${nameOf(punchChoice)} has`}{' '}
+            {punchChoice.profile.punchPassRemaining} punch
+            {punchChoice.profile.punchPassRemaining !== 1 ? 'es' : ''} remaining.
           </p>
           <div className="mt-4 space-y-2">
             <button
               type="button"
-              onClick={() => void signInWithPunchPass()}
+              onClick={() => void signInWithPunchPass(punchChoice)}
               className="w-full rounded-xl p-3 font-bold text-white"
               style={{ backgroundColor: KBC.cyan }}
             >
@@ -297,7 +468,8 @@ export function HomePage() {
             <button
               type="button"
               onClick={() => {
-                setShowPunchChoice(false)
+                setAccessTarget(punchChoice)
+                setPunchChoice(null)
                 setShowAccess(true)
               }}
               className="w-full rounded-xl border p-3 font-bold"
@@ -307,7 +479,7 @@ export function HomePage() {
             </button>
             <button
               type="button"
-              onClick={() => setShowPunchChoice(false)}
+              onClick={() => setPunchChoice(null)}
               className="w-full rounded-xl p-3 font-semibold text-neutral-500"
             >
               Cancel

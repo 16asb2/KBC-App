@@ -28,7 +28,10 @@ export function ScheduleProvider({ children }: { children: ReactNode }) {
     setLoading(true)
     setError(null)
     try {
-      const data = await listUpcomingEvents(60, 14)
+      // 30 days back, not 14: the Calendar tab lists past events as well as
+      // coming ones, and a month is the span someone actually looks back over
+      // ("who supervised last month?", "when was that comp?").
+      const data = await listUpcomingEvents(60, 30)
       setFetched(data)
       // Retire a tombstone once Google stops returning the event: from then on
       // its absence is the source of truth, and the set cannot grow unbounded.

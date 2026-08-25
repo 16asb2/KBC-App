@@ -23,7 +23,10 @@ const SOCIALS: Social[] = [
   },
   {
     name: 'Facebook',
-    href: 'https://www.facebook.com/kingstonboulderingcoop',
+    // Trailing slash: this is the canonical form Facebook serves, and going
+    // straight to it avoids a redirect hop — which is one of the places the
+    // hand-off to the Facebook app can fall over.
+    href: 'https://www.facebook.com/kingstonboulderingcoop/',
     color: '#1877F2',
     path: 'M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z',
   },
@@ -67,6 +70,24 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
+/**
+ * Open a social link out of the app rather than inside it.
+ *
+ * An installed PWA in standalone display mode ignores `target="_blank"` on
+ * iOS — the tap does nothing at all. Instagram and Discord get away with it
+ * because their apps claim those URLs as universal links, so the OS intercepts
+ * before the browser has to care; Facebook does not reliably claim `/vanity`
+ * Page URLs, which is why that one is the link that appears broken.
+ *
+ * `window.open` does escape a standalone PWA, so it is tried first. If it is
+ * blocked and returns null, the click is left alone and the anchor's own
+ * `target="_blank"` takes over — which is what works everywhere else.
+ */
+function openExternally(e: React.MouseEvent<HTMLAnchorElement>) {
+  const opened = window.open(e.currentTarget.href, '_blank', 'noopener,noreferrer')
+  if (opened) e.preventDefault()
+}
+
 export function ConnectWithKBC() {
   const [copied, setCopied] = useState<'idle' | 'done' | 'failed'>('idle')
 
@@ -95,6 +116,7 @@ export function ConnectWithKBC() {
             // noreferrer as well as noopener: without it the opened tab gets a
             // Referer naming this app, and on older browsers window.opener too.
             rel="noopener noreferrer"
+            onClick={openExternally}
             aria-label={`KBC on ${s.name}`}
             title={`KBC on ${s.name}`}
             className="flex h-13 flex-1 items-center justify-center rounded-xl transition-opacity hover:opacity-85"

@@ -383,6 +383,33 @@ export function BouldersPage() {
         <BoulderFilterModal filters={filters} onChange={setFilters} onClose={() => setShowFilter(false)} setterOptions={setterOptions} />
       )}
 
+      {/* Order matters: these all render at the same z-index, so the last
+          one in the DOM paints on top. The overview goes first because the
+          edit and log modals are opened *from* it — with the overview last,
+          tapping Edit put the form behind it and nothing appeared to happen
+          until the overview was dismissed. Leaving the overview mounted
+          underneath also means closing the form returns you to it. */}
+      {viewBoulder && (
+        <BoulderOverviewModal
+          boulder={viewBoulder}
+          logs={logsByProblem[viewBoulder.internalId] ?? []}
+          uid={userUid}
+          userName={profile?.preferredName || user?.displayName || user?.email || 'Unknown'}
+          canEdit={privileged || viewBoulder.createdByUid === userUid}
+          canRemove={adminUser}
+          onEdit={() => setFormMode({ type: 'edit', boulder: viewBoulder })}
+          onClose={() => setViewBoulder(null)}
+          likeCount={viewBoulder.likes.length}
+          isLiked={viewBoulder.likes.includes(userUid)}
+          onToggleLike={() => handleToggleLike(viewBoulder)}
+          isProject={myProjects.has(viewBoulder.internalId)}
+          onToggleProject={() => void handleToggleProject(viewBoulder)}
+          onLog={() => setLogBoulder(viewBoulder)}
+          onVoteGrade={(g) => void handleVoteGrade(viewBoulder, g)}
+          onVoteQuality={(s) => void handleVoteQuality(viewBoulder, s)}
+        />
+      )}
+
       {formMode && (
         <BoulderFormModal
           mode={formMode}
@@ -417,26 +444,6 @@ export function BouldersPage() {
         />
       )}
 
-      {viewBoulder && (
-        <BoulderOverviewModal
-          boulder={viewBoulder}
-          logs={logsByProblem[viewBoulder.internalId] ?? []}
-          uid={userUid}
-          userName={profile?.preferredName || user?.displayName || user?.email || 'Unknown'}
-          canEdit={privileged || viewBoulder.createdByUid === userUid}
-          canRemove={adminUser}
-          onEdit={() => setFormMode({ type: 'edit', boulder: viewBoulder })}
-          onClose={() => setViewBoulder(null)}
-          likeCount={viewBoulder.likes.length}
-          isLiked={viewBoulder.likes.includes(userUid)}
-          onToggleLike={() => handleToggleLike(viewBoulder)}
-          isProject={myProjects.has(viewBoulder.internalId)}
-          onToggleProject={() => void handleToggleProject(viewBoulder)}
-          onLog={() => setLogBoulder(viewBoulder)}
-          onVoteGrade={(g) => void handleVoteGrade(viewBoulder, g)}
-          onVoteQuality={(s) => void handleVoteQuality(viewBoulder, s)}
-        />
-      )}
     </div>
   )
 }

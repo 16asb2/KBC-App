@@ -23,7 +23,10 @@ export function NewMemberModal({
   const [ecPhone, setEcPhone] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [createdName, setCreatedName] = useState<string | null>(null)
+  // The member, once created. Holding it here rather than calling onCreated
+  // straight away is what lets the confirmation actually be seen: the parent
+  // navigates to the waiver on that callback, which unmounts this modal.
+  const [created, setCreated] = useState<UserProfile | null>(null)
 
   async function handleCreate() {
     setError(null)
@@ -50,10 +53,7 @@ export function NewMemberModal({
       if (mp && mp !== '1') extras.phone = mp.startsWith('+') ? mp : `+${mp}`
       if (Object.keys(extras).length) await updateProfile(newMember.uid, extras, createdByEmail)
 
-      const displayName = pn || ln
-      setCreatedName(displayName)
-      onCreated({ ...newMember, ...extras })
-      setTimeout(onClose, 2000)
+      setCreated({ ...newMember, ...extras })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
@@ -65,16 +65,32 @@ export function NewMemberModal({
     <Modal onClose={onClose}>
       <div className="flex items-center justify-between pb-3">
         <h2 className="text-base font-bold text-black">Add New Member</h2>
-        <button type="button" onClick={onClose} className="text-sm font-semibold" style={{ color: KBC.pink }}>
-          Cancel
-        </button>
+        {/* No way out but forward once the member exists — the liability waiver
+            is the next step and the old flow jumped straight to it. */}
+        {!created && (
+          <button type="button" onClick={onClose} className="text-sm font-semibold" style={{ color: KBC.pink }}>
+            Cancel
+          </button>
+        )}
       </div>
 
-      {createdName ? (
-        <div className="flex flex-col items-center gap-4 py-10 text-center">
+      {created ? (
+        <div className="flex flex-col items-center gap-3 py-8 text-center">
           <span className="text-5xl">✅</span>
-          <p className="text-lg font-extrabold text-black">{createdName} added!</p>
-          <p className="text-sm text-neutral-500">Member profile created successfully.</p>
+          <p className="text-lg font-extrabold text-black">
+            {created.preferredName || created.legalName || created.name} was successfully added
+          </p>
+          <p className="text-sm text-neutral-500">
+            Their member profile is created. Next they need to sign the release of liability.
+          </p>
+          <button
+            type="button"
+            onClick={() => onCreated(created)}
+            className="mt-2 w-full rounded-xl p-3 font-bold text-white"
+            style={{ backgroundColor: KBC.green }}
+          >
+            Continue to waiver
+          </button>
         </div>
       ) : (
         <div className="space-y-3">

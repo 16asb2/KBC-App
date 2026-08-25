@@ -5,15 +5,20 @@ import { Modal } from './Modal'
 
 type ModalStep = 'choose' | 'confirm'
 
-// Ported from mobile@1cdfada/app/(tabs)/home.tsx's AccessModal. Self-service only for
-// now — the supervisor-only "use another member's punch" option isn't ported
-// (needs the member directory/other-climber flows, deferred like the rest of
-// supervisor-assisted sign-in).
+// Ported from mobile@1cdfada/app/(tabs)/home.tsx's AccessModal.
 export function AccessModal({
   onComplete,
+  onUseOtherPunch,
   onClose,
 }: {
   onComplete: (option: AccessOption, voucherCode?: string) => void
+  /**
+   * Spend a punch from a different member's account. Supply this only for
+   * supervisors and admins: it writes to somebody else's profile, which
+   * firestore.rules only lets them do — for a member the write would be
+   * rejected, so offering it would be offering a guaranteed failure.
+   */
+  onUseOtherPunch?: () => void
   onClose: () => void
 }) {
   const [step, setStep] = useState<ModalStep>('choose')
@@ -57,6 +62,22 @@ export function AccessModal({
                 <span className="font-bold text-black">{opt.price}</span>
               </button>
             ))}
+
+            {onUseOtherPunch && (
+              <button
+                type="button"
+                onClick={onUseOtherPunch}
+                className="flex w-full items-center justify-between py-3 text-left"
+              >
+                <span>
+                  <span className="block font-semibold text-black">Use Another Member&apos;s Punch</span>
+                  <span className="block text-xs text-neutral-500">
+                    Deduct a punch from a different member&apos;s account
+                  </span>
+                </span>
+                <span className="text-lg">🎟</span>
+              </button>
+            )}
           </div>
         </>
       )}
