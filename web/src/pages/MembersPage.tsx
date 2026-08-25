@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { MemberDetailModal } from '@/components/MemberDetailModal'
 import { MemberHistoryModal, type HistoryKind } from '@/components/MemberHistoryModal'
 import { ProfileEditModal } from '@/components/ProfileEditModal'
@@ -123,16 +122,6 @@ export function MembersPage() {
           Edit My Profile
         </button>
       </div>
-
-      {viewerIsAdmin && (
-        <Link
-          to="/admin-management"
-          className="block rounded-2xl border p-3.5 text-center text-sm font-bold"
-          style={{ borderColor: KBC.purple, color: KBC.purple }}
-        >
-          🔑 Manage Admins
-        </Link>
-      )}
 
       {/* Members list */}
       {canSeeAllMembers ? (

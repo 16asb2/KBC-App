@@ -324,14 +324,14 @@ export function HomePage() {
  * ever be set in one place. They read as a set, which they didn't when each
  * carried its own padding and font size.
  *
- * Black text, not white: KBC cyan is light enough that white on it is about
- * 2.5:1, under WCAG AA even for large text, while black clears 8:1. The join
- * and confirm buttons elsewhere in the app already pair cyan with black.
+ * White text throughout. That only works because KBC cyan is now the logo's
+ * blue rather than the lighter `#00b4d8` it used to be — white on the old
+ * value was 2.5:1 and failed WCAG AA outright, where on this one it is 4.6:1.
  */
 function HomeAction({
   children,
   color,
-  textColor = '#000',
+  textColor = '#fff',
   ...props
 }: {
   children: React.ReactNode

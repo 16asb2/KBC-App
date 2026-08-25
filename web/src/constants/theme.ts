@@ -3,7 +3,19 @@ export const KBC = {
   black: '#0a0a0a',
   darkGrey: '#1c1c1c',
   green: '#4db847',
-  cyan: '#00b4d8',
+  /**
+   * The blue from the logo — sampled straight out of `KBC_logo.svg`, where
+   * every blue pixel sits on hue 196° at full saturation and only the
+   * brightness varies (it is a traced bitmap, so it shades).
+   *
+   * It used to be `#00b4d8`, which is hue 190° and much lighter — close enough
+   * to look intentional, far enough to never quite match the mark it sits next
+   * to. The darker value also earns its keep on contrast: this token is used
+   * as text and border colour on white in a dozen places, where `#00b4d8` was
+   * 2.5:1 (failing WCAG AA outright) and this is 4.6:1. White text on it as a
+   * button background is the same 4.6:1.
+   */
+  cyan: '#007dab',
   purple: '#9b5de5',
   white: '#ffffff',
   orange: '#f97316',
