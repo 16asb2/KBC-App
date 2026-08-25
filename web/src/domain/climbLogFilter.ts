@@ -1,6 +1,7 @@
 import type { PersonalClimb } from '@/services/climblog'
+import { formatLongDateWithYear, formatRelativeDateTime, relativeDayLabel } from '@/utils/datetime'
 
-// Ported from mobile/app/(tabs)/climblog.tsx's filter/sort/grouping logic.
+// Ported from mobile@1cdfada/app/(tabs)/climblog.tsx's filter/sort/grouping logic.
 
 export type ClimbSort = 'newest' | 'oldest' | 'name-az' | 'name-za' | 'quality'
 export type ClimbFilter = {
@@ -9,7 +10,11 @@ export type ClimbFilter = {
   sort: ClimbSort
 }
 
-export const DEFAULT_CLIMB_FILTER: ClimbFilter = { type: 'all', projectsOnly: false, sort: 'newest' }
+export const DEFAULT_CLIMB_FILTER: ClimbFilter = {
+  type: 'all',
+  projectsOnly: false,
+  sort: 'newest',
+}
 
 export function climbFilterCount(f: ClimbFilter): number {
   return (f.type !== 'all' ? 1 : 0) + (f.projectsOnly ? 1 : 0)
@@ -17,7 +22,8 @@ export function climbFilterCount(f: ClimbFilter): number {
 
 export function filterAndSortClimbs(climbs: PersonalClimb[], filter: ClimbFilter): PersonalClimb[] {
   let list = [...climbs]
-  if (filter.type !== 'all') list = list.filter((c) => c.type === (filter.type === 'sent' ? 'ascent' : 'attempt'))
+  if (filter.type !== 'all')
+    list = list.filter((c) => c.type === (filter.type === 'sent' ? 'ascent' : 'attempt'))
   if (filter.projectsOnly) list = list.filter((c) => c.project)
   list.sort((a, b) => {
     switch (filter.sort) {
@@ -37,30 +43,16 @@ export function filterAndSortClimbs(climbs: PersonalClimb[], filter: ClimbFilter
 }
 
 export function formatTimestamp(iso: string): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  const now = new Date()
-  const isToday = d.toDateString() === now.toDateString()
-  const yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
-  const isYesterday = d.toDateString() === yesterday.toDateString()
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  if (isToday) return `Today ${time}`
-  if (isYesterday) return `Yesterday ${time}`
-  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} ${time}`
+  return formatRelativeDateTime(iso)
 }
 
 export function dateSectionLabel(iso: string): string {
-  const d = new Date(iso)
-  const now = new Date()
-  const yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
-  if (d.toDateString() === now.toDateString()) return 'Today'
-  if (d.toDateString() === yesterday.toDateString()) return 'Yesterday'
-  return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  return relativeDayLabel(iso, { past: true }) ?? formatLongDateWithYear(iso)
 }
 
-export type ClimbListItem = { type: 'header'; key: string; label: string } | { type: 'climb'; key: string; climb: PersonalClimb }
+export type ClimbListItem =
+  | { type: 'header'; key: string; label: string }
+  | { type: 'climb'; key: string; climb: PersonalClimb }
 
 /** Groups a (pre-sorted) climb list into date-section headers + rows — only when sorted by date. */
 export function groupClimbsByDate(displayed: PersonalClimb[], sort: ClimbSort): ClimbListItem[] {

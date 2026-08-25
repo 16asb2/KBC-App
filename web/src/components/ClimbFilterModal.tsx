@@ -3,7 +3,7 @@ import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
 import { DEFAULT_CLIMB_FILTER, type ClimbFilter } from '@/domain/climbLogFilter'
 
-// Ported from mobile/app/(tabs)/climblog.tsx's ClimbFilterModal.
+// Ported from mobile@1cdfada/app/(tabs)/climblog.tsx's ClimbFilterModal.
 export function ClimbFilterModal({ onClose, filter, onApply }: { onClose: () => void; filter: ClimbFilter; onApply: (f: ClimbFilter) => void }) {
   const [draft, setDraft] = useState<ClimbFilter>(filter)
 

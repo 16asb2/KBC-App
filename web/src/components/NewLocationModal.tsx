@@ -6,7 +6,7 @@ import { createLocation, gradeSystemsForDiscipline, type ClimbDiscipline, type C
 const DISCIPLINE_LABELS: Record<ClimbDiscipline, string> = { boulder: 'Boulder', 'top-rope': 'Top-Rope', lead: 'Lead', trad: 'Trad' }
 const GRADE_SYSTEM_LABELS: Record<GradeSystem, string> = { kbc: 'KBC', 'v-scale': 'V-Scale', font: 'Font', yosemite: 'Yosemite' }
 
-// Ported from mobile/app/(tabs)/climblog.tsx's NewLocationModal.
+// Ported from mobile@1cdfada/app/(tabs)/climblog.tsx's NewLocationModal.
 export function NewLocationModal({ onClose, onCreated, uid }: { onClose: () => void; onCreated: (loc: ClimbLocation) => void; uid: string }) {
   const [name, setName] = useState('')
   const [locType, setLocType] = useState<'indoor' | 'outdoor'>('outdoor')

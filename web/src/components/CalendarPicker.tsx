@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useSwipe } from '@/hooks/useSwipe'
 import { KBC } from '@/constants/theme'
-import { isEventOnDay, isRequestedEvent, isSameDay, isSupervisorEvent } from '@/domain/calendarEvent'
+import { isEventOnDay, isRequestedEvent, isSupervisorEvent } from '@/domain/calendarEvent'
 import type { CalendarEvent } from '@/services/calendar'
+import { isSameDay } from '@/utils/datetime'
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTH_NAMES = [
@@ -19,7 +20,7 @@ function buildCalendarDays(year: number, month: number): (Date | null)[] {
   return days
 }
 
-// Ported from mobile/components/calendar-picker.tsx.
+// Ported from mobile@1cdfada/components/calendar-picker.tsx.
 export function CalendarPicker({
   selectedDate,
   allEvents,

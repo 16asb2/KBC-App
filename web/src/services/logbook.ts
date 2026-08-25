@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 
-// Same `logs/{id}` and `gymStatus/current` documents mobile/services/logbook.ts
+// Same `logs/{id}` and `gymStatus/current` documents mobile@1cdfada/services/logbook.ts
 // reads and writes — see web/src/services/profiles.ts for the shared-schema note.
 
 export type LogEntry = {
@@ -65,7 +65,7 @@ export async function addLogEntry(entry: Omit<LogEntry, 'id'>): Promise<void> {
 }
 
 // ─── Reading the sign-in book ────────────────────────────────────────────────
-// Ported from mobile/services/logbook.ts. mobile sorted client-side and left
+// Ported from mobile@1cdfada/services/logbook.ts. mobile sorted client-side and left
 // orderBy off deliberately, because its hand-rolled REST client could need an
 // explicit descending index for a range filter plus orderBy on the same field.
 // That constraint is gone with the real SDK, and dropping orderBy was never
@@ -179,8 +179,8 @@ export async function deleteLogEntry(id: string): Promise<void> {
 // NOTE: unused for display, matching mobile exactly. mobile/'s Home screen
 // derives its displayed gym-status banner from Calendar events instead (see
 // domain/calendarEvent.ts's getGymStatusFromEvents, ported from
-// mobile/app/(tabs)/home.tsx's own local getGymStatus(events)) — this
-// Firestore-backed version is what mobile/services/logbook.ts exports but
+// mobile@1cdfada/app/(tabs)/home.tsx's own local getGymStatus(events)) — this
+// Firestore-backed version is what mobile@1cdfada/services/logbook.ts exports but
 // nothing there actually calls for display either. Kept for parity with
 // mobile's public API; setGymOpen() below is still very much live.
 

@@ -6,17 +6,13 @@ import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { updateProfile } from '@/services/profiles'
 import type { WaiverRecord } from '@/types/member'
+import { formatLongDateWithYear, formatTime } from '@/utils/datetime'
 
 function formatSignedDate(iso: string) {
-  const d = new Date(iso)
-  return (
-    d.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) +
-    ' at ' +
-    d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  )
+  return `${formatLongDateWithYear(iso)} at ${formatTime(iso)}`
 }
 
-// Ported from mobile/app/waiver/[type].tsx. Not yet ported: the Google Doc copy
+// Ported from mobile@1cdfada/app/waiver/[type].tsx. Not yet ported: the Google Doc copy
 // of the signed waiver (services/waiver-doc.ts — needs a Drive-scoped OAuth
 // token we don't request yet, and mobile treats it as non-fatal/best-effort
 // already).

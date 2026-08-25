@@ -2,11 +2,16 @@
 
 **The** KBC member app — an installable PWA, and the only client. See [../WEB-MIGRATION-PLAN.md](../WEB-MIGRATION-PLAN.md) for how this app came to be, and [../CLAUDE.md](../CLAUDE.md) for the shared backend it talks to.
 
-> **About the `// Ported from mobile/...` comments throughout this source:**
-> they're accurate provenance, but `mobile/` no longer exists — it was an
-> unreleased Expo app, deleted once this app covered the ground that mattered.
-> To read any file it names: `git show 1cdfada:mobile/<path>`. Nothing there is
-> a live constraint; where this app deliberately diverged, that's noted inline.
+> **About the `// Ported from mobile@1cdfada/...` comments throughout this
+> source:** they're accurate provenance, but `mobile/` no longer exists — it was
+> an unreleased Expo app, deleted once this app covered the ground that
+> mattered. The `@1cdfada` is the last commit that still contained it, and it
+> reads as a command: `mobile@1cdfada/components/timeline-view.tsx` is
+> `git show 1cdfada:mobile/components/timeline-view.tsx`. A bare `mobile/` with
+> no path after it refers to the old app in general, not a file.
+>
+> Nothing there is a live constraint; where this app deliberately diverged,
+> that's noted inline.
 
 ## Status
 

@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
+import { KBC } from '@/constants/theme'
 
-// Ported from mobile/components/badge-icon.tsx. Each hold/technique/mood
+// Ported from mobile@1cdfada/components/badge-icon.tsx. Each hold/technique/mood
 // "icon" is hand-drawn from plain boxes (rectangles, circles via
 // border-radius, triangles via transparent-border tricks) — same technique
 // translates directly from RN View+style to div+CSSProperties. Box-shadow
@@ -558,7 +559,7 @@ export function BadgeIcon({
   size?: 'xs' | 'sm' | 'md'
   compact?: boolean
 }) {
-  const color = BADGE_COLOR[label] ?? '#9b5de5'
+  const color = BADGE_COLOR[label] ?? KBC.purple
   const dim = size === 'xs' ? 24 : size === 'sm' ? 36 : 44
   const iconSz = size === 'xs' ? 10 : size === 'sm' ? 15 : 19
 

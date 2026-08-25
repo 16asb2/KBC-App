@@ -1,9 +1,6 @@
 import { KBC } from '@/constants/theme'
 import type { CalendarEvent } from '@/services/calendar'
-
-export function isSameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
-}
+import { isSameDay } from '@/utils/datetime'
 
 // ─── Classification ──────────────────────────────────────────────────────────
 //
@@ -124,7 +121,7 @@ export function localDayStart(e: CalendarEvent): Date {
 }
 
 // ─── Timeline layout ─────────────────────────────────────────────────────────
-// Ported from mobile/components/timeline-view.tsx.
+// Ported from mobile@1cdfada/components/timeline-view.tsx.
 
 export const TIMELINE_START_HOUR = 6
 export const TIMELINE_END_HOUR = 24
@@ -263,11 +260,12 @@ function clusterByOverlap(slots: Slot[]): Slot[][] {
   return clusters
 }
 
-export type GymStatus = { open: true; until: Date; supervisorName?: string } | { open: false; next: Date | null }
+export type GymStatus =
+  { open: true; until: Date; supervisorName?: string } | { open: false; next: Date | null }
 
 /**
  * Derives the gym open/closed banner from supervisor-tagged calendar events —
- * ported from mobile/app/(tabs)/home.tsx's local getGymStatus(events). This is
+ * ported from mobile@1cdfada/app/(tabs)/home.tsx's local getGymStatus(events). This is
  * the display mobile actually uses (as opposed to the Firestore gymStatus/current
  * doc, which mobile writes but never reads back for display — see
  * services/logbook.ts's getGymStatus() for that one).

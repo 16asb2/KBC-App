@@ -20,7 +20,7 @@ import {
 
 export type BoulderFormMode = { type: 'add'; seasonId: string; nextNumber: number } | { type: 'edit'; boulder: Boulder }
 
-// Ported from mobile/app/(tabs)/boulders.tsx's BoulderFormModal. Location
+// Ported from mobile@1cdfada/app/(tabs)/boulders.tsx's BoulderFormModal. Location
 // uses the same plain checkbox list as BoulderFilterModal instead of
 // mobile's visual GymMap. Photo picker uses a file input + canvas resize
 // (utils/imageResize.ts) instead of expo-image-picker/expo-image-manipulator

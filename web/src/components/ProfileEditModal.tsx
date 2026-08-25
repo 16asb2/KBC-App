@@ -3,7 +3,7 @@ import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
 import type { EmergencyContact, UserProfile } from '@/types/member'
 
-// Ported from mobile/components/profile-edit-modal.tsx.
+// Ported from mobile@1cdfada/components/profile-edit-modal.tsx.
 //
 // Keep JSON.stringify on emergencyContact and additionalEmails. They are stored
 // as JSON *strings*, not native Firestore maps — admin-web/ parses them that way

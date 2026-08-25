@@ -11,11 +11,11 @@ import {
   eventStartMs,
   EVENT_KIND_LABEL,
   isAllDayEvent,
-  isSameDay,
   localDayStart,
 } from '@/domain/calendarEvent'
 import { useCalendarUser } from '@/hooks/useCalendarUser'
 import type { CalendarEvent } from '@/services/calendar'
+import { formatDayWithRelative, formatTime, isSameDay, startOfDay } from '@/utils/datetime'
 
 function groupEventsByDate(events: CalendarEvent[]): { date: Date; events: CalendarEvent[] }[] {
   const map = new Map<string, { date: Date; events: CalendarEvent[] }>()
@@ -29,25 +29,10 @@ function groupEventsByDate(events: CalendarEvent[]): { date: Date; events: Calen
 }
 
 function formatGroupHeader(date: Date): string {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const tomorrow = new Date(today)
-  tomorrow.setDate(today.getDate() + 1)
-  const dateStr = date.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
-  if (date.getTime() === today.getTime()) return `Today · ${dateStr}`
-  if (date.getTime() === tomorrow.getTime()) return `Tomorrow · ${dateStr}`
-  return dateStr
+  return formatDayWithRelative(date, { future: true })
 }
 
-function formatTime(dt: string): string {
-  const d = new Date(dt)
-  const h = d.getHours()
-  const min = d.getMinutes().toString().padStart(2, '0')
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  return `${h % 12 || 12}:${min} ${ampm}`
-}
-
-// Ported from mobile/app/(tabs)/calendar.tsx, plus the two interactions it
+// Ported from mobile@1cdfada/app/(tabs)/calendar.tsx, plus the two interactions it
 // never had: rows open the event, and the month grid drives the list. Tapping a
 // day rolls Upcoming Events to it; tapping the same day again hands off to the
 // Schedule tab, which is already showing that day because the first tap set it.
@@ -69,8 +54,7 @@ export function CalendarPage() {
   const stickyHeaderRef = useRef<HTMLDivElement>(null)
   const groupRefs = useRef(new Map<string, HTMLDivElement>())
 
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  const today = startOfDay()
 
   const futureEvents = allEvents
     .filter((e) => eventStartMs(e) > 0 && localDayStart(e).getTime() >= today.getTime())
@@ -82,8 +66,7 @@ export function CalendarPage() {
   function scrollListToDay(day: Date) {
     const container = listRef.current
     if (!container) return
-    const target = new Date(day)
-    target.setHours(0, 0, 0, 0)
+    const target = startOfDay(day)
     const group = groups.find((g) => g.date.getTime() >= target.getTime())
     const el = group ? groupRefs.current.get(group.date.toDateString()) : undefined
     if (!el) {
@@ -121,12 +104,19 @@ export function CalendarPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="shrink-0">
-        <CalendarPicker selectedDate={selectedDate} allEvents={allEvents} onDayPress={handleDayPress} />
+        <CalendarPicker
+          selectedDate={selectedDate}
+          allEvents={allEvents}
+          onDayPress={handleDayPress}
+        />
       </div>
 
       {/* The list scrolls independently of the month grid above it, so rolling
           to a day never pushes the grid off screen. */}
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto border-t border-neutral-100 px-3.5">
+      <div
+        ref={listRef}
+        className="min-h-0 flex-1 overflow-y-auto border-t border-neutral-100 px-3.5"
+      >
         {/* `relative` is load-bearing: it makes each day group's offsetTop
             measure from here, which is what scrollListToDay scrolls to. */}
         <div className="relative pb-10">
@@ -171,9 +161,14 @@ export function CalendarPage() {
                         className="mb-1.5 flex w-full items-center gap-2.5 rounded-[10px] border-l-4 bg-white p-3 text-left shadow-sm transition-colors hover:bg-neutral-50"
                         style={{ borderLeftColor: color }}
                       >
-                        <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                        <span
+                          className="size-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: color }}
+                        />
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-[15px] font-bold text-neutral-900">{event.summary}</p>
+                          <p className="truncate text-[15px] font-bold text-neutral-900">
+                            {event.summary}
+                          </p>
                           <p className="text-xs text-neutral-500">
                             {timeLabel} · {EVENT_KIND_LABEL[eventKind(event)]}
                           </p>

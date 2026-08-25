@@ -13,7 +13,7 @@ function toDateInputValue(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-// Ported from mobile/app/(tabs)/climblog.tsx's LogClimbModal. Date uses a
+// Ported from mobile@1cdfada/app/(tabs)/climblog.tsx's LogClimbModal. Date uses a
 // native <input type="date"> instead of mobile's custom DatePickerModal.
 export function LogClimbModal({
   onClose,

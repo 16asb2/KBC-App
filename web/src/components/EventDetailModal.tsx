@@ -1,10 +1,22 @@
 import { useState } from 'react'
 import { Modal } from '@/components/Modal'
-import { KBC } from '@/constants/theme'
+import { KBC, tint } from '@/constants/theme'
 import { eventColor, eventKind, EVENT_KIND_LABEL, isAllDayEvent } from '@/domain/calendarEvent'
-import { canDeleteEvent, canEditEvent, canJoinEvent, type CalendarActor } from '@/domain/calendarPermissions'
+import {
+  canDeleteEvent,
+  canEditEvent,
+  canJoinEvent,
+  type CalendarActor,
+} from '@/domain/calendarPermissions'
 import { hasSupervisor, participantsFor } from '@/domain/calendarSession'
-import { deleteEvent, joinSession, leaveSession, type CalendarEvent, type CalendarUser } from '@/services/calendar'
+import {
+  deleteEvent,
+  joinSession,
+  leaveSession,
+  type CalendarEvent,
+  type CalendarUser,
+} from '@/services/calendar'
+import { formatLongDate, formatTime } from '@/utils/datetime'
 
 // Tapping an event on the Schedule — or a row in the Calendar tab's Upcoming
 // Events list — opens this. Everyone can open it and read what is on: what a
@@ -13,17 +25,15 @@ import { deleteEvent, joinSession, leaveSession, type CalendarEvent, type Calend
 
 function formatRange(e: CalendarEvent): string {
   if (isAllDayEvent(e)) return 'All day'
-  const opts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' }
-  const s = e.start.dateTime ? new Date(e.start.dateTime).toLocaleTimeString([], opts) : '?'
-  const t = e.end.dateTime ? new Date(e.end.dateTime).toLocaleTimeString([], opts) : '?'
+  const s = e.start.dateTime ? formatTime(e.start.dateTime) : '?'
+  const t = e.end.dateTime ? formatTime(e.end.dateTime) : '?'
   return `${s} – ${t}`
 }
 
 function formatDay(e: CalendarEvent): string {
   const iso = e.start.dateTime ?? e.start.date
   if (!iso) return ''
-  const d = e.start.dateTime ? new Date(iso) : new Date(`${iso}T00:00`)
-  return d.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
+  return formatLongDate(e.start.dateTime ? new Date(iso) : new Date(`${iso}T00:00`))
 }
 
 export function EventDetailModal({
@@ -84,11 +94,13 @@ export function EventDetailModal({
     <Modal onClose={onClose}>
       <span
         className="inline-block rounded-full px-2.5 py-1 text-[11px] font-extrabold tracking-wide uppercase"
-        style={{ backgroundColor: eventColor(event) + '22', color: eventColor(event) }}
+        style={{ backgroundColor: tint(eventColor(event)), color: eventColor(event) }}
       >
         {EVENT_KIND_LABEL[kind]}
       </span>
-      <h2 className="mt-2 text-lg font-black text-neutral-900">{event.summary ?? 'Untitled event'}</h2>
+      <h2 className="mt-2 text-lg font-black text-neutral-900">
+        {event.summary ?? 'Untitled event'}
+      </h2>
       <p className="mt-0.5 text-sm text-neutral-500">
         {formatDay(event)} · {formatRange(event)}
       </p>
@@ -114,7 +126,7 @@ export function EventDetailModal({
                 style={
                   p.role === 'member'
                     ? { backgroundColor: '#eee', color: '#555' }
-                    : { backgroundColor: KBC.pink + '22', color: KBC.pink }
+                    : { backgroundColor: tint(KBC.pink), color: KBC.pink }
                 }
               >
                 {p.name}

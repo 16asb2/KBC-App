@@ -1,6 +1,6 @@
 import { avgQuality } from '@/services/boulders'
 
-// Ported from mobile/app/(tabs)/boulders.tsx's StarRating.
+// Ported from mobile@1cdfada/app/(tabs)/boulders.tsx's StarRating.
 export function StarRating({
   votes,
   userUid,

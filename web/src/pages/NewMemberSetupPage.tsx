@@ -6,7 +6,7 @@ import { useProfile } from '@/context/ProfileContext'
 import { createSelfRegisteredProfile } from '@/services/profiles'
 import type { EmergencyContact } from '@/types/member'
 
-// Ported from mobile/app/new-member-setup.tsx.
+// Ported from mobile@1cdfada/app/new-member-setup.tsx.
 export function NewMemberSetupPage() {
   const { user } = useAuth()
   const { reloadProfile } = useProfile()

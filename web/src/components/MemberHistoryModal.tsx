@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Modal } from '@/components/Modal'
-import { KBC } from '@/constants/theme'
+import { KBC, tint } from '@/constants/theme'
 import { accessKind, isPurchaseEntry } from '@/domain/signInBook'
 import { getUserLogs, type LogEntry } from '@/services/logbook'
+import { formatShortDate, formatTime } from '@/utils/datetime'
 
-// Ported from mobile/app/member-history/[uid].tsx. That was a route; here it is
+// Ported from mobile@1cdfada/app/member-history/[uid].tsx. That was a route; here it is
 // a modal opened from the member detail sheet, since the web app reaches member
 // records through MembersPage rather than a navigation stack.
 //
@@ -19,14 +20,6 @@ const ACCESS_COLORS: Record<ReturnType<typeof accessKind>, string> = {
 }
 
 export type HistoryKind = 'signins' | 'purchases'
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
 
 export function MemberHistoryModal({
   uid,
@@ -82,20 +75,20 @@ export function MemberHistoryModal({
               return (
                 <li key={e.id} className="flex items-start gap-3 py-2.5">
                   <div className="w-24 shrink-0">
-                    <p className="text-[13px] font-semibold text-neutral-700">{formatDate(e.timestamp)}</p>
+                    <p className="text-[13px] font-semibold text-neutral-700">{formatShortDate(e.timestamp)}</p>
                     <p className="text-[11px] text-neutral-400">{formatTime(e.timestamp)}</p>
                   </div>
                   <div className="min-w-0 flex-1">
                     <span
                       className="inline-block rounded-full px-2 py-0.5 text-[11px] font-bold"
-                      style={{ backgroundColor: color + '22', color }}
+                      style={{ backgroundColor: tint(color), color }}
                     >
                       {e.accessType}
                     </span>
                     {e.status === 'pending' && (
                       <span
                         className="ml-1.5 inline-block rounded-full px-2 py-0.5 text-[11px] font-bold"
-                        style={{ backgroundColor: KBC.orange + '22', color: KBC.orange }}
+                        style={{ backgroundColor: tint(KBC.orange), color: KBC.orange }}
                       >
                         Pending
                       </span>

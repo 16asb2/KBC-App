@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
+import { KBC } from '@/constants/theme'
 import {
   eventColor,
   eventKind,
   isAllDayEvent,
-  isSameDay,
   layoutEvents,
   minutesToY,
   TIMELINE_END_HOUR,
@@ -12,6 +12,7 @@ import {
   yToMinutes,
 } from '@/domain/calendarEvent'
 import type { CalendarEvent } from '@/services/calendar'
+import { formatTime, isSameDay } from '@/utils/datetime'
 
 const TOTAL_HOURS = TIMELINE_END_HOUR - TIMELINE_START_HOUR
 
@@ -33,9 +34,15 @@ type Props = {
   scrollToFirstEvent?: boolean
 }
 
-// Ported from mobile/components/timeline-view.tsx, including its onTimePress —
+// Ported from mobile@1cdfada/components/timeline-view.tsx, including its onTimePress —
 // tap an empty slot to open the create form already seeded with that time.
-export function TimelineView({ events, onEventPress, onTimePress, selectedDate, scrollToFirstEvent }: Props) {
+export function TimelineView({
+  events,
+  onEventPress,
+  onTimePress,
+  selectedDate,
+  scrollToFirstEvent,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const pressStart = useRef<{ x: number; y: number } | null>(null)
   const [now, setNow] = useState(new Date())
@@ -96,7 +103,10 @@ export function TimelineView({ events, onEventPress, onTimePress, selectedDate, 
     const bounds = e.currentTarget.getBoundingClientRect()
     const minutes = yToMinutes(e.clientY - bounds.top)
     const snapped = Math.round(minutes / SNAP_MINUTES) * SNAP_MINUTES
-    const clamped = Math.min(Math.max(snapped, TIMELINE_START_HOUR * 60), TIMELINE_END_HOUR * 60 - 60)
+    const clamped = Math.min(
+      Math.max(snapped, TIMELINE_START_HOUR * 60),
+      TIMELINE_END_HOUR * 60 - 60,
+    )
     const start = new Date(selectedDate)
     start.setHours(Math.floor(clamped / 60), clamped % 60, 0, 0)
     onTimePress(start)
@@ -123,12 +133,20 @@ export function TimelineView({ events, onEventPress, onTimePress, selectedDate, 
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto bg-[#f7f7f7]">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto"
+        style={{ backgroundColor: KBC.surface }}
+      >
         <div className="flex">
           {/* Time labels */}
-          <div className="w-[52px] shrink-0 bg-[#f7f7f7]">
+          <div className="w-[52px] shrink-0" style={{ backgroundColor: KBC.surface }}>
             {hours.map((h) => (
-              <div key={h} style={{ height: TIMELINE_HOUR_HEIGHT }} className="pt-1 pr-2 text-right">
+              <div
+                key={h}
+                style={{ height: TIMELINE_HOUR_HEIGHT }}
+                className="pt-1 pr-2 text-right"
+              >
                 <span className="text-[11px] font-medium text-neutral-400">
                   {h === 12 ? '12 PM' : h < 12 ? `${h} AM` : `${h - 12} PM`}
                 </span>
@@ -154,9 +172,12 @@ export function TimelineView({ events, onEventPress, onTimePress, selectedDate, 
             ))}
 
             {isToday && nowInRange && (
-              <div className="pointer-events-none absolute -left-1 right-0 z-20 flex items-center" style={{ top: nowY }}>
-                <div className="size-2.5 rounded-full bg-[#00e676]" />
-                <div className="h-0.5 flex-1 bg-[#00e676]" />
+              <div
+                className="pointer-events-none absolute -left-1 right-0 z-20 flex items-center"
+                style={{ top: nowY }}
+              >
+                <div className="size-2.5 rounded-full" style={{ backgroundColor: KBC.live }} />
+                <div className="h-0.5 flex-1" style={{ backgroundColor: KBC.live }} />
               </div>
             )}
 
@@ -189,9 +210,9 @@ export function TimelineView({ events, onEventPress, onTimePress, selectedDate, 
                     {event.summary}
                   </p>
                   <p className="mt-0.5 truncate text-[10px] text-white/85">
-                    {new Date(event.start.dateTime!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {formatTime(event.start.dateTime!)}
                     {' – '}
-                    {new Date(event.end.dateTime!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {formatTime(event.end.dateTime!)}
                   </p>
                 </button>
               )

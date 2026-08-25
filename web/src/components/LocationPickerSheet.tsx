@@ -2,7 +2,7 @@ import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
 import type { ClimbLocation } from '@/services/climblog'
 
-// Ported from mobile/app/(tabs)/climblog.tsx's LocationPickerSheet.
+// Ported from mobile@1cdfada/app/(tabs)/climblog.tsx's LocationPickerSheet.
 export function LocationPickerSheet({
   onClose,
   locationId,

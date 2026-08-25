@@ -1,7 +1,8 @@
 import { useRef } from 'react'
+import { KBC } from '@/constants/theme'
 import { GRADES, GRADE_COLORS, avgGrade } from '@/services/boulders'
 
-// Ported from mobile/components/grade-bar.tsx. RN's PanResponder + .measure()
+// Ported from mobile@1cdfada/components/grade-bar.tsx. RN's PanResponder + .measure()
 // becomes pointer events + getBoundingClientRect() — same value-mapping math.
 
 export type GradeBarProps = {
@@ -22,7 +23,13 @@ function Marker({ value, color }: { value: number; color: string }) {
   )
 }
 
-export function GradeBar({ votes, userUid, onVote, interactive = false, compact = false }: GradeBarProps) {
+export function GradeBar({
+  votes,
+  userUid,
+  onVote,
+  interactive = false,
+  compact = false,
+}: GradeBarProps) {
   const barRef = useRef<HTMLDivElement>(null)
 
   const avg = avgGrade(votes)
@@ -72,7 +79,10 @@ export function GradeBar({ votes, userUid, onVote, interactive = false, compact 
         <>
           <div className="mt-1.5 flex">
             {GRADES.map((g, i) => (
-              <span key={i} className="flex-1 text-center text-[10px] font-semibold text-neutral-400">
+              <span
+                key={i}
+                className="flex-1 text-center text-[10px] font-semibold text-neutral-400"
+              >
                 {g}
               </span>
             ))}
@@ -87,7 +97,9 @@ export function GradeBar({ votes, userUid, onVote, interactive = false, compact 
             {userVote !== null && (
               <span className="text-[11px] text-neutral-400">
                 {'  '}
-                <span className="font-bold text-[#00e676]">● {GRADES[Math.round(userVote)]}</span>
+                <span className="font-bold" style={{ color: KBC.live }}>
+                  ● {GRADES[Math.round(userVote)]}
+                </span>
                 {'  '}
                 <button
                   type="button"

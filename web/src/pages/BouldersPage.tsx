@@ -35,7 +35,7 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'updatedAt', label: 'Modified' },
 ]
 
-// Ported from mobile/app/(tabs)/boulders.tsx — KBC mode only. Personal mode
+// Ported from mobile@1cdfada/app/(tabs)/boulders.tsx — KBC mode only. Personal mode
 // (personal problems/locations, an entirely separate self-contained data
 // model with no cross-dependency on this screen) is deferred to a follow-up.
 export function BouldersPage() {

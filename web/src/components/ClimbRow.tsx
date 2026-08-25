@@ -1,9 +1,10 @@
 import { BadgeIcon } from '@/components/BadgeIcon'
+import { KBC } from '@/constants/theme'
 import { effortLabel } from '@/components/EffortBar'
 import { formatTimestamp } from '@/domain/climbLogFilter'
 import type { PersonalClimb } from '@/services/climblog'
 
-// Ported from mobile/app/(tabs)/climblog.tsx's ClimbRow. Long-press-to-delete
+// Ported from mobile@1cdfada/app/(tabs)/climblog.tsx's ClimbRow. Long-press-to-delete
 // becomes a small delete button (no long-press affordance on web/desktop).
 export function ClimbRow({
   climb,
@@ -26,7 +27,9 @@ export function ClimbRow({
             {locationName}
             {climb.sectorId ? ` · ${climb.sectorId}` : ''}
           </span>
-          <span className="shrink-0 text-xs text-neutral-400">{formatTimestamp(climb.timestamp)}</span>
+          <span className="shrink-0 text-xs text-neutral-400">
+            {formatTimestamp(climb.timestamp)}
+          </span>
         </div>
 
         <p className="mt-0.5 truncate font-bold text-neutral-900">{climb.name}</p>
@@ -34,18 +37,28 @@ export function ClimbRow({
         <div className="mt-1 flex flex-wrap items-center gap-1.5">
           <span
             className="rounded-full px-2 py-0.5 text-[10px] font-extrabold text-white"
-            style={{ background: isSent ? '#4db847' : '#f97316' }}
+            style={{ background: isSent ? KBC.green : KBC.orange }}
           >
             {isSent ? '✓ Sent' : '△ Tried'}
           </span>
           {climb.personalGrade && (
-            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-600">{climb.personalGrade}</span>
+            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-bold text-neutral-600">
+              {climb.personalGrade}
+            </span>
           )}
-          {climb.quality > 0 && <span className="text-xs text-[#fbbf24]">{'★'.repeat(climb.quality)}</span>}
+          {climb.quality > 0 && (
+            <span className="text-xs text-[#fbbf24]">{'★'.repeat(climb.quality)}</span>
+          )}
           {climb.effort !== '' && climb.effort !== null && climb.effort !== undefined && (
-            <span className="rounded-full bg-neutral-500 px-2 py-0.5 text-[10px] font-bold text-white">{effortLabel(climb.effort)}</span>
+            <span className="rounded-full bg-neutral-500 px-2 py-0.5 text-[10px] font-bold text-white">
+              {effortLabel(climb.effort)}
+            </span>
           )}
-          {climb.project && <span className="text-xs font-bold text-[#9b5de5]">🏔 Project</span>}
+          {climb.project && (
+            <span className="text-xs font-bold" style={{ color: KBC.purple }}>
+              🏔 Project
+            </span>
+          )}
         </div>
 
         {climb.badges && climb.badges.length > 0 && (
@@ -56,7 +69,9 @@ export function ClimbRow({
           </div>
         )}
 
-        {climb.comment && <p className="mt-1 line-clamp-2 text-sm text-neutral-500">{climb.comment}</p>}
+        {climb.comment && (
+          <p className="mt-1 line-clamp-2 text-sm text-neutral-500">{climb.comment}</p>
+        )}
       </button>
 
       <button

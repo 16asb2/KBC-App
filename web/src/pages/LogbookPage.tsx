@@ -1,15 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Modal } from '@/components/Modal'
-import { KBC } from '@/constants/theme'
+import { KBC, faintTint, tint } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { isAdmin } from '@/domain/roles'
-import {
-  accessKind,
-  filterLogs,
-  groupLogsByDay,
-  shouldResetLastSignIn,
-} from '@/domain/signInBook'
+import { accessKind, filterLogs, groupLogsByDay, shouldResetLastSignIn } from '@/domain/signInBook'
 import {
   deleteLogEntry,
   getArchiveLogs,
@@ -19,8 +14,9 @@ import {
   type LogEntry,
 } from '@/services/logbook'
 import { updateProfile } from '@/services/profiles'
+import { formatDayHeaderDate, formatTime, relativeDayLabel } from '@/utils/datetime'
 
-// Ported from mobile/app/(tabs)/logbook.tsx — the gym sign-in book, which is a
+// Ported from mobile@1cdfada/app/(tabs)/logbook.tsx — the gym sign-in book, which is a
 // different screen from the Log Book tab (that one is climblog, a member's own
 // climbs). This never made it into the web port, which left member-initiated
 // sign-ins written as status: 'pending' with nothing anywhere able to confirm
@@ -33,17 +29,8 @@ const ACCESS_COLORS: Record<ReturnType<typeof accessKind>, string> = {
   other: '#888',
 }
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
 function formatDayHeader(dayKey: string): string {
-  const d = new Date(dayKey)
-  const today = new Date().toDateString()
-  const yesterday = new Date(Date.now() - 864e5).toDateString()
-  if (dayKey === today) return 'Today'
-  if (dayKey === yesterday) return 'Yesterday'
-  return d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  return relativeDayLabel(dayKey, { past: true }) ?? formatDayHeaderDate(dayKey)
 }
 
 type Tab = 'recent' | 'archive' | 'mine'
@@ -166,7 +153,7 @@ export function LogbookPage() {
         {canAmend && pendingCount > 0 && (
           <span
             className="rounded-full px-2.5 py-1 text-xs font-bold"
-            style={{ backgroundColor: KBC.orange + '22', color: KBC.orange }}
+            style={{ backgroundColor: tint(KBC.orange), color: KBC.orange }}
           >
             {pendingCount} awaiting confirmation
           </span>
@@ -229,7 +216,10 @@ export function LogbookPage() {
       ) : (
         days.map((day) => (
           <section key={day.key} className="mb-5">
-            <h2 className="mb-1.5 border-b border-neutral-200 pb-1 text-xs font-extrabold tracking-wide uppercase" style={{ color: KBC.pink }}>
+            <h2
+              className="mb-1.5 border-b border-neutral-200 pb-1 text-xs font-extrabold tracking-wide uppercase"
+              style={{ color: KBC.pink }}
+            >
               {formatDayHeader(day.key)}
             </h2>
             <ul>
@@ -252,11 +242,7 @@ export function LogbookPage() {
       )}
 
       {amending && (
-        <AmendModal
-          entry={amending}
-          onClose={() => setAmending(null)}
-          onSave={handleAmend}
-        />
+        <AmendModal entry={amending} onClose={() => setAmending(null)} onSave={handleAmend} />
       )}
     </div>
   )
@@ -287,7 +273,7 @@ function LogRow({
   return (
     <li
       className="flex items-start gap-3 border-b border-neutral-100 py-2.5 last:border-b-0"
-      style={isPending ? { backgroundColor: KBC.orange + '0d' } : undefined}
+      style={isPending ? { backgroundColor: faintTint(KBC.orange) } : undefined}
     >
       <span className="w-14 shrink-0 pt-0.5 text-[13px] font-semibold text-neutral-400 tabular-nums">
         {formatTime(entry.timestamp)}
@@ -298,14 +284,14 @@ function LogRow({
         <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
           <span
             className="rounded-full px-2 py-0.5 text-[11px] font-bold"
-            style={{ backgroundColor: color + '22', color }}
+            style={{ backgroundColor: tint(color), color }}
           >
             {entry.accessType}
           </span>
           {isPending && (
             <span
               className="rounded-full px-2 py-0.5 text-[11px] font-bold"
-              style={{ backgroundColor: KBC.orange + '22', color: KBC.orange }}
+              style={{ backgroundColor: tint(KBC.orange), color: KBC.orange }}
             >
               Pending
             </span>
@@ -399,18 +385,33 @@ function AmendModal({
     <Modal onClose={onClose}>
       <h2 className="text-lg font-black text-neutral-900">Amend sign-in</h2>
       <p className="mt-0.5 text-sm text-neutral-500">
-        {entry.userName} · {new Date(entry.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+        {entry.userName} ·{' '}
+        {new Date(entry.timestamp).toLocaleString([], {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })}
       </p>
 
       <label className="mt-4 mb-1 block text-[11px] font-bold tracking-wide text-neutral-500 uppercase">
         Access type
       </label>
-      <input className="kbc-input" value={accessType} onChange={(e) => setAccessType(e.target.value)} />
+      <input
+        className="kbc-input"
+        value={accessType}
+        onChange={(e) => setAccessType(e.target.value)}
+      />
 
       <label className="mt-3 mb-1 block text-[11px] font-bold tracking-wide text-neutral-500 uppercase">
         Notes
       </label>
-      <input className="kbc-input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional" />
+      <input
+        className="kbc-input"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+        placeholder="Optional"
+      />
 
       {err && <p className="mt-3 text-sm font-semibold text-red-600">{err}</p>}
 
