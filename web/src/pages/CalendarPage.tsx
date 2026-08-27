@@ -119,13 +119,22 @@ export function CalendarPage() {
         />
       </div>
 
-      {/* One screen tall: the viewport less the AppShell header, and less the
-          bottom tab bar too below md, where that bar exists. svh (the *small*
-          viewport height) so mobile browser chrome expanding cannot push the
-          bottom of the list out of reach. */}
+      {/* Just under one screen tall: the viewport, less the AppShell header
+          (and the bottom tab bar too below md, where that bar exists), less a
+          strip of calendar that always stays put.
+
+          That last term is what keeps the page escapable. Scrolled to the
+          bottom, the calendar still showing measures viewport − list height —
+          so sizing the list to exactly one screen left nothing of it, every
+          touch landed on the list, and the page would only move again once the
+          list had been scrolled back through every event to its own top. A
+          strip that never leaves is always there to drag the page back down.
+
+          svh (the *small* viewport height) so mobile browser chrome expanding
+          cannot push the bottom of the list out of reach. */}
       <div
         ref={listRef}
-        className="h-[calc(100svh-7.5rem)] overflow-y-auto border-t border-neutral-100 px-3.5 md:h-[calc(100svh-4rem)]"
+        className="h-[calc(100svh-13.5rem)] overflow-y-auto border-t border-neutral-100 px-3.5 md:h-[calc(100svh-10rem)]"
       >
         {/* `relative` is load-bearing: it makes each day group's offsetTop
             measure from here, which is what scrollListToDay scrolls to. */}
