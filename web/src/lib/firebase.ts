@@ -1,8 +1,9 @@
 import { initializeApp } from 'firebase/app'
 import {
+  browserLocalPersistence,
   browserPopupRedirectResolver,
-  browserSessionPersistence,
   GoogleAuthProvider,
+  indexedDBLocalPersistence,
   initializeAuth,
 } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
@@ -19,25 +20,30 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig)
 
 /**
- * Auth that does **not** sign anyone back in on its own.
+ * Auth that keeps you signed in across launches, and lets you leave when you
+ * actually mean to.
  *
- * `getAuth()` defaults to `browserLocalPersistence`, which keeps the session in
- * IndexedDB and restores it on every launch. On a personal phone that is a
- * convenience; on a shared one — the tablet at the gym, or a member borrowing
- * someone's handset — it means whoever signed in last stays signed in, and the
- * login screen is never seen again. Session persistence keeps you signed in
- * while the app is open (a reload or a page refresh is fine) and drops the
- * session when it closes, so the next launch starts at the login screen.
+ * Reopening the app should not cost a sign-in — most members use their own
+ * phone, every visit, and a login screen between them and the sign-in button is
+ * friction for no gain. So the session persists, as it always did.
  *
- * Set through `initializeAuth` rather than a `setPersistence()` call after the
- * fact: that returns a promise, and until it settles the SDK is still on the
- * default, so a restored session can surface through `onAuthStateChanged`
- * before the switch lands. Passing it here means there is no window where the
- * old behaviour applies. The popup resolver has to be named explicitly too —
- * `initializeAuth` installs no default, and `signInWithPopup` needs one.
+ * Switching accounts is handled at the other end instead, by the
+ * `select_account` prompt below: signing out and back in lands you on Google's
+ * chooser rather than silently back on the account you were leaving. That was
+ * the half of this that was actually broken. Dropping the session on every
+ * close was tried first and traded a daily cost on every member's own phone for
+ * a problem that only bit when somebody deliberately signed out.
+ *
+ * Persistence is passed to `initializeAuth` rather than set afterwards with
+ * `setPersistence()`, which returns a promise — until it settles the SDK is
+ * still on its default, so the choice is only really made here. The list
+ * mirrors what `getAuth()` would pick on its own: IndexedDB where it exists,
+ * localStorage where it does not (Safari private browsing, chiefly). The popup
+ * resolver has to be named explicitly too — `initializeAuth` installs no
+ * default, and `signInWithPopup` needs one.
  */
 export const auth = initializeAuth(app, {
-  persistence: browserSessionPersistence,
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence],
   popupRedirectResolver: browserPopupRedirectResolver,
 })
 
