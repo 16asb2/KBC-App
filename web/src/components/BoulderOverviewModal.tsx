@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BadgeIcon } from '@/components/BadgeIcon'
 import { GradeBar } from '@/components/GradeBar'
+import { GymMap } from '@/components/GymMap'
 import { StarRating } from '@/components/StarRating'
 import { KBC } from '@/constants/theme'
 import { addComment, avgQuality, deleteComment, getComments, type Boulder, type BoulderComment } from '@/services/boulders'
@@ -250,6 +251,9 @@ export function BoulderOverviewModal({
         )}
 
         <Section label="Location">
+          {/* The floor plan used to appear only when adding or editing a
+              boulder, which is the one time you already know where it is. */}
+          {boulder.locations.length > 0 && <GymMap selected={boulder.locations} />}
           <div className="flex flex-wrap gap-1.5">
             {boulder.locations.length === 0 ? (
               <span className="text-sm text-neutral-400">—</span>
