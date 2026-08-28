@@ -24,7 +24,6 @@ All six tabs have real content: Home, Schedule, Calendar, Members, Boulders (KBC
 The Home screen's supervisor conveniences are no longer among them — adding a new member, signing in an existing other climber, and punch donation are all ported. Punch donation is supervisor-only *by necessity* rather than by choice: it writes to two members' profiles, and `firestore.rules` permits a `users/{uid}` update only for yourself or as a supervisor, so a member attempting it would have the write rejected.
 
 - **Boulders → Personal mode**: logging climbs at non-KBC locations/problems. Self-contained (`personalProblems`, `climbLocations` collections); needs its own list/card/editor UI.
-- **Summary screens**: `boulder-summary` and `climb-summary` — bar-chart stats views both tabs used to link out to.
 - **Session fulfilment**: a supervisor can open a session and members can
   request one, but mobile's `fulfillSessionRequest` — a supervisor adopting an
   existing member request as their own slot — is not ported. Today they open a

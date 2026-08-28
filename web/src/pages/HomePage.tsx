@@ -5,6 +5,7 @@ import { ConnectWithKBC } from '@/components/ConnectWithKBC'
 import { Modal } from '@/components/Modal'
 import { MemberPickerModal } from '@/components/MemberPickerModal'
 import { NewMemberModal } from '@/components/NewMemberModal'
+import { Toast, type ToastKind } from '@/components/Toast'
 import { KBC } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
@@ -51,7 +52,7 @@ export function HomePage() {
   /** Who is being signed in while we ask whose punch pays for it. */
   const [donorFor, setDonorFor] = useState<SignInTarget | null>(null)
   const [showNewMember, setShowNewMember] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ text: string; kind: ToastKind } | null>(null)
   const [pendingSignIns, setPendingSignIns] = useState(0)
 
   useEffect(() => {
@@ -59,6 +60,14 @@ export function HomePage() {
     const t = setTimeout(() => setToast(null), 4000)
     return () => clearTimeout(t)
   }, [toast])
+
+  /** It worked. */
+  const notifyOk = (text: string) => setToast({ text, kind: 'success' })
+  /** It failed for a reason the member could not have avoided. */
+  const notifyError = (e: unknown) =>
+    setToast({ text: e instanceof Error ? e.message : 'Something went wrong.', kind: 'error' })
+  /** It didn't happen, and that's the expected answer rather than a fault. */
+  const notifyInfo = (text: string) => setToast({ text, kind: 'info' })
 
   useEffect(() => {
     // Only supervisors and admins can act on pending sign-ins, so the read
@@ -111,7 +120,7 @@ export function HomePage() {
     if (!profile || !user) return
 
     if (hasSignedInToday(target.profile.lastSignInAt)) {
-      setToast(
+      notifyInfo(
         target.isSelf
           ? 'You have already signed in today. Sign-ins reset at midnight.'
           : `${nameOf(target)} has already signed in today. Sign-ins reset at midnight.`,
@@ -128,9 +137,9 @@ export function HomePage() {
         const now = await logAndMarkSignedIn(target, label)
         await updateProfile(target.profile.uid, { lastSignInAt: now }, user.email ?? 'unknown')
         if (target.isSelf) await reloadProfile()
-        setToast(signedInMessage(target, 'Session logged.'))
+        notifyOk(signedInMessage(target, 'Session logged.'))
       } catch (e) {
-        setToast(e instanceof Error ? e.message : 'Something went wrong.')
+        notifyError(e)
       } finally {
         setSigningIn(false)
       }
@@ -171,11 +180,11 @@ export function HomePage() {
         user.email ?? 'unknown',
       )
       if (target.isSelf) await reloadProfile()
-      setToast(
+      notifyOk(
         signedInMessage(target, `${remaining} punch${remaining !== 1 ? 'es' : ''} remaining.`),
       )
     } catch (e) {
-      setToast(e instanceof Error ? e.message : 'Something went wrong.')
+      notifyError(e)
     } finally {
       setSigningIn(false)
     }
@@ -192,11 +201,11 @@ export function HomePage() {
     if (!profile || !user) return
     const donorName = donor.preferredName || donor.name
     if (donor.punchPassRemaining < 1) {
-      setToast(`${donorName} has no punch passes remaining.`)
+      notifyInfo(`${donorName} has no punch passes remaining.`)
       return
     }
     if (hasSignedInToday(target.profile.lastSignInAt)) {
-      setToast(
+      notifyInfo(
         target.isSelf
           ? 'You have already signed in today. Sign-ins reset at midnight.'
           : `${nameOf(target)} has already signed in today. Sign-ins reset at midnight.`,
@@ -224,11 +233,11 @@ export function HomePage() {
       // Reload if either side of the donation is the viewer: the recipient's
       // lastSignInAt or the donor's punch count is now on screen and stale.
       if (target.isSelf || donor.uid === profile.uid) await reloadProfile()
-      setToast(
+      notifyOk(
         `✓ ${target.isSelf ? 'Signed in' : `${nameOf(target)} signed in`} using ${donorName}'s punch — ${donorLeft} left on their account.`,
       )
     } catch (e) {
-      setToast(e instanceof Error ? e.message : 'Something went wrong.')
+      notifyError(e)
     } finally {
       setSigningIn(false)
     }
@@ -298,9 +307,9 @@ export function HomePage() {
         ...(privileged ? {} : { status: 'pending' as const }),
       })
 
-      setToast(signedInMessage(target, 'Session logged.'))
+      notifyOk(signedInMessage(target, 'Session logged.'))
     } catch (e) {
-      setToast(e instanceof Error ? e.message : 'Something went wrong.')
+      notifyError(e)
     } finally {
       setSigningIn(false)
     }
@@ -308,11 +317,7 @@ export function HomePage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-6 p-6 pb-16">
-      {toast && (
-        <div className="fixed inset-x-4 top-4 z-50 rounded-xl bg-black px-4 py-3 text-center text-sm font-semibold text-white shadow-lg">
-          {toast}
-        </div>
-      )}
+      {toast && <Toast message={toast.text} kind={toast.kind} onDismiss={() => setToast(null)} />}
 
       <div className="text-center">
         <h1 className="text-2xl font-extrabold text-black">Welcome to the KBC App!</h1>

@@ -58,8 +58,14 @@ export function GymMap({
   onToggle,
 }: {
   selected: readonly string[]
-  onToggle: (loc: Location) => void
+  /**
+   * Omit to render the map read-only — the walls are still highlighted, but
+   * nothing is pressable. That is how a boulder's page shows where it is
+   * without offering to move it.
+   */
+  onToggle?: (loc: Location) => void
 }) {
+  const interactive = !!onToggle
   return (
     <div
       // 0.62 is the floor plan's height-to-width ratio; max-width keeps the
@@ -103,12 +109,17 @@ export function GymMap({
 
       {GYM_WALLS.map((w) => {
         const on = selected.includes(w.id)
+        // Read-only walls are spans, not disabled buttons: there is nothing to
+        // press, so they should not be in the tab order or announced as
+        // controls. Unhighlighted ones fade back so the marked walls read at a
+        // glance instead of competing with five other labels.
+        const Chip = interactive ? 'button' : 'span'
         return (
-          <button
+          <Chip
             key={`chip-${w.id}`}
-            type="button"
-            onClick={() => onToggle(w.id)}
-            aria-pressed={on}
+            {...(interactive
+              ? { type: 'button' as const, onClick: () => onToggle(w.id), 'aria-pressed': on }
+              : { 'aria-hidden': true })}
             className="absolute rounded-md border-[1.5px] px-2 py-[5px] text-[11px] font-extrabold tracking-[0.2px] whitespace-nowrap"
             style={{
               left: pct(w.lx),
@@ -117,16 +128,18 @@ export function GymMap({
               backgroundColor: on ? w.color : 'rgba(255,255,255,0.95)',
               color: on ? '#fff' : w.color,
               transform: w.lrot ? `rotate(${w.lrot}deg)` : undefined,
+              opacity: interactive || on ? 1 : 0.45,
             }}
           >
             {w.id}
-          </button>
+          </Chip>
         )
       })}
 
       <span className="sr-only">
-        Select one or more walls. Currently selected:{' '}
-        {selected.length > 0 ? selected.join(', ') : 'none'}.
+        {interactive
+          ? `Select one or more walls. Currently selected: ${selected.length > 0 ? selected.join(', ') : 'none'}.`
+          : `On ${selected.length > 0 ? selected.join(', ') : 'no marked wall'}.`}
       </span>
     </div>
   )
