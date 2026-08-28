@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ClimbFilterModal } from '@/components/ClimbFilterModal'
+import { ClimbSummaryModal } from '@/components/ClimbSummaryModal'
 import { ClimbRow } from '@/components/ClimbRow'
 import { LocationPickerSheet } from '@/components/LocationPickerSheet'
 import { LogClimbModal } from '@/components/LogClimbModal'
@@ -37,6 +38,7 @@ export function ClimbLogPage() {
   const [editingClimb, setEditingClimb] = useState<PersonalClimb | null>(null)
   const [filter, setFilter] = useState<ClimbFilter>(DEFAULT_CLIMB_FILTER)
   const [showFilter, setShowFilter] = useState(false)
+  const [showSummary, setShowSummary] = useState(false)
 
   const locationNames: Record<string, string> = {
     kbc: 'KBC Gym',
@@ -110,6 +112,14 @@ export function ClimbLogPage() {
         >
           ⚙{fc > 0 ? ` ${fc}` : ''}
         </button>
+        <button
+          type="button"
+          onClick={() => setShowSummary(true)}
+          className="rounded-full border px-3 py-1.5 text-sm font-bold"
+          style={{ borderColor: KBC.cyan, color: KBC.cyan }}
+        >
+          Summary
+        </button>
         <div className="flex-1" />
         <button type="button" onClick={() => setShowLogClimb(true)} className="rounded-full px-4 py-1.5 text-sm font-bold text-white" style={{ background: KBC.green }}>
           ＋ Log Climb
@@ -166,6 +176,10 @@ export function ClimbLogPage() {
           locations={locations}
           onNewLocation={() => setShowNewLoc(true)}
         />
+      )}
+
+      {showSummary && (
+        <ClimbSummaryModal uid={uid} onClose={() => setShowSummary(false)} />
       )}
 
       {showNewLoc && (

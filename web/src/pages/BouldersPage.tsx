@@ -4,6 +4,7 @@ import { BoulderFilterModal } from '@/components/BoulderFilterModal'
 import { BoulderFormModal, type BoulderFormMode } from '@/components/BoulderFormModal'
 import { BoulderLogModal } from '@/components/BoulderLogModal'
 import { BoulderOverviewModal } from '@/components/BoulderOverviewModal'
+import { BoulderSummaryModal } from '@/components/BoulderSummaryModal'
 import { SeasonPickerModal } from '@/components/SeasonPickerModal'
 import { KBC } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
@@ -54,6 +55,7 @@ export function BouldersPage() {
   const [showSeasonPicker, setShowSeasonPicker] = useState(false)
   const [formMode, setFormMode] = useState<BoulderFormMode | null>(null)
   const [showFilter, setShowFilter] = useState(false)
+  const [showSummary, setShowSummary] = useState(false)
   const [filters, setFilters] = useState<BoulderFilterState>(DEFAULT_BOULDER_FILTER)
   const [sortKey, setSortKey] = useState<SortKey>('number')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -291,6 +293,16 @@ export function BouldersPage() {
         >
           Filter{fc > 0 ? ` (${fc})` : ''}
         </button>
+        {selectedSeason && (
+          <button
+            type="button"
+            onClick={() => setShowSummary(true)}
+            className="rounded-full border px-3 py-1.5 text-sm font-bold"
+            style={{ borderColor: KBC.cyan, color: KBC.cyan }}
+          >
+            Summary
+          </button>
+        )}
         <div className="flex-1" />
       </div>
 
@@ -376,6 +388,14 @@ export function BouldersPage() {
             void handleSelectSeason(s)
           }}
           onClose={() => setShowSeasonPicker(false)}
+        />
+      )}
+
+      {showSummary && selectedSeason && (
+        <BoulderSummaryModal
+          seasonId={selectedSeason.id}
+          seasonName={selectedSeason.name}
+          onClose={() => setShowSummary(false)}
         />
       )}
 
