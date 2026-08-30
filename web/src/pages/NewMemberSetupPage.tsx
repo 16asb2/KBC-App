@@ -1,23 +1,35 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { KBC } from '@/constants/theme'
+import { KBC, tint } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
-import { createSelfRegisteredProfile } from '@/services/profiles'
+import { missingProfileFields, parseEmergencyContact } from '@/domain/memberProfile'
+import { completeMemberProfile, createSelfRegisteredProfile } from '@/services/profiles'
 import type { EmergencyContact } from '@/types/member'
 
 // Ported from mobile@1cdfada/app/new-member-setup.tsx.
+//
+// Two arrivals now, not one. A brand-new member has no record and fills this in
+// from scratch; someone an admin imported from a CSV, or a supervisor added at
+// the desk, already has one and is here only for the gaps in it. The second
+// case is prefilled from what is on file and *updates* the record rather than
+// replacing it — writing a fresh document over an imported member would reset
+// the membership and punches the import had set.
 export function NewMemberSetupPage() {
   const { user } = useAuth()
-  const { reloadProfile } = useProfile()
+  const { profile, reloadProfile } = useProfile()
   const navigate = useNavigate()
 
-  const [legalName, setLegalName] = useState('')
-  const [preferredName, setPreferredName] = useState('')
-  const [memberPhone, setMemberPhone] = useState('')
-  const [ecName, setEcName] = useState('')
-  const [ecRelation, setEcRelation] = useState('')
-  const [ecPhone, setEcPhone] = useState('')
+  const existingEc = parseEmergencyContact(profile?.emergencyContact)
+  const missing = missingProfileFields(profile)
+  const isTopUp = !!profile
+
+  const [legalName, setLegalName] = useState(profile?.legalName ?? '')
+  const [preferredName, setPreferredName] = useState(profile?.preferredName ?? '')
+  const [memberPhone, setMemberPhone] = useState(profile?.phone ?? '')
+  const [ecName, setEcName] = useState(existingEc?.name ?? '')
+  const [ecRelation, setEcRelation] = useState(existingEc?.relationship ?? '')
+  const [ecPhone, setEcPhone] = useState(existingEc?.phone ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -43,16 +55,31 @@ export function NewMemberSetupPage() {
       const mp = memberPhone.trim()
       const phone = mp ? (mp.startsWith('+') ? mp : `+${mp}`) : undefined
 
-      await createSelfRegisteredProfile(
-        user.uid,
-        user.displayName ?? user.email ?? '',
-        user.email ?? '',
-        user.photoURL,
-        ln,
-        ec,
-        pn,
-        phone,
-      )
+      if (isTopUp) {
+        await completeMemberProfile(
+          user.uid,
+          {
+            name: user.displayName ?? user.email ?? '',
+            photo: user.photoURL,
+            legalName: ln,
+            emergencyContact: ec,
+            preferredName: pn,
+            phone,
+          },
+          user.email ?? 'unknown',
+        )
+      } else {
+        await createSelfRegisteredProfile(
+          user.uid,
+          user.displayName ?? user.email ?? '',
+          user.email ?? '',
+          user.photoURL,
+          ln,
+          ec,
+          pn,
+          phone,
+        )
+      }
       await reloadProfile()
       navigate('/waiver/membership', { replace: true })
     } catch (e) {
@@ -66,11 +93,28 @@ export function NewMemberSetupPage() {
     <div className="min-h-svh bg-[#f2f2f2]">
       <form onSubmit={handleSave} className="mx-auto max-w-xl px-6 py-8">
         <div className="mb-6 rounded-[20px] p-6" style={{ backgroundColor: KBC.black }}>
-          <h1 className="text-2xl font-black text-white">Welcome to KBC!</h1>
+          <h1 className="text-2xl font-black text-white">
+            {isTopUp ? 'Just a couple of details' : 'Welcome to KBC!'}
+          </h1>
           <p className="mt-2 text-sm leading-5 text-neutral-400">
-            Before you get started, please complete your member profile. This information is kept
-            on file for your membership.
+            {isTopUp
+              ? 'We already have you on file, but a few things are missing. Fill them in and you are set — everything else on your membership stays as it is.'
+              : 'Before you get started, please complete your member profile. This information is kept on file for your membership.'}
           </p>
+          {/* Naming the gaps beats leaving someone to hunt for the empty box. */}
+          {isTopUp && missing.length > 0 && (
+            <ul className="mt-3 flex flex-wrap gap-1.5">
+              {missing.map((m) => (
+                <li
+                  key={m.key}
+                  className="rounded-full px-2.5 py-1 text-[11px] font-bold"
+                  style={{ backgroundColor: tint(KBC.orange), color: KBC.orange }}
+                >
+                  {m.label}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <SectionHeader>Member Info</SectionHeader>

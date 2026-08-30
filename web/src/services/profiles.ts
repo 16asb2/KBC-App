@@ -61,7 +61,13 @@ export async function findOrLinkProfile(
     // supervisor/admin branch can't help: it reads users/{auth.uid}, which is
     // the very document being created. So the rules instead re-check the flags
     // against the profile named here, which must exist and share this email.
-    const linked: Omit<UserProfile, 'uid'> = { ...existingData, name, email, photo, linkedFrom: oldUid }
+    const linked: Omit<UserProfile, 'uid'> = {
+      ...existingData,
+      name,
+      email,
+      photo,
+      linkedFrom: oldUid,
+    }
     await setDoc(doc(db, USERS, uid), linked)
     // The old doc (synthetic manual_* id from createNewMemberProfile, or any
     // other prior id) is now a duplicate of the one we just wrote under the
@@ -112,6 +118,46 @@ export async function createSelfRegisteredProfile(
   }
   await setDoc(doc(db, USERS, uid), fresh)
   return { uid, ...fresh }
+}
+
+/**
+ * Fill in the gaps on a profile that already exists.
+ *
+ * The setup form is no longer only for brand-new members: someone imported from
+ * a CSV, or added by a supervisor, arrives with a record already written and
+ * possibly a membership, punch passes or a supervisor flag on it. Running
+ * `createSelfRegisteredProfile` for them would `setDoc` a fresh document over
+ * the top, resetting `membershipStatus` to inactive, punches to zero, both role
+ * flags to false and `memberSince` to today — quietly cancelling whatever they
+ * had paid for. This writes only the fields the member just supplied.
+ *
+ * `name`/`photo` come from Google and are refreshed here too, since an imported
+ * record has whatever the spreadsheet said rather than their account's own.
+ */
+export async function completeMemberProfile(
+  uid: string,
+  updates: {
+    name: string
+    photo: string | null
+    legalName: string
+    emergencyContact: EmergencyContact
+    preferredName?: string
+    phone?: string
+  },
+  updatedByEmail: string,
+): Promise<void> {
+  await updateProfile(
+    uid,
+    {
+      name: updates.name,
+      photo: updates.photo,
+      legalName: updates.legalName,
+      emergencyContact: JSON.stringify(updates.emergencyContact),
+      ...(updates.preferredName ? { preferredName: updates.preferredName } : {}),
+      ...(updates.phone ? { phone: updates.phone } : {}),
+    },
+    updatedByEmail,
+  )
 }
 
 export async function getAllProfiles(): Promise<UserProfile[]> {

@@ -250,7 +250,42 @@
       <div class="card">
         <div class="card-title">
           <span>Member Directory</span>
-          <button class="btn btn-primary btn-sm" onclick="toggleAddForm()">＋ Add Member</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-outline btn-sm" onclick="toggleImportForm()">⬆ Import CSV</button>
+            <button class="btn btn-primary btn-sm" onclick="toggleAddForm()">＋ Add Member</button>
+          </div>
+        </div>
+
+        <!-- CSV import. Members land here before they ever sign in; the app
+             links them to their Google account by email later, so the email
+             column is the one thing a row cannot do without. -->
+        <div class="add-form" id="import-form">
+          <div class="add-form-title">Import Members from CSV</div>
+          <p style="font-size:12px;color:var(--muted);margin:0 0 10px">
+            Paste the sheet or choose a .csv file. The first row must be headers — column order
+            doesn't matter, and unrecognised columns are ignored.
+            <strong>Email is required</strong>: it is what links a member to their account when they
+            first sign in. Rows missing anything else are still imported and flagged, and the member
+            is asked to fill the gaps the first time they open the app.
+          </p>
+          <p style="font-size:11px;color:var(--muted);margin:0 0 10px">
+            Recognised columns: Legal Name · Preferred Name · Email · Phone · Emergency Contact ·
+            Relationship · Emergency Phone · Status · Expiry · Member Since · Punches · Supervisor · Admin
+          </p>
+          <div class="form-row">
+            <div class="form-field" style="flex:1 1 100%">
+              <label>Paste CSV</label>
+              <textarea id="import-text" rows="6" placeholder="Legal Name,Email,Phone,Emergency Contact,Relationship,Emergency Phone&#10;Jane Smith,jane@example.com,613-555-0123,John Smith,Partner,613-555-0124"
+                style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;padding:10px;border:1px solid #ddd;border-radius:8px"></textarea>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="file" id="import-file" accept=".csv,text/csv" onchange="loadImportFile(event)" style="font-size:12px">
+            <button class="btn btn-outline" onclick="previewImport()">Preview</button>
+            <button class="btn btn-primary" id="import-run" onclick="runImport()" disabled>Import</button>
+            <button class="btn btn-outline" onclick="toggleImportForm()">Cancel</button>
+          </div>
+          <div id="import-preview" style="margin-top:12px"></div>
         </div>
 
         <div class="add-form" id="add-form">
@@ -906,6 +941,231 @@ async function exportLogPDF() { toast('Generating PDF…'); try { dlBlob(await b
 async function saveLogToDrive() { try { toast('Generating PDF…'); const b=await buildLogPDF(); toast('Uploading…'); await uploadToDrive(`KBC_SignInBook_${today()}.pdf`,b,'application/pdf','logbook'); toast('Saved to Drive!'); } catch(e) { toast('Error: '+e.message,true); } }
 
 // ── MEMBERS ───────────────────────────────────────────────────────────────────
+// ─── CSV member import ───────────────────────────────────────────────────────
+//
+// Imported members are ordinary user documents created before their first
+// sign-in. web/src/services/profiles.ts#findOrLinkProfile looks a member up by
+// email when they first sign in with Google and copies the record onto their
+// real Firebase uid, so nothing here needs to know about accounts — it only has
+// to get the email right.
+//
+// That lookup queries on the *stored* email verbatim, so every email written
+// here is lowercased. A record saved as "Jane@Example.com" would never be found
+// and the member would silently end up with a second, empty profile.
+
+const IMPORT_ALIASES = {
+  legalName:      ['legal name','legalname','full name','name','member name','full legal name','member'],
+  preferredName:  ['preferred name','preferredname','preferred','nickname','display name','known as'],
+  email:          ['email','e mail','email address','mail','e mail address'],
+  phone:          ['phone','phone number','mobile','cell','telephone','contact number'],
+  ecName:         ['emergency contact','emergency contact name','emergency name','ec name','next of kin'],
+  ecRelationship: ['relationship','emergency contact relationship','ec relationship','emergency relationship','relation'],
+  ecPhone:        ['emergency phone','emergency contact phone','ec phone','emergency contact number','emergency number','emergency contact phone number'],
+  membershipStatus:['status','membership status','access pass','access pass status','membership'],
+  membershipExpiry:['expiry','membership expiry','end date','access pass end','expires','expiry date'],
+  memberSince:    ['member since','joined','join date','start date','since'],
+  punchPassRemaining:['punches','punch passes','punch pass','punches remaining','punch pass remaining'],
+  isSupervisor:   ['supervisor','sup','is supervisor'],
+  isAdmin:        ['admin','is admin','administrator'],
+};
+
+let importRows = [];
+
+/** Header text to a comparable key: case, padding and separators all ignored. */
+function normaliseHeader(h) {
+  return String(h||'').toLowerCase().replace(/[_\-.]+/g,' ').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();
+}
+
+/** Whichever of comma, semicolon or tab appears most in the header line. */
+function detectDelimiter(text) {
+  const first = text.split(/\r?\n/)[0] || '';
+  return [',',';','\t'].map(d=>[d,first.split(d).length]).sort((a,b)=>b[1]-a[1])[0][0];
+}
+
+/**
+ * A real CSV reader rather than split(','): quoted fields may contain the
+ * delimiter, newlines and doubled quotes, and an address column will.
+ */
+function parseCSV(text, delim) {
+  const rows=[]; let row=[], field='', quoted=false;
+  for (let i=0;i<text.length;i++) {
+    const c=text[i];
+    if (quoted) {
+      if (c==='"') { if (text[i+1]==='"') { field+='"'; i++; } else quoted=false; }
+      else field+=c;
+    } else if (c==='"') quoted=true;
+    else if (c===delim) { row.push(field); field=''; }
+    else if (c==='\n') { row.push(field); rows.push(row); row=[]; field=''; }
+    else if (c!=='\r') field+=c;
+  }
+  if (field!=='' || row.length) { row.push(field); rows.push(row); }
+  return rows.filter(r=>r.some(c=>String(c).trim()!==''));
+}
+
+function truthy(v) { return ['yes','y','true','1','x','✓'].includes(String(v||'').trim().toLowerCase()); }
+
+function isoOrNull(v) {
+  const s=String(v||'').trim(); if(!s) return null;
+  const d=new Date(s); return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/**
+ * The same bar the app sets in web/src/domain/memberProfile.ts. Keep the two in
+ * step: if they disagree, this screen calls a member complete while the app
+ * keeps sending them back to the setup form, or the reverse.
+ */
+function missingImportFields(r) {
+  const missing=[];
+  if(!r.legalName) missing.push('legal name');
+  if(!r.ecName) missing.push('emergency contact');
+  if(!r.ecRelationship) missing.push('relationship');
+  if(!r.ecPhone) missing.push('emergency phone');
+  return missing;
+}
+
+function loadImportFile(ev) {
+  const f=ev.target.files && ev.target.files[0]; if(!f) return;
+  const fr=new FileReader();
+  fr.onload=()=>{ document.getElementById('import-text').value=String(fr.result||''); previewImport(); };
+  fr.onerror=()=>toast('Could not read that file',true);
+  fr.readAsText(f);
+}
+
+function previewImport() {
+  const text=document.getElementById('import-text').value.trim();
+  const out=document.getElementById('import-preview');
+  const runBtn=document.getElementById('import-run');
+  importRows=[]; runBtn.disabled=true;
+  if(!text){ out.innerHTML='<p style="color:var(--muted);font-size:13px">Nothing to preview yet.</p>'; return; }
+
+  const grid=parseCSV(text, detectDelimiter(text));
+  if(grid.length<2){ out.innerHTML='<p style="color:#c0392b;font-size:13px">Needs a header row and at least one member.</p>'; return; }
+
+  // Map each column once, by exact normalised header, so "Emergency Contact
+  // Name" cannot also answer to "name".
+  const headers=grid[0].map(normaliseHeader);
+  const colOf={};
+  Object.keys(IMPORT_ALIASES).forEach(field=>{
+    const i=headers.findIndex(h=>IMPORT_ALIASES[field].includes(h));
+    if(i>=0) colOf[field]=i;
+  });
+
+  if(colOf.email===undefined){
+    out.innerHTML='<p style="color:#c0392b;font-size:13px">No email column found. Email is required — it is what links a member to their account. Recognised headers: '+IMPORT_ALIASES.email.join(', ')+'.</p>';
+    return;
+  }
+
+  const cell=(row,field)=>colOf[field]===undefined?'':String(row[colOf[field]]??'').trim();
+  const existing=new Set((memberList||[]).map(m=>String(m.email||'').toLowerCase().trim()).filter(Boolean));
+  const seen=new Set();
+
+  importRows=grid.slice(1).map((row,n)=>{
+    const email=cell(row,'email').toLowerCase();
+    const r={
+      line:n+2,
+      legalName:cell(row,'legalName'), preferredName:cell(row,'preferredName'),
+      email, phone:cell(row,'phone'),
+      ecName:cell(row,'ecName'), ecRelationship:cell(row,'ecRelationship'), ecPhone:cell(row,'ecPhone'),
+      membershipStatus:(()=>{const s=cell(row,'membershipStatus').toLowerCase();return ['active','pending','inactive'].includes(s)?s:'inactive';})(),
+      membershipExpiry:isoOrNull(cell(row,'membershipExpiry')),
+      memberSince:isoOrNull(cell(row,'memberSince')),
+      punchPassRemaining:(()=>{const p=parseInt(cell(row,'punchPassRemaining'),10);return isNaN(p)?0:p;})(),
+      isSupervisor:truthy(cell(row,'isSupervisor')), isAdmin:truthy(cell(row,'isAdmin')),
+    };
+    if(!r.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.email)) r.verdict='no-email';
+    else if(existing.has(r.email)) r.verdict='duplicate';
+    else if(seen.has(r.email)) r.verdict='repeat';
+    else { seen.add(r.email); r.verdict=missingImportFields(r).length?'incomplete':'ready'; }
+    r.missing=missingImportFields(r);
+    return r;
+  });
+
+  const n=v=>importRows.filter(r=>r.verdict===v).length;
+  const importable=importRows.filter(r=>r.verdict==='ready'||r.verdict==='incomplete').length;
+  const chip=(txt,col)=>`<span class="badge" style="background:${col}22;color:${col}">${txt}</span>`;
+  const verdictChip=r=>({
+    'ready':chip('Ready','#2e8b3d'),
+    'incomplete':chip('Incomplete','#e08600'),
+    'duplicate':chip('Already a member','#777'),
+    'repeat':chip('Repeated in file','#777'),
+    'no-email':chip('No valid email','#c0392b'),
+  })[r.verdict];
+
+  out.innerHTML=`
+    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px">
+      <span><strong>${importable}</strong> to import</span>
+      <span style="color:#e08600"><strong>${n('incomplete')}</strong> incomplete (imported and flagged)</span>
+      <span style="color:#777"><strong>${n('duplicate')+n('repeat')}</strong> skipped as existing/repeat</span>
+      <span style="color:#c0392b"><strong>${n('no-email')}</strong> skipped, no valid email</span>
+    </div>
+    <div style="max-height:280px;overflow:auto;border:1px solid #eee;border-radius:8px">
+    <table><thead><tr><th>Row</th><th>Legal Name</th><th>Email</th><th>Status</th><th>Missing</th></tr></thead><tbody>
+    ${importRows.map(r=>`<tr>
+      <td style="color:var(--muted);font-size:12px">${r.line}</td>
+      <td style="font-size:12px">${r.legalName||'<span style="color:#c0392b">—</span>'}</td>
+      <td style="font-size:12px">${r.email||'<span style="color:#c0392b">—</span>'}</td>
+      <td>${verdictChip(r)}</td>
+      <td style="font-size:11px;color:var(--muted)">${r.verdict==='no-email'?'email':(r.missing.join(', ')||'—')}</td>
+    </tr>`).join('')}
+    </tbody></table></div>`;
+
+  runBtn.disabled = importable === 0;
+  runBtn.textContent = importable ? `Import ${importable} member${importable===1?'':'s'}` : 'Import';
+}
+
+async function runImport() {
+  const rows=importRows.filter(r=>r.verdict==='ready'||r.verdict==='incomplete');
+  if(!rows.length) return;
+  const btn=document.getElementById('import-run'); btn.disabled=true; btn.textContent='Importing…';
+  const now=new Date().toISOString();
+  try {
+    // Batched: a few hundred sequential add() calls is slow enough that an
+    // admin would reasonably think the page had hung. 400 leaves headroom under
+    // Firestore's 500-write batch limit.
+    for(let i=0;i<rows.length;i+=400){
+      const batch=db.batch();
+      rows.slice(i,i+400).forEach(r=>{
+        const ec=(r.ecName||r.ecRelationship||r.ecPhone)
+          ? JSON.stringify({name:r.ecName,relationship:r.ecRelationship,phone:r.ecPhone}) : null;
+        batch.set(db.collection('users').doc(), {
+          legalName:r.legalName, name:r.preferredName||r.legalName||r.email,
+          ...(r.preferredName && {preferredName:r.preferredName}),
+          email:r.email,
+          ...(r.phone && {phone:r.phone}),
+          ...(ec && {emergencyContact:ec}),
+          membershipStatus:r.membershipStatus,
+          ...(r.membershipExpiry && {membershipExpiry:r.membershipExpiry}),
+          punchPassRemaining:r.punchPassRemaining,
+          isSupervisor:r.isSupervisor, isAdmin:r.isAdmin,
+          memberSince:r.memberSince||now,
+          createdAt:now, createdBy:currentUser.email,
+          // Provenance, so an incomplete record can be told from one a member
+          // abandoned halfway through signing up.
+          importedAt:now, importedBy:currentUser.email,
+        });
+      });
+      await batch.commit();
+    }
+    const flagged=rows.filter(r=>r.verdict==='incomplete').length;
+    toast(`Imported ${rows.length} member${rows.length===1?'':'s'}${flagged?` — ${flagged} flagged as incomplete`:''}`);
+    document.getElementById('import-text').value='';
+    document.getElementById('import-file').value='';
+    document.getElementById('import-preview').innerHTML='';
+    importRows=[];
+    toggleImportForm();
+    loadMembers();
+  } catch(e) {
+    toast('Import failed: '+e.message,true);
+    btn.disabled=false; previewImport();
+  }
+}
+
+function toggleImportForm() {
+  const el=document.getElementById('import-form');
+  el.classList.toggle('open');
+  if(!el.classList.contains('open')) document.getElementById('import-preview').innerHTML='';
+}
+
 function toggleAddForm() {
   const f=document.getElementById('add-form'); f.classList.toggle('open');
   if (!f.classList.contains('open')) { ['new-legal','new-preferred','new-email','new-phone','new-ec-name','new-ec-rel','new-ec-phone','new-access-start','new-access-end'].forEach(id=>document.getElementById(id).value=''); document.getElementById('new-status').value='inactive'; document.getElementById('new-supervisor').checked=false; document.getElementById('new-admin').checked=false; }
@@ -914,7 +1174,11 @@ function toggleAddForm() {
 async function addMember() {
   const legal     = document.getElementById('new-legal').value.trim();
   const preferred = document.getElementById('new-preferred').value.trim();
-  const email     = document.getElementById('new-email').value.trim();
+  // Lowercased, not just trimmed: the app finds a pre-registered member by
+  // querying this field for the signed-in address in lower case, so a record
+  // saved as "Jane@Example.com" is never matched and the member quietly ends up
+  // with a second, empty profile instead of the one added here.
+  const email     = document.getElementById('new-email').value.trim().toLowerCase();
   const phone     = document.getElementById('new-phone').value.trim();
   const ecName    = document.getElementById('new-ec-name').value.trim();
   const ecRel     = document.getElementById('new-ec-rel').value.trim();
@@ -953,10 +1217,25 @@ async function loadMembers() {
     const counts={active:0,pending:0,inactive:0};
     memberList.forEach(m=>{ if(m.membershipStatus in counts)counts[m.membershipStatus]++; });
     const st=document.getElementById('mem-stats'); st.style.display='flex';
-    st.innerHTML=`<div class="stat-card"><div class="stat-num">${memberList.length}</div><div class="stat-label">Total</div></div><div class="stat-card"><div class="stat-num" style="color:var(--green)">${counts.active}</div><div class="stat-label">Active</div></div><div class="stat-card"><div class="stat-num" style="color:var(--orange)">${counts.pending}</div><div class="stat-label">Pending</div></div><div class="stat-card"><div class="stat-num" style="color:var(--muted)">${counts.inactive}</div><div class="stat-label">Inactive</div></div><div class="stat-card"><div class="stat-num" style="color:var(--cyan)">${memberList.filter(m=>!!(m.waiverLiability||m.waiverPdfUrl)).length}</div><div class="stat-label">Waivers</div></div>`;
+    st.innerHTML=`<div class="stat-card"><div class="stat-num">${memberList.length}</div><div class="stat-label">Total</div></div><div class="stat-card"><div class="stat-num" style="color:var(--green)">${counts.active}</div><div class="stat-label">Active</div></div><div class="stat-card"><div class="stat-num" style="color:var(--orange)">${counts.pending}</div><div class="stat-label">Pending</div></div><div class="stat-card"><div class="stat-num" style="color:var(--muted)">${counts.inactive}</div><div class="stat-label">Inactive</div></div><div class="stat-card"><div class="stat-num" style="color:var(--cyan)">${memberList.filter(m=>!!(m.waiverLiability||m.waiverPdfUrl)).length}</div><div class="stat-label">Waivers</div></div><div class="stat-card"><div class="stat-num" style="color:var(--orange)">${memberList.filter(m=>memberGaps(m).length>0).length}</div><div class="stat-label">Incomplete</div></div>`;
     ['btn-mem-pdf','btn-mem-drive'].forEach(id=>document.getElementById(id).disabled=false);
   } catch(e) { document.getElementById('mem-table').innerHTML=`<p style="color:red;padding:16px">Error: ${e.message}</p>`; }
 }
+/**
+ * What a member record is still missing, by the same rule the app applies in
+ * web/src/domain/memberProfile.ts. Shown in the directory so an admin can see
+ * which imported rows are waiting on their member, without opening each one.
+ */
+function memberGaps(m) {
+  let ec={}; try { ec=JSON.parse(m.emergencyContact||'{}')||{}; } catch {}
+  const gaps=[];
+  if(!String(m.legalName||'').trim()) gaps.push('legal name');
+  if(!String(ec.name||'').trim()) gaps.push('emergency contact');
+  if(!String(ec.relationship||'').trim()) gaps.push('relationship');
+  if(!String(ec.phone||'').trim()) gaps.push('emergency phone');
+  return gaps;
+}
+
 function renderMembersTable() {
   const getVal=(m,col)=>{
     if(col==='legalName')return m.legalName||m.name||'';
@@ -981,7 +1260,7 @@ function renderMembersTable() {
     <th style="text-align:center">ADM</th>
     <th style="text-align:right">Actions</th>
   </tr></thead><tbody>${memberList.map((m,i)=>`<tr>
-    <td style="white-space:nowrap"><strong>${m.legalName||m.name||'—'}</strong></td>
+    <td style="white-space:nowrap"><strong>${m.legalName||m.name||'—'}</strong>${memberGaps(m).length?`<br><span class="badge" style="background:#e0860022;color:#e08600" title="Missing ${memberGaps(m).join(', ')} — the member is asked for these when they next open the app">Incomplete</span>`:''}</td>
     <td style="font-size:12px;color:var(--muted)">${m.preferredName&&m.preferredName!==(m.legalName||m.name)?m.preferredName:'—'}</td>
     <td style="font-size:12px">${m.email||'—'}</td>
     <td style="font-size:12px;white-space:nowrap">${m.phone||'—'}</td>

@@ -1,15 +1,23 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useProfile } from '@/context/ProfileContext'
+import { isProfileComplete } from '@/domain/memberProfile'
 
 /**
  * Mirrors mobile@1cdfada/app/_layout.tsx's RootLayoutNav cascade:
- *   no profile / no legalName  → /setup           (brand-new user, or Google-only profile)
- *   no waiverMembership        → /waiver/membership
- *   no waiverLiability         → /waiver/liability
- *   otherwise                  → render the app (AppShell + tabs)
+ *   no profile / incomplete one → /setup           (brand-new user, or a partial record)
+ *   no waiverMembership         → /waiver/membership
+ *   no waiverLiability          → /waiver/liability
+ *   otherwise                   → render the app (AppShell + tabs)
  *
  * /setup and /waiver/:type are nested under this gate too, so the pathname
  * checks below prevent it from redirecting a route back to itself.
+ *
+ * The first test used to be `!profile.legalName` alone, which was enough while
+ * every profile was born through the setup form. Records now also arrive from a
+ * CSV import in admin-web/, and a spreadsheet frequently has a name and an
+ * email and no emergency contact — a member whose record was missing their next
+ * of kin would sail past this gate and climb. It now asks for anything the
+ * setup form itself would insist on.
  */
 export function OnboardingGate() {
   const { profile, profileReady } = useProfile()
@@ -17,7 +25,7 @@ export function OnboardingGate() {
 
   if (!profileReady) return null
 
-  if (!profile || !profile.legalName) {
+  if (!profile || !isProfileComplete(profile)) {
     if (pathname !== '/setup') return <Navigate to="/setup" replace />
   } else if (!profile.waiverMembership) {
     if (pathname !== '/waiver/membership') return <Navigate to="/waiver/membership" replace />
