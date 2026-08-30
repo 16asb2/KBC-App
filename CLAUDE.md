@@ -64,4 +64,12 @@ if ever needed — everything is in the commits, nothing was force-purged.
   lint+test+build, `worker/` typecheck+test, and the `firestore.rules`
   tests. The worker job pins Node 24 — its tests import a `.ts` file and
   rely on type stripping, which Node 20 doesn't have.
+- Two deploy workflows, one per hosting site, because the two share nothing
+  but the Firebase project: `deploy-web.yml` builds and ships `web/` to the
+  `web` target, `deploy-admin.yml` ships the static `admin-web/` to the
+  `admin` target. Each is path-filtered to its own directory. Before the
+  second existed, `admin-web/` had no automation at all and a change to it
+  merged green while the live panel stayed as it was — so `deploy-admin.yml`
+  also parses the panel's single inline `<script>` and refuses to deploy a
+  file that cannot load, there being no bundler or test run to catch it.
 - Secrets never in Git; `web/.env` is gitignored (see `web/.env.example`)
