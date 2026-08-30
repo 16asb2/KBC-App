@@ -1,0 +1,84 @@
+name: Deploy admin
+
+# admin-web/ is a single static HTML file served from its own Firebase Hosting
+# site (kbc-app-admin), so it gets its own workflow rather than a second job
+# bolted onto deploy-web.yml: there is nothing to install and nothing to build,
+# and the two sites share only the Firebase project.
+#
+# Before this existed, admin-web/ had no deploy automation at all. A change
+# would merge, CI would go green, and the live panel would stay exactly as it
+# was until somebody remembered to run `firebase deploy --only hosting:admin` by
+# hand — a silent no-op rather than a visible failure.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'admin-web/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-admin.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'admin-web/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/deploy-admin.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # The whole panel is one inline <script>, so a single syntax error takes
+      # the entire admin site down rather than breaking one feature. There is no
+      # bundler or test run to catch it on the way past, so parse it here and
+      # refuse to deploy something that cannot load.
+      - name: Check the panel's script parses
+        run: |
+          node -e '
+            const fs = require("fs"), vm = require("vm");
+            const html = fs.readFileSync("admin-web/index.html", "utf8");
+            const blocks = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)];
+            if (!blocks.length) throw new Error("no inline script found in admin-web/index.html");
+            blocks.forEach((b, i) => new vm.Script(b[1], { filename: `admin-web inline block ${i + 1}` }));
+            console.log(`parsed ${blocks.length} inline script block(s)`);
+          '
+
+      - name: Check deploy secret is configured
+        id: check-secret
+        run: echo "has_secret=${{ secrets.FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B != '' }}" >> "$GITHUB_OUTPUT"
+
+      # PRs get a preview channel that expires on its own; merges to main deploy
+      # live. Both only ever touch the "admin" hosting target — the member app
+      # is untouched by this workflow. Skipped (not failed) if the secret is
+      # missing, matching deploy-web.yml.
+      - name: Deploy preview channel (PR)
+        if: github.event_name == 'pull_request' && steps.check-secret.outputs.has_secret == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B }}'
+          projectId: kbc-app-3307b
+          target: admin
+
+      - name: Deploy live (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.check-secret.outputs.has_secret == 'true'
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B }}'
+          projectId: kbc-app-3307b
+          target: admin
+          channelId: live
+
+      - name: Deploy skipped — missing secret
+        if: steps.check-secret.outputs.has_secret != 'true'
+        run: |
+          echo "::warning::FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B is not set — skipping deploy. See web/CLAUDE.md for setup steps."
