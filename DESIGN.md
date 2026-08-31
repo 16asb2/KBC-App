@@ -146,7 +146,9 @@ users/{uid}:
   legalName:          string?       // admin-only editable
   email:              string        // Google account email (locked)
   photo:              string | null
-  membershipStatus:   'active' | 'pending' | 'inactive' | 'non-member'
+  membershipAccessPass: 'annual' | '8month' | '4month' | '1month'
+                      | 'punch' | 'dropin' | 'none'   // which pass they hold
+  membershipConfirmed:  boolean      // false = purchase awaiting admin confirmation
   isAdmin:            boolean       // Firestore-managed; except SUPER_ADMIN_EMAIL (hardcoded)
   isSupervisor:       boolean
   punchPassRemaining: number

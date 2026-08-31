@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Modal } from '@/components/Modal'
 import { KBC, tint } from '@/constants/theme'
+import { accessPassLabel, isDatedPass, membershipGrantsEntry } from '@/domain/membershipPass'
 import { getAllProfiles } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
 
@@ -9,8 +10,10 @@ import type { UserProfile } from '@/types/member'
 
 /** What this member could sign in with, at a glance, so you can spot a lapsed one. */
 function accessSummary(m: UserProfile): { label: string; color: string } {
-  if (m.membershipStatus === 'active') return { label: 'Active member', color: KBC.green }
-  if (m.membershipStatus === 'pending') return { label: 'Pending', color: KBC.orange }
+  if (membershipGrantsEntry(m)) return { label: accessPassLabel(m.membershipAccessPass), color: KBC.green }
+  if (isDatedPass(m.membershipAccessPass)) {
+    return { label: `${accessPassLabel(m.membershipAccessPass)} · pending`, color: KBC.orange }
+  }
   if (m.punchPassRemaining > 0) {
     return {
       label: `${m.punchPassRemaining} punch${m.punchPassRemaining !== 1 ? 'es' : ''}`,

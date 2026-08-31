@@ -1,7 +1,11 @@
-// 'inactive' = registered but no current access (new sign-ups, lapsed memberships)
-// 'pending'  = purchased access, awaiting admin confirmation
-// 'active'   = has a valid current membership
-export type MembershipStatus = 'active' | 'pending' | 'inactive'
+// The access pass a member holds. 'none' covers new sign-ups and lapsed
+// memberships alike — they have a profile, but nothing that admits them.
+//
+// This replaced a field called membershipStatus holding
+// 'active' | 'pending' | 'inactive', which conflated two unrelated things:
+// which pass someone bought, and whether an admin had confirmed it. The pass is
+// named here; the confirmation is membershipConfirmed below.
+export type AccessPassId = 'annual' | '8month' | '4month' | '1month' | 'punch' | 'dropin' | 'none'
 
 export type WaiverRecord = {
   signedAt: string // ISO timestamp
@@ -22,7 +26,8 @@ export type UserProfile = {
   legalName?: string // legal name — admin-only editable; auto-set for manually created members
   email: string // Google account email (locked)
   photo: string | null
-  membershipStatus: MembershipStatus
+  membershipAccessPass: AccessPassId // which pass they hold
+  membershipConfirmed: boolean // false = they recorded a purchase, an admin has yet to confirm it
   isAdmin: boolean // dynamically managed via Firestore — except SUPER_ADMIN_EMAIL which is hardcoded
   isSupervisor: boolean
   punchPassRemaining: number

@@ -1,4 +1,5 @@
-import { getPassLabel } from './membershipPass'
+import { accessPassLabel } from './membershipPass'
+import type { AccessPassId } from '@/types/member'
 
 /** True if the given ISO timestamp falls on the same calendar day as `now`. */
 export function isSameDay(iso: string, now: Date = new Date()): boolean {
@@ -26,10 +27,10 @@ export function hasSignedInToday(
  * reading the book nothing about what the person actually holds — and claimed
  * they were active even while their purchase was still pending confirmation.
  *
- * The month-bucketing this used to do itself was a second copy of
- * `getPassId`, differing only in capitalisation. It delegates now, so the
- * sign-in book and the member directory cannot drift apart.
+ * The pass is now stored on the profile rather than inferred from the gap
+ * between two dates, so this reads it straight off and cannot disagree with
+ * what the member directory shows.
  */
-export function passLabel(start: string | null, expiry: string | null): string {
-  return getPassLabel(start, expiry)
+export function passLabel(pass: AccessPassId): string {
+  return accessPassLabel(pass)
 }

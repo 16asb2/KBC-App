@@ -11,6 +11,7 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore'
+import type { AccessPassId } from '@/types/member'
 import { db } from '@/lib/firebase'
 
 // Same `logs/{id}` and `gymStatus/current` documents mobile@1cdfada/services/logbook.ts
@@ -39,16 +40,21 @@ export type AccessOption = {
   months?: number // if membership
   punches?: number // if punch pass
   isVoucher?: boolean
+  // The pass this purchase puts the member on. Two options can grant the same
+  // pass — the student annual costs less but runs the same twelve months, and
+  // the profile records the access, not the price. A voucher is a single
+  // entry and puts the member on no pass at all.
+  pass?: AccessPassId
 }
 
 export const ACCESS_OPTIONS: AccessOption[] = [
-  { id: 'dropin', label: 'Drop-In', price: '$20' },
-  { id: 'punch10', label: '10× Punch Passes', price: '$160', punches: 10 },
-  { id: 'mem1m', label: '1-month pass', price: '$55', months: 1 },
-  { id: 'mem4m', label: '4-months pass', price: '$200 ($50/m)', months: 4 },
-  { id: 'mem8m', label: '8-months pass', price: '$350 ($44/m)', months: 8 },
-  { id: 'mem12m', label: 'Annual Pass', price: '$450 ($38/m)', months: 12 },
-  { id: 'student12m', label: 'Student annual pass', price: '$350 ($44/m)', months: 12 },
+  { id: 'dropin', label: 'Drop-In', price: '$20', pass: 'dropin' },
+  { id: 'punch10', label: '10× Punch Passes', price: '$160', punches: 10, pass: 'punch' },
+  { id: 'mem1m', label: '1-month pass', price: '$55', months: 1, pass: '1month' },
+  { id: 'mem4m', label: '4-months pass', price: '$200 ($50/m)', months: 4, pass: '4month' },
+  { id: 'mem8m', label: '8-months pass', price: '$350 ($44/m)', months: 8, pass: '8month' },
+  { id: 'mem12m', label: 'Annual Pass', price: '$450 ($38/m)', months: 12, pass: 'annual' },
+  { id: 'student12m', label: 'Student annual pass', price: '$350 ($44/m)', months: 12, pass: 'annual' },
   { id: 'voucher', label: 'Voucher', price: '—', isVoucher: true },
 ]
 

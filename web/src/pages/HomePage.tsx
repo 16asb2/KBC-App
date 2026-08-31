@@ -10,6 +10,7 @@ import { KBC } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { useSchedule } from '@/context/ScheduleContext'
+import { isDatedPass } from '@/domain/membershipPass'
 import { hasSignedInToday, passLabel } from '@/domain/signIn'
 import { isPrivileged } from '@/domain/roles'
 import { getGymStatusFromEvents, type GymStatus } from '@/domain/calendarEvent'
@@ -128,12 +129,15 @@ export function HomePage() {
       return
     }
 
-    const { membershipStatus, punchPassRemaining } = target.profile
+    const { membershipAccessPass, punchPassRemaining } = target.profile
 
-    if (membershipStatus === 'active' || membershipStatus === 'pending') {
+    // A pass awaiting admin confirmation still admits the member — it did
+    // before the confirmation split out of the old status field, and this is
+    // not the place to start turning people away at the door.
+    if (isDatedPass(membershipAccessPass)) {
       setSigningIn(true)
       try {
-        const label = passLabel(target.profile.membershipStart, target.profile.membershipExpiry)
+        const label = passLabel(membershipAccessPass)
         const now = await logAndMarkSignedIn(target, label)
         await updateProfile(target.profile.uid, { lastSignInAt: now }, user.email ?? 'unknown')
         if (target.isSelf) await reloadProfile()
@@ -263,12 +267,19 @@ export function HomePage() {
         const remaining = total - 1
         profileUpdates.punchPassRemaining = remaining
         profileUpdates.pendingPunches = total // admin confirmation required
+        // Punches do not displace a membership: someone on an annual pass who
+        // tops up their punches is still on the annual pass. Only a member with
+        // nothing else moves onto the punch pass.
+        if (target.profile.membershipAccessPass === 'none') {
+          profileUpdates.membershipAccessPass = 'punch'
+        }
         accessType = `Punch Pass (${remaining} left)`
         notes += ` — ${total} punches added, 1 used`
       } else if (option.months) {
         const expiry = new Date(now)
         expiry.setMonth(expiry.getMonth() + option.months)
-        profileUpdates.membershipStatus = 'pending'
+        profileUpdates.membershipAccessPass = option.pass ?? 'none'
+        profileUpdates.membershipConfirmed = false // an admin has yet to confirm the payment
         profileUpdates.membershipStart = now.toISOString()
         profileUpdates.membershipExpiry = expiry.toISOString()
         profileUpdates.pendingMembership = JSON.stringify({

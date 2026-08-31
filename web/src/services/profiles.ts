@@ -11,7 +11,7 @@ import {
   where,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { nextMembershipStatus } from '@/domain/membership'
+import { nextAccessPass } from '@/domain/membership'
 import type { EmergencyContact, UserProfile } from '@/types/member'
 
 // Same Firestore collection mobile/ reads and writes — the schema is shared
@@ -105,7 +105,8 @@ export async function createSelfRegisteredProfile(
     legalName,
     email,
     photo,
-    membershipStatus: 'inactive',
+    membershipAccessPass: 'none',
+    membershipConfirmed: true,
     isAdmin: false,
     isSupervisor: false,
     punchPassRemaining: 0,
@@ -127,7 +128,7 @@ export async function createSelfRegisteredProfile(
  * a CSV, or added by a supervisor, arrives with a record already written and
  * possibly a membership, punch passes or a supervisor flag on it. Running
  * `createSelfRegisteredProfile` for them would `setDoc` a fresh document over
- * the top, resetting `membershipStatus` to inactive, punches to zero, both role
+ * the top, resetting `membershipAccessPass` to none, punches to zero, both role
  * flags to false and `memberSince` to today — quietly cancelling whatever they
  * had paid for. This writes only the fields the member just supplied.
  *
@@ -202,7 +203,8 @@ export async function createNewMemberProfile(
     legalName,
     email: email.toLowerCase().trim(),
     photo: null,
-    membershipStatus: 'inactive',
+    membershipAccessPass: 'none',
+    membershipConfirmed: true,
     isAdmin: false,
     isSupervisor: false,
     punchPassRemaining: 0,
@@ -222,18 +224,18 @@ export async function deleteProfile(uid: string): Promise<void> {
 }
 
 /**
- * Checks a user's membership fields and auto-transitions status if needed.
+ * Checks a user's membership dates and clears a lapsed pass if needed.
  * Call on sign-in, profile screen load, and after admin membership updates.
  * Returns the updated profile, or null if no change was needed.
  */
-export async function checkAndUpdateMembershipStatus(
+export async function checkAndClearLapsedPass(
   profile: UserProfile,
   updatedByEmail = 'system',
 ): Promise<UserProfile | null> {
-  const status = nextMembershipStatus(profile)
-  if (status === null) return null
+  const pass = nextAccessPass(profile)
+  if (pass === null) return null
 
-  const updates = { membershipStatus: status }
+  const updates = { membershipAccessPass: pass }
   await updateProfile(profile.uid, updates, updatedByEmail)
   return { ...profile, ...updates }
 }
