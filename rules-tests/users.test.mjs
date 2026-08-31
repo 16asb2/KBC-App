@@ -206,7 +206,13 @@ test('a member cannot grant themselves isSupervisor', async () => {
 })
 
 test('a member cannot confirm their own purchase', async () => {
-  await seed('uid-m', profile({ email: 'm@example.com' }))
+  // Seeded mid-purchase: they have recorded an annual pass and an admin has
+  // yet to confirm the payment. Seeding the default profile instead made this
+  // a write of true over true — an empty diff, which no rule can deny.
+  await seed(
+    'uid-m',
+    profile({ email: 'm@example.com', membershipAccessPass: 'annual', membershipConfirmed: false }),
+  )
   const db = asUser('uid-m', 'm@example.com')
   await assertFails(updateDoc(doc(db, 'users', 'uid-m'), { membershipConfirmed: true }))
 })
@@ -219,6 +225,46 @@ test('a member cannot give themselves a pass and confirm it in one write', async
       membershipAccessPass: 'annual',
       membershipConfirmed: true,
     }),
+  )
+})
+
+/**
+ * The escalation the two tests above did not reach: membershipConfirmed rests
+ * at true for a member holding no pass, so granting yourself a pass and simply
+ * not mentioning the confirmation left a diff containing nothing the rules were
+ * checking, and the record read back as a confirmed annual membership.
+ */
+test('a member cannot grant themselves a pass by leaving membershipConfirmed alone', async () => {
+  await seed('uid-m', profile({ email: 'm@example.com' }))
+  const db = asUser('uid-m', 'm@example.com')
+  await assertFails(updateDoc(doc(db, 'users', 'uid-m'), { membershipAccessPass: 'annual' }))
+})
+
+test('a member cannot extend their own confirmed membership', async () => {
+  await seed(
+    'uid-m',
+    profile({
+      email: 'm@example.com',
+      membershipAccessPass: 'annual',
+      membershipConfirmed: true,
+      membershipStart: '2026-01-01T00:00:00.000Z',
+      membershipExpiry: '2027-01-01T00:00:00.000Z',
+    }),
+  )
+  const db = asUser('uid-m', 'm@example.com')
+  await assertFails(
+    updateDoc(doc(db, 'users', 'uid-m'), { membershipExpiry: '2030-01-01T00:00:00.000Z' }),
+  )
+})
+
+test('a member on a confirmed membership can still sign in', async () => {
+  await seed(
+    'uid-m',
+    profile({ email: 'm@example.com', membershipAccessPass: 'annual', membershipConfirmed: true }),
+  )
+  const db = asUser('uid-m', 'm@example.com')
+  await assertSucceeds(
+    updateDoc(doc(db, 'users', 'uid-m'), { lastSignInAt: '2026-08-23T12:00:00.000Z' }),
   )
 })
 
@@ -247,6 +293,22 @@ test('a member can self-purchase, pending admin confirmation', async () => {
       membershipStart: '2026-08-23T00:00:00.000Z',
       membershipExpiry: '2027-08-23T00:00:00.000Z',
       pendingMembership: JSON.stringify({ label: '1 Year', price: '$300' }),
+    }),
+  )
+})
+
+test('a member can self-purchase a punch pass, pending admin confirmation', async () => {
+  await seed('uid-m', profile({ email: 'm@example.com' }))
+  const db = asUser('uid-m', 'm@example.com')
+  // What HomePage writes when someone with no pass buys ten punches and spends
+  // one on the way in. It never touches membershipConfirmed: a punch admits a
+  // single visit, and pendingPunches is what an admin confirms.
+  await assertSucceeds(
+    updateDoc(doc(db, 'users', 'uid-m'), {
+      membershipAccessPass: 'punch',
+      punchPassRemaining: 9,
+      pendingPunches: 10,
+      lastSignInAt: '2026-08-23T12:00:00.000Z',
     }),
   )
 })

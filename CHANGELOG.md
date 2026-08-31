@@ -89,6 +89,14 @@ All notable changes to KBC Scheduler are documented here.
 
   Firebase Storage went with it. The waiver upload was the only thing the panel ever wrote a file for, so `firebase-storage-compat.js` is no longer loaded.
 
+### Security
+- **A member could give themselves a confirmed membership.** `canSelfUpdateAccess` asked whether a write *changed* `membershipConfirmed`, and denied it if the new value was true. But that field rests at **true** for everyone holding no pass — it is how "there is nothing awaiting confirmation" is stored, for every new member and for every pass an admin denies — so a member who wrote nothing but `membershipAccessPass: 'annual'` never touched the field the rule was watching. The diff came back clean, the write was allowed, and the record read back as a confirmed annual membership nobody had paid for. Extending your own expiry or backdating your own start worked the same way.
+
+  The rule now also asks what the write **leaves behind**: a member's own write may not end with a confirmed dated pass if it touched the pass or either of its dates. Punch passes are deliberately outside that test — a punch admits a single visit and is held to account by `pendingPunches` and by the count itself, so the self-purchase flow legitimately moves someone onto `punch` without ever writing `membershipConfirmed`. Buying a membership, buying punches, spending a punch, clearing a lapsed pass and signing in are all unaffected, each with a test.
+
+  Two `rules-tests` were already pointed at this and failing. One of them, **"a member cannot confirm their own purchase"**, was failing for its own separate reason: the fixture rests at `membershipConfirmed: true`, so the test wrote true over true — an empty diff, which no rule can deny, and which was never the scenario the name describes. It now seeds the pending purchase it is meant to be confirming.
+
+
 
 ---
 
