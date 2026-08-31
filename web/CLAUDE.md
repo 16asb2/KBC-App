@@ -53,11 +53,12 @@ src/
                    (/setup, /waiver/:type) or AppShell → the six tab routes
   lib/firebase.ts — initializeApp()/getAuth()/getFirestore()/googleProvider
 
-  types/member.ts — UserProfile, MembershipStatus, WaiverRecord, EmergencyContact
+  types/member.ts — UserProfile, AccessPassId, WaiverRecord, EmergencyContact
 
   domain/        — pure logic, no Firestore/env reads. Each has a *.test.ts.
-    membership.ts       — nextMembershipStatus(): auto-expire decision
-    membershipPass.ts   — PASS_OPTIONS, getPassId/getPassLabel
+    membership.ts       — nextAccessPass(): lapsed-pass decision
+    membershipPass.ts   — PASS_OPTIONS, accessPassLabel(), isDatedPass(),
+                          membershipGrantsEntry(), passFromDates()
     roles.ts            — isAdminFor()/isAdmin()/isPrivileged()
     signIn.ts           — hasSignedInToday(), passLabel()
     calendarEvent.ts    — event classification, timeline layout, gym-status-from-events
@@ -100,6 +101,16 @@ src/
   utils/         — id.ts (generateId), imageResize.ts (canvas resize → data URL)
 ```
 
+**The access pass is two fields, not a status.** `users/{uid}` carries
+`membershipAccessPass` (`'annual' | '8month' | '4month' | '1month' | 'punch' |
+'dropin' | 'none'`) and `membershipConfirmed` (boolean, `false` while a
+member's own purchase awaits an admin). These replaced a single
+`membershipStatus` field holding `active | pending | inactive`, which conflated
+which pass someone bought with whether it had been approved. The pass is
+*stored*, not derived from `membershipStart`/`membershipExpiry` — `admin-web/`
+keeps an identical copy of the ids and labels, and `firestore.rules` gates
+`membershipConfirmed` specifically, so all three have to move together.
+
 **Data-format constraint — keep `JSON.stringify()` on nested `users/{uid}` fields.** `emergencyContact`, `additionalEmails` and `pendingMembership` are stored as JSON-*stringified strings*, not native Firestore maps. This originated as a workaround for the old Expo app's hand-rolled REST decoder, which is now gone — but it still binds, for two reasons that aren't going away:
 
 1. **`admin-web/` reads them the same way** (`JSON.parse(u.emergencyContact || '{}')`), and it's still live.
@@ -107,7 +118,7 @@ src/
 
 Changing it means migrating existing documents *and* updating `admin-web/` in the same change — not a local cleanup. Note this does **not** apply to the `boulders`/`climbLogs`/`climbLocations` collections, which correctly use native maps and arrays throughout.
 
-**Pure-logic-first pattern**: domain functions that make a decision (`nextMembershipStatus`, `isAdminFor`) take their inputs as plain parameters and return a value — no Firestore/env reads inside them, so no mocking is needed to unit test them. Side-effecting wrappers (env var reads, Firestore writes) live one layer up, in `domain/roles.ts`'s `isAdmin()`/`SUPER_ADMIN_EMAIL` and `services/profiles.ts`'s `checkAndUpdateMembershipStatus()`. Follow this split for new domain logic (session rules, punch-pass logic, etc. in later phases).
+**Pure-logic-first pattern**: domain functions that make a decision (`nextAccessPass`, `isAdminFor`) take their inputs as plain parameters and return a value — no Firestore/env reads inside them, so no mocking is needed to unit test them. Side-effecting wrappers (env var reads, Firestore writes) live one layer up, in `domain/roles.ts`'s `isAdmin()`/`SUPER_ADMIN_EMAIL` and `services/profiles.ts`'s `checkAndClearLapsedPass()`. Follow this split for new domain logic (session rules, punch-pass logic, etc. in later phases).
 
 ## Commands
 
