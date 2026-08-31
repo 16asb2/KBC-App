@@ -7,7 +7,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
   <script src="https://accounts.google.com/gsi/client" async></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
@@ -56,19 +55,34 @@
     .btn-outline{background:transparent;border:1.5px solid var(--border);color:var(--text)}
     .btn-danger{background:rgba(231,76,60,.1);color:var(--red);border:1.5px solid rgba(231,76,60,.25)}
     .btn-sm{padding:4px 9px;font-size:12px}
+    /* Confirm/deny, sitting inline against a pending pass badge — small enough
+       not to make the Access Pass column about them, coloured so the two are
+       not mistaken for each other at a glance. */
+    .btn-yes,.btn-no{border:none;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:700;cursor:pointer;line-height:1.5;margin-left:4px}
+    .btn-yes{background:rgba(46,204,113,.18);color:#27ae60}
+    .btn-yes:hover{background:rgba(46,204,113,.34)}
+    .btn-no{background:rgba(231,76,60,.15);color:var(--red)}
+    .btn-no:hover{background:rgba(231,76,60,.3)}
 
     .stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:20px}
     .stat-card{flex:1;min-width:100px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center}
     .stat-num{font-size:30px;font-weight:800;color:var(--cyan)}.stat-label{font-size:11px;color:var(--muted);margin-top:3px}
 
     .table-wrap{overflow-x:auto}
-    /* The member directory is wider than the page, so its last column — the
-       one holding Edit — sat off the right edge behind a horizontal scrollbar
-       that is easy to miss, and the button read as missing. Pinned open. */
-    th.col-actions,td.col-actions{position:sticky;right:0;box-shadow:-6px 0 6px -6px rgba(0,0,0,.18)}
-    td.col-actions{background:var(--card)}
-    th.col-actions{background:var(--bg)}
-    tr:hover td.col-actions{background:#f8fafc}
+    /* The member directory carries a column per profile field, so it is far
+       wider than the page and scrolls sideways rather than wrapping: every row
+       stays one line tall, which is what makes a column readable down the page.
+       The name is pinned to the left edge so you can still tell whose row you
+       are reading out at the far right. It used to be the Edit button that was
+       pinned, to the right — there is no Edit button now, the columns it opened
+       are all on the row. */
+    table.wide{width:auto;min-width:100%}
+    table.wide th,table.wide td{white-space:nowrap}
+    th.col-name,td.col-name{position:sticky;left:0;z-index:1;box-shadow:6px 0 6px -6px rgba(0,0,0,.18)}
+    td.col-name{background:var(--card)}
+    th.col-name{background:var(--bg)}
+    tr:hover td.col-name{background:#f8fafc}
+    tr.row-link{cursor:pointer}
     table{width:100%;border-collapse:collapse;font-size:13px}
     th{text-align:left;padding:7px 10px;background:var(--bg);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border)}
     td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
@@ -422,7 +436,7 @@
             <div class="form-field"><label>Phone</label><input type="text" id="new-phone" placeholder="613-555-0123"></div>
             <div class="form-field">
               <label>Access Pass</label>
-              <select id="new-pass">
+              <select id="new-pass" onchange="onNewPassChange()">
                 <option value="none">No pass</option>
                 <option value="annual">Annual pass</option>
                 <option value="8month">8-month pass</option>
@@ -432,7 +446,9 @@
                 <option value="dropin">Drop-in</option>
               </select>
             </div>
-            <div class="form-field">
+            <!-- Only meaningful once there is a pass whose payment could be
+                 confirmed; hidden while the pass is "No pass". -->
+            <div class="form-field" id="new-confirmed-field" style="display:none">
               <label>Payment Confirmed</label>
               <select id="new-confirmed">
                 <option value="yes">Yes</option>
@@ -527,7 +543,7 @@
             <option value="dropin">Drop-in</option>
           </select>
         </div>
-        <div class="modal-field"><label>Payment Confirmed</label>
+        <div class="modal-field" id="edit-confirmed-field"><label>Payment Confirmed</label>
           <select id="edit-confirmed">
             <option value="yes">Yes</option>
             <option value="no">No — awaiting confirmation</option>
@@ -554,25 +570,24 @@
       </div>
     </div>
 
+    <!-- A waiver signed on paper used to be scanned and uploaded here, which
+         cost the panel a file picker, a Storage bucket, and a second place a
+         waiver could live. The signature date is the only thing anyone ever
+         read back off a scan, so it is recorded directly instead: signed on
+         paper or signed in the app, the record reads the same. Scans uploaded
+         before this change are still linked below. -->
     <div class="modal-section" id="edit-waiver-section">
       <div class="modal-section-title">Waiver</div>
-      <div id="edit-waiver-digital" style="display:none;margin-bottom:10px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px">Digital — signed in app</div>
-        <div id="edit-waiver-info" style="font-size:13px;color:#333;line-height:1.9;margin-bottom:8px"></div>
-        <button class="btn btn-outline btn-sm" id="edit-waiver-pdf-btn">⬇ Download PDF</button>
+      <div class="modal-row">
+        <div class="modal-field"><label>Signed (date &amp; time)</label><input type="datetime-local" id="edit-waiver-signed"></div>
+        <div class="modal-field"><label>Signed By</label><input type="text" id="edit-waiver-by" placeholder="Full legal name"></div>
       </div>
-      <div id="edit-waiver-pdf-uploaded" style="display:none;margin-bottom:10px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:4px">Physical PDF on file</div>
-        <a id="edit-waiver-pdf-link" href="#" target="_blank" class="btn btn-outline btn-sm">👁 View PDF</a>
+      <div id="edit-waiver-note" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn btn-outline btn-sm" id="edit-waiver-pdf-btn" style="display:none">⬇ Download PDF</button>
+        <a id="edit-waiver-pdf-link" href="#" target="_blank" class="btn btn-outline btn-sm" style="display:none">👁 View scanned PDF</a>
       </div>
-      <div id="edit-waiver-none" style="font-size:13px;color:var(--muted);margin-bottom:10px">No waiver on file.</div>
-      <div style="padding-top:12px;border-top:1px solid var(--border)">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);margin-bottom:6px">Upload physical waiver PDF</div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input type="file" id="edit-waiver-file" accept=".pdf" style="font-size:12px;flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="uploadEditWaiver()">Upload</button>
-        </div>
-      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px">Leaving the date empty removes the waiver from the record — the member is then asked to sign again the next time they open the app.</div>
     </div>
 
     <div class="modal-actions" style="margin-top:18px">
@@ -828,7 +843,6 @@ function isConfirmed(m) { return m.membershipConfirmed !== false; }
 firebase.initializeApp(FIREBASE_CONFIG);
 const auth    = firebase.auth();
 const db      = firebase.firestore();
-const storage = firebase.storage();
 
 // ── SORT ──────────────────────────────────────────────────────────────────────
 const SORT = {
@@ -999,14 +1013,55 @@ function accessPassName(m) {
   if(pass==='none' && (m.punchPassRemaining||0)>0) return accessPassLabel('punch');
   return accessPassLabel(pass);
 }
-/** The directory's Access Pass column. Colour carries the confirmation. */
-function accessPassCell(m) {
+/**
+ * The directory's Access Pass column. Colour carries the confirmation, and a
+ * pass still waiting on one carries the two buttons that settle it — confirming
+ * a payment is the commonest thing anyone does on this screen, and it used to
+ * mean opening the member, changing a dropdown and saving.
+ */
+function accessPassCell(m, i) {
   const pass=passOf(m);
   const cls = pass==='none' ? ((m.punchPassRemaining||0)>0 ? 'badge-blue' : 'badge-grey')
             : !isConfirmed(m) ? 'badge-orange'
             : isDatedPass(pass) ? 'badge-green' : 'badge-blue';
-  const pending = pass!=='none' && !isConfirmed(m) ? ' · pending' : '';
-  return `<span class="badge ${cls}">${accessPassName(m)}${pending}</span>`;
+  const isPending = pass!=='none' && !isConfirmed(m);
+  const badge=`<span class="badge ${cls}">${accessPassName(m)}${isPending?' · pending':''}</span>`;
+  if(!isPending || i===undefined) return badge;
+  // stopPropagation: the row opens the member, and settling a pass should not
+  // also open them.
+  return badge+
+    ` <button class="btn-yes" title="Confirm this pass" onclick="event.stopPropagation();confirmPass(${i})">✓</button>`+
+    `<button class="btn-no" title="Deny this pass" onclick="event.stopPropagation();denyPass(${i})">✕</button>`;
+}
+/** Confirms the pass a member recorded — the pass itself is already right. */
+async function confirmPass(i) {
+  const m=memberList[i];
+  try {
+    await db.collection('users').doc(m.uid).update({
+      membershipConfirmed:true, pendingMembership:null, pendingPunches:null,
+      amendedBy:currentUser.email, amendedAt:new Date().toISOString(),
+    });
+    toast(`${m.legalName||m.name||'Member'} — pass confirmed`);
+    loadMembers();
+  } catch(e) { toast('Error: '+e.message,true); }
+}
+/**
+ * Denies it: the pass goes, and the period it claimed goes with it. Same
+ * destination as the app's own cancel action, so a denial reads the same
+ * wherever it was made.
+ */
+async function denyPass(i) {
+  const m=memberList[i], name=m.legalName||m.name||'this member';
+  if(!confirm(`Deny ${name}'s ${accessPassName(m)}?\n\nThe pass is removed and they are left holding nothing.`)) return;
+  try {
+    await db.collection('users').doc(m.uid).update({
+      membershipAccessPass:'none', membershipConfirmed:true, pendingMembership:null,
+      membershipStart:null, membershipExpiry:null,
+      amendedBy:currentUser.email, amendedAt:new Date().toISOString(),
+    });
+    toast(`${name} — pass denied`);
+    loadMembers();
+  } catch(e) { toast('Error: '+e.message,true); }
 }
 /** The same name as plain text, for the PDF export. */
 function accessPassText(m) {
@@ -1532,7 +1587,7 @@ function toggleImportForm() {
 
 function toggleAddForm() {
   const f=document.getElementById('add-form'); f.classList.toggle('open');
-  if (!f.classList.contains('open')) { ['new-legal','new-preferred','new-email','new-phone','new-ec-name','new-ec-rel','new-ec-phone','new-access-start','new-access-end'].forEach(id=>document.getElementById(id).value=''); document.getElementById('new-pass').value='none'; document.getElementById('new-confirmed').value='yes'; document.getElementById('new-supervisor').checked=false; document.getElementById('new-admin').checked=false; }
+  if (!f.classList.contains('open')) { ['new-legal','new-preferred','new-email','new-phone','new-ec-name','new-ec-rel','new-ec-phone','new-access-start','new-access-end'].forEach(id=>document.getElementById(id).value=''); document.getElementById('new-pass').value='none'; document.getElementById('new-confirmed').value='yes'; onNewPassChange(); document.getElementById('new-supervisor').checked=false; document.getElementById('new-admin').checked=false; }
 }
 
 async function addMember() {
@@ -1562,7 +1617,8 @@ async function addMember() {
       email, ...(phone && { phone }),
       ...(ecObj && { emergencyContact: ecObj }),
       membershipAccessPass: pass,
-      membershipConfirmed: confirmed,
+      // As in saveEdit: a member with no pass has nothing awaiting confirmation.
+      membershipConfirmed: pass==='none' ? true : confirmed,
       // Only a dated pass has a period; a punch pass or drop-in that carried
       // dates would read back as a membership it is not.
       membershipStart: isDatedPass(pass) && accessStart ? new Date(accessStart).toISOString() : null,
@@ -1612,49 +1668,104 @@ function memberGaps(m) {
   return gaps;
 }
 
+/** When a member's record last changed, and who changed it. The panel writes
+ *  amendedAt, the app writes lastUpdatedAt; the record's last change is
+ *  whichever of the two is later. */
+function lastChangedAt(m) {
+  const a=m.amendedAt||'', b=m.lastUpdatedAt||'';
+  return a>b?a:b;
+}
+function lastChangedBy(m) {
+  return (m.amendedAt||'')>=(m.lastUpdatedAt||'') ? (m.amendedBy||m.lastUpdatedBy||'') : (m.lastUpdatedBy||m.amendedBy||'');
+}
+/** The emergency contact, parsed out of the JSON string it is stored as. */
+function emergency(m) {
+  try { return JSON.parse(m.emergencyContact||'{}')||{}; } catch { return {}; }
+}
+/** The liability waiver record, likewise. */
+function waiverOf(m) {
+  try { return JSON.parse(m.waiverLiability||'{}')||{}; } catch { return {}; }
+}
+
+/**
+ * One column per field on the member record. There is no Edit button and no
+ * Actions column any more: everything the edit modal used to keep out of sight
+ * is a column, so the directory answers a question about a member instead of
+ * pointing at the place the answer is kept. Clicking a row still opens the
+ * modal — a table this wide is for reading, not for typing into.
+ *
+ * Every column sorts, the two role flags included: "who are the supervisors"
+ * is a sort, not a search.
+ */
 function renderMembersTable() {
   const getVal=(m,col)=>{
     if(col==='legalName')return m.legalName||m.name||'';
     if(col==='membershipAccessPass')return accessPassName(m);
-    if(col==='membershipStart')return m.membershipStart||'';
-    if(col==='waiver')return(m.waiverLiability||m.waiverPdfUrl)?'1':'0';
+    // Flags and counts sort as numbers, so the ones that are set group together
+    // rather than ordering by the word the cell happens to render.
+    if(col==='isSupervisor')return m.isSupervisor?1:0;
+    if(col==='isAdmin')return m.isAdmin?1:0;
+    if(col==='punchPassRemaining')return m.punchPassRemaining||0;
+    if(col==='incomplete')return memberGaps(m).length;
+    if(col==='ecName')return emergency(m).name||'';
+    if(col==='ecRelationship')return emergency(m).relationship||'';
+    if(col==='ecPhone')return emergency(m).phone||'';
+    if(col==='waiverSignedAt')return waiverOf(m).signedAt||'';
+    if(col==='waiverSignedBy')return waiverOf(m).signedBy||'';
+    // ISO strings throughout, so lexical order is chronological order.
+    if(col==='lastChanged')return lastChangedAt(m);
     return m[col]??'';
   };
   applySort(memberList,'members',getVal);
   const tbl=document.getElementById('mem-table');
   if(!memberList.length){tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No members found.</p>';return;}
-  const sh=col=>`onclick="clickSort('members','${col}')" style="cursor:pointer;user-select:none"`;
-  tbl.innerHTML=`<table><thead><tr>
-    <th ${sh('legalName')}>Legal Name${sortIcon('members','legalName')}</th>
-    <th ${sh('preferredName')}>Preferred Name${sortIcon('members','preferredName')}</th>
-    <th ${sh('email')}>Email${sortIcon('members','email')}</th>
-    <th ${sh('phone')}>Phone${sortIcon('members','phone')}</th>
-    <th ${sh('membershipAccessPass')}>Access Pass${sortIcon('members','membershipAccessPass')}</th>
-    <th ${sh('membershipStart')}>Start Date${sortIcon('members','membershipStart')}</th>
-    <th ${sh('membershipExpiry')}>End Date${sortIcon('members','membershipExpiry')}</th>
-    <th ${sh('punchPassRemaining')}>Punches${sortIcon('members','punchPassRemaining')}</th>
-    <th ${sh('memberSince')}>Member Since${sortIcon('members','memberSince')}</th>
-    <th ${sh('waiver')}>Waiver${sortIcon('members','waiver')}</th>
-    <th style="text-align:center">SUP</th>
-    <th style="text-align:center">ADM</th>
-    <th class="col-actions" style="text-align:right">Actions</th>
-  </tr></thead><tbody>${memberList.map((m,i)=>`<tr>
-    <td style="white-space:nowrap"><strong>${m.legalName||m.name||'—'}</strong>${memberGaps(m).length?`<br><span class="badge" style="background:#e0860022;color:#e08600" title="Missing ${memberGaps(m).join(', ')} — the member is asked for these when they next open the app">Incomplete</span>`:''}</td>
-    <td style="font-size:12px;color:var(--muted)">${m.preferredName&&m.preferredName!==(m.legalName||m.name)?m.preferredName:'—'}</td>
-    <td style="font-size:12px">${m.email||'—'}</td>
-    <td style="font-size:12px;white-space:nowrap">${m.phone||'—'}</td>
-    <td>${accessPassCell(m)}</td>
-    <td style="font-size:12px;white-space:nowrap">${fmtDate(m.membershipStart)}</td>
-    <td style="font-size:12px;white-space:nowrap">${fmtDate(m.membershipExpiry)}</td>
-    <td>${(m.punchPassRemaining||0)>0?`<span class="badge badge-blue">${m.punchPassRemaining}</span>`:'—'}</td>
-    <td style="font-size:12px;white-space:nowrap">${fmtDate(m.memberSince)}</td>
-    <td>${(m.waiverLiability||m.waiverPdfUrl)?`<button class="btn btn-outline btn-sm" onclick="openEditModal(${i})">✅ View</button>`:'<span style="color:var(--muted);font-size:12px">—</span>'}</td>
+  const th=(col,label,extra='')=>`<th onclick="clickSort('members','${col}')" style="cursor:pointer;user-select:none;${extra}">${label}${sortIcon('members',col)}</th>`;
+  const dim='style="font-size:12px;color:var(--muted)"';
+  const dash='<span style="color:var(--muted)">—</span>';
+  const txt=v=>v?String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])):'—';
+  tbl.innerHTML=`<table class="wide"><thead><tr>
+    ${th('legalName','Legal Name')}
+    ${th('preferredName','Preferred Name')}
+    ${th('email','Email')}
+    ${th('phone','Phone')}
+    ${th('membershipAccessPass','Access Pass')}
+    ${th('membershipStart','Start Date')}
+    ${th('membershipExpiry','End Date')}
+    ${th('punchPassRemaining','Punches')}
+    ${th('ecName','Emergency Contact')}
+    ${th('ecRelationship','Relationship')}
+    ${th('ecPhone','Emergency Phone')}
+    ${th('waiverSignedAt','Waiver Signed')}
+    ${th('waiverSignedBy','Waiver Signed By')}
+    ${th('memberSince','Member Since')}
+    ${th('lastSignInAt','Last Sign-In')}
+    ${th('incomplete','Profile')}
+    ${th('isSupervisor','SUP','text-align:center')}
+    ${th('isAdmin','ADM','text-align:center')}
+    ${th('lastChanged','Last Changed')}
+  </tr></thead><tbody>${memberList.map((m,i)=>{
+    const ec=emergency(m), w=waiverOf(m), gaps=memberGaps(m), changed=lastChangedAt(m), by=lastChangedBy(m);
+    return `<tr class="row-link" onclick="openEditModal(${i})" title="Open ${txt(m.legalName||m.name)}">
+    <td class="col-name"><strong>${txt(m.legalName||m.name)}</strong></td>
+    <td ${dim}>${m.preferredName&&m.preferredName!==(m.legalName||m.name)?txt(m.preferredName):dash}</td>
+    <td style="font-size:12px">${txt(m.email)}</td>
+    <td style="font-size:12px">${txt(m.phone)}</td>
+    <td>${accessPassCell(m,i)}</td>
+    <td style="font-size:12px">${fmtDate(m.membershipStart)}</td>
+    <td style="font-size:12px">${fmtDate(m.membershipExpiry)}</td>
+    <td>${(m.punchPassRemaining||0)>0?`<span class="badge badge-blue">${m.punchPassRemaining}</span>`:dash}</td>
+    <td style="font-size:12px">${txt(ec.name)}</td>
+    <td ${dim}>${txt(ec.relationship)}</td>
+    <td style="font-size:12px">${txt(ec.phone)}</td>
+    <td style="font-size:12px">${w.signedAt?fmt(w.signedAt):(m.waiverPdfUrl?'<span class="badge badge-grey">Scan on file</span>':dash)}</td>
+    <td ${dim}>${txt(w.signedBy)}</td>
+    <td style="font-size:12px">${m.memberSince?fmtDate(m.memberSince):dash}</td>
+    <td style="font-size:12px">${m.lastSignInAt?fmtDate(m.lastSignInAt):dash}</td>
+    <td>${gaps.length?`<span class="badge" style="background:#e0860022;color:#e08600" title="Missing ${gaps.join(', ')} — the member is asked for these when they next open the app">Incomplete</span>`:'<span class="badge badge-green">Complete</span>'}</td>
     <td style="text-align:center">${m.isSupervisor?'<span class="badge badge-blue">SUP</span>':'<span style="color:#ddd">—</span>'}</td>
     <td style="text-align:center">${m.isAdmin?'<span class="badge badge-red">ADM</span>':'<span style="color:#ddd">—</span>'}</td>
-    <td class="col-actions" style="text-align:right;white-space:nowrap">
-      <button class="btn btn-outline btn-sm" onclick="openEditModal(${i})">Edit</button>
-    </td>
-  </tr>`).join('')}</tbody></table>`;
+    <td style="font-size:12px">${changed?fmt(changed)+(by?` <span style="color:var(--muted)">· ${txt(by)}</span>`:''):dash}</td>
+  </tr>`;}).join('')}</tbody></table>`;
 }
 
 function openEditModal(i) {
@@ -1677,42 +1788,65 @@ function openEditModal(i) {
   document.getElementById('edit-ec-name').value=ec.name||'';
   document.getElementById('edit-ec-rel').value=ec.relationship||'';
   document.getElementById('edit-ec-phone').value=ec.phone||'';
-  // Waiver — digital
-  const digitalDiv=document.getElementById('edit-waiver-digital');
-  if(m.waiverLiability){
-    let w={}; try{w=JSON.parse(m.waiverLiability);}catch{}
-    document.getElementById('edit-waiver-info').innerHTML=
-      `<div><strong>Signed by:</strong> ${w.signedBy||'—'}</div>`+
-      `<div><strong>Date:</strong> ${fmt(w.signedAt)}</div>`+
-      (w.guardian?`<div><strong>Guardian:</strong> ${w.guardian}</div>`:'');
-    document.getElementById('edit-waiver-pdf-btn').onclick=()=>dlWaiverPDF(i);
-    digitalDiv.style.display='block';
-  } else { digitalDiv.style.display='none'; }
-  // Waiver — uploaded PDF
-  const pdfDiv=document.getElementById('edit-waiver-pdf-uploaded');
-  if(m.waiverPdfUrl){
-    document.getElementById('edit-waiver-pdf-link').href=m.waiverPdfUrl;
-    pdfDiv.style.display='block';
-  } else { pdfDiv.style.display='none'; }
-  document.getElementById('edit-waiver-none').style.display=(m.waiverLiability||m.waiverPdfUrl)?'none':'block';
-  document.getElementById('edit-waiver-file').value='';
+  // Waiver — when it was signed and by whom, whether that happened on paper
+  // or in the app. Anything else the record carries (a guardian's name, the
+  // Docs link the app writes) is shown but not editable here.
+  const w=waiverOf(m);
+  document.getElementById('edit-waiver-signed').value=toLocalInput(w.signedAt);
+  document.getElementById('edit-waiver-by').value=w.signedBy||'';
+  const note=[];
+  if(w.guardian) note.push(`Guardian: ${w.guardian}`);
+  if(w.docUrl) note.push(`<a href="${w.docUrl}" target="_blank">Signed copy in Google Docs</a>`);
+  if(!w.signedAt && !m.waiverPdfUrl) note.push('No waiver on file.');
+  document.getElementById('edit-waiver-note').innerHTML=note.join(' · ');
+  const pdfBtn=document.getElementById('edit-waiver-pdf-btn');
+  pdfBtn.onclick=()=>dlWaiverPDF(i);
+  pdfBtn.style.display=w.signedAt?'inline-flex':'none';
+  const pdfLink=document.getElementById('edit-waiver-pdf-link');
+  pdfLink.href=m.waiverPdfUrl||'#';
+  pdfLink.style.display=m.waiverPdfUrl?'inline-flex':'none';
+  onEditPassChange(true);
   document.getElementById('edit-modal').style.display='block';
 }
+/** An ISO instant as a <input type="datetime-local"> value, in local time. */
+function toLocalInput(iso) {
+  if(!iso) return '';
+  const d=new Date(iso);
+  if(isNaN(d)) return '';
+  d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+  return d.toISOString().slice(0,16);
+}
+/**
+ * Whether to ask about payment. A member holding no pass has no payment to
+ * confirm, so the question is hidden rather than answered — it used to sit
+ * there reading "Yes" about nothing.
+ */
+function togglePaymentConfirmed(passSelectId, fieldId) {
+  const hasPass=document.getElementById(passSelectId).value!=='none';
+  document.getElementById(fieldId).style.display=hasPass?'':'none';
+  return hasPass;
+}
+function onNewPassChange() { togglePaymentConfirmed('new-pass','new-confirmed-field'); }
 function closeEditModal() { editingMember=null; document.getElementById('edit-modal').style.display='none'; }
 /**
  * Choosing a pass fills the end date in from the start. The dates stay the
  * stored truth — the pass name is derived back out of them, here and in the
  * app — so this is a shortcut past the arithmetic, not a separate field.
  */
-function onEditPassChange() {
+function onEditPassChange(opening=false) {
   const pass=document.getElementById('edit-pass').value;
   const startEl=document.getElementById('edit-access-start');
   const endEl=document.getElementById('edit-expiry');
   const opt=PASS_OPTIONS.find(p=>p.id===pass);
+  togglePaymentConfirmed('edit-pass','edit-confirmed-field');
   // Punch passes and drop-ins run for no period at all, so their date fields
   // are cleared and disabled rather than left holding a membership's dates.
   startEl.disabled=endEl.disabled=!opt;
   if(!opt){ startEl.value=''; endEl.value=''; return; }
+  // Opening the modal fills the fields from the record; only an actual change
+  // of pass recomputes them, or reopening a member would silently move the
+  // dates an admin had set by hand.
+  if(opening) return;
   if(!startEl.value) startEl.value=today();
   endEl.value=addMonths(startEl.value+'T00:00:00',opt.months).slice(0,10);
 }
@@ -1731,7 +1865,10 @@ async function saveEdit() {
     ...(phone && { phone }),
     ...(ecObj && { emergencyContact: ecObj }),
     membershipAccessPass:document.getElementById('edit-pass').value,
-    membershipConfirmed:document.getElementById('edit-confirmed').value==='yes',
+    // No pass, nothing to confirm — stored as confirmed so the member never
+    // reads as "pending" against a pass they do not hold.
+    membershipConfirmed:document.getElementById('edit-pass').value==='none' ||
+                        document.getElementById('edit-confirmed').value==='yes',
     isSupervisor:document.getElementById('edit-sup').checked,
     isAdmin:document.getElementById('edit-adm').checked,
     amendedBy:currentUser.email, amendedAt:new Date().toISOString()
@@ -1745,6 +1882,16 @@ async function saveEdit() {
   updates.membershipStart = dated && accessStart ? new Date(accessStart).toISOString() : null;
   updates.membershipExpiry = dated && expiry ? new Date(expiry).toISOString() : null;
   const punches=parseInt(document.getElementById('edit-punches').value); if (!isNaN(punches)) updates.punchPassRemaining=punches;
+  // The waiver: one record holding when it was signed and by whom, keeping
+  // whatever else was already on it. Emptying the date clears the record — the
+  // app then asks the member to sign, which is the honest state for a waiver
+  // nobody can point at.
+  const signedAt=document.getElementById('edit-waiver-signed').value;
+  const signedBy=document.getElementById('edit-waiver-by').value.trim();
+  const prevWaiver=waiverOf(editingMember);
+  updates.waiverLiability = signedAt
+    ? JSON.stringify({ ...prevWaiver, signedAt:new Date(signedAt).toISOString(), signedBy:signedBy||legalName })
+    : null;
   try { await db.collection('users').doc(editingMember.uid).update(updates); toast('Member updated'); closeEditModal(); loadMembers(); }
   catch(e) { toast('Error: '+e.message,true); }
 }
@@ -1791,27 +1938,6 @@ async function dlWaiverPDF(i) {
   toast('Generating…');
   try { const m=memberList[i],fn=`KBC_Waiver_${(m.legalName||m.name||'member').replace(/\s+/g,'_')}.pdf`; dlBlob(await htmlToBlob(buildWaiverHTML(m),fn),fn); }
   catch(e) { toast('Error: '+e.message,true); }
-}
-async function uploadEditWaiver() {
-  if(!editingMember){toast('No member selected',true);return;}
-  const file=document.getElementById('edit-waiver-file').files[0];
-  if(!file){toast('Select a PDF file first',true);return;}
-  if(file.type!=='application/pdf'){toast('File must be a PDF',true);return;}
-  toast('Uploading…');
-  try {
-    const ref=storage.ref('waivers/'+editingMember.uid+'.pdf');
-    await ref.put(file,{contentType:'application/pdf'});
-    const url=await ref.getDownloadURL();
-    await db.collection('users').doc(editingMember.uid).update({waiverPdfUrl:url,waiverPdfUploadedAt:new Date().toISOString(),amendedBy:currentUser.email,amendedAt:new Date().toISOString()});
-    editingMember.waiverPdfUrl=url;
-    document.getElementById('edit-waiver-pdf-link').href=url;
-    document.getElementById('edit-waiver-pdf-uploaded').style.display='block';
-    document.getElementById('edit-waiver-none').style.display='none';
-    document.getElementById('edit-waiver-file').value='';
-    const idx=memberList.findIndex(m=>m.uid===editingMember.uid);
-    if(idx>=0){memberList[idx].waiverPdfUrl=url; renderMembersTable();}
-    toast('Waiver PDF uploaded!');
-  } catch(e){toast('Upload error: '+e.message+'. Check Firebase Storage rules.',true);}
 }
 
 // ── KBC CLIMBS ────────────────────────────────────────────────────────────────
