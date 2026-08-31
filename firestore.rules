@@ -57,9 +57,9 @@ service cloud.firestore {
     // A member updating their own profile cannot escalate privileges.
     function touchesMemberPrivilegedFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
-        'isAdmin', 'isSupervisor', 'membershipStatus', 'membershipStart',
-        'membershipExpiry', 'punchPassRemaining', 'pendingMembership',
-        'pendingPunches', 'amendedBy'
+        'isAdmin', 'isSupervisor', 'membershipAccessPass', 'membershipConfirmed',
+        'membershipStart', 'membershipExpiry', 'punchPassRemaining',
+        'pendingMembership', 'pendingPunches', 'amendedBy'
       ]);
     }
 
@@ -94,13 +94,19 @@ service cloud.firestore {
     }
 
     // A member may update their own access/purchase state as long as they
-    // don't touch role fields and don't self-approve to 'active'.
+    // don't touch role fields and don't confirm their own purchase.
+    //
+    // membershipAccessPass is theirs to set — recording that they bought an
+    // annual pass is the whole point of the purchase flow. What they may not do
+    // is mark it confirmed, which is what used to be expressed as "cannot set
+    // membershipStatus to 'active'". Splitting the pass from the confirmation
+    // made that distinction sayable rather than encoded in one enum.
     function canSelfUpdateAccess(uid) {
       return isAuthenticated() &&
         request.auth.uid == uid &&
         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'isSupervisor', 'amendedBy']) &&
-        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['membershipStatus']) ||
-          request.resource.data.membershipStatus == 'pending');
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['membershipConfirmed']) ||
+          request.resource.data.membershipConfirmed == false);
     }
 
     // ── users/{uid} ───────────────────────────────────────────────────────────
@@ -120,17 +126,17 @@ service cloud.firestore {
                         request.auth.uid == uid &&
                         !touchesMemberPrivilegedFields()) ||
                        // Members may purchase/use access for themselves (pending admin confirmation).
-                       // They can write access fields but cannot set membershipStatus to 'active'
+                       // They can write access fields but cannot set membershipConfirmed to true
                        // and cannot touch role fields.
                        canSelfUpdateAccess(uid) ||
-                       // Auto-expire: members can self-downgrade to 'inactive' when their
-                       // membership lapses — they cannot upgrade themselves.
+                       // Auto-expire: members can clear their own lapsed pass — they
+                       // cannot give themselves one. 'none' is the only destination.
                        (isAuthenticated() &&
                         request.auth.uid == uid &&
-                        resource.data.membershipStatus in ['active', 'pending'] &&
-                        request.resource.data.membershipStatus == 'inactive' &&
+                        resource.data.membershipAccessPass != 'none' &&
+                        request.resource.data.membershipAccessPass == 'none' &&
                         request.resource.data.diff(resource.data).affectedKeys()
-                          .hasOnly(['membershipStatus', 'lastUpdatedBy', 'lastUpdatedAt']));
+                          .hasOnly(['membershipAccessPass', 'lastUpdatedBy', 'lastUpdatedAt']));
     }
 
     // ── logs/{id} ─────────────────────────────────────────────────────────────

@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { KBC } from '@/constants/theme'
-import { PASS_OPTIONS, addMonths, getPassId, getPassLabel, type PassId } from '@/domain/membershipPass'
-import type { MembershipStatus, UserProfile } from '@/types/member'
+import { PASS_OPTIONS, accessPassLabel, addMonths, isDatedPass } from '@/domain/membershipPass'
+import type { AccessPassId, UserProfile } from '@/types/member'
 import { Modal } from './Modal'
 import { formatShortDate } from '@/utils/datetime'
 
-const STATUS_COLORS: Record<MembershipStatus, string> = {
-  active: KBC.green,
-  pending: KBC.orange,
-  inactive: '#aaa',
+// Colour says whether the pass is confirmed; the text says which pass it is.
+function passColor(member: Pick<UserProfile, 'membershipAccessPass' | 'membershipConfirmed'>): string {
+  if (member.membershipAccessPass === 'none') return '#aaa'
+  return member.membershipConfirmed ? KBC.green : KBC.orange
 }
 
 function formatDate(iso: string | null | undefined): string {
@@ -50,9 +50,9 @@ export function MemberDetailModal({
   onClose: () => void
 }) {
   const [showEdit, setShowEdit] = useState(false)
-  const [selectedPass, setSelectedPass] = useState<PassId>(
-    member.membershipStatus === 'inactive' ? 'inactive' : getPassId(member.membershipStart, member.membershipExpiry),
-  )
+  // Read straight off the profile — the pass is stored now, not inferred from
+  // the gap between two dates, so the picker cannot disagree with the record.
+  const [selectedPass, setSelectedPass] = useState<AccessPassId>(member.membershipAccessPass)
   const [isSupervisor, setIsSupervisor] = useState(member.isSupervisor)
   const [punches, setPunches] = useState(member.punchPassRemaining)
   const [startDate, setStartDate] = useState(
@@ -80,8 +80,9 @@ export function MemberDetailModal({
     try {
       const updates: Partial<UserProfile> = {}
       if (canEditMembership) {
-        if (selectedPass === 'inactive') {
-          updates.membershipStatus = 'inactive'
+        if (!isDatedPass(selectedPass)) {
+          updates.membershipAccessPass = selectedPass
+          updates.membershipConfirmed = true
           updates.membershipStart = null
           updates.membershipExpiry = null
           updates.pendingMembership = null
@@ -90,13 +91,15 @@ export function MemberDetailModal({
           const start = new Date(startDate)
           const expiry = addMonths(start, pass.months)
           if (canDirectActivate) {
-            updates.membershipStatus = 'active'
+            updates.membershipAccessPass = selectedPass
+            updates.membershipConfirmed = true
             updates.membershipStart = start.toISOString()
             updates.membershipExpiry = expiry.toISOString()
             updates.pendingMembership = null
           } else {
-            // Supervisor → pending, admin must confirm
-            updates.membershipStatus = 'pending'
+            // Supervisor → unconfirmed, an admin must confirm
+            updates.membershipAccessPass = selectedPass
+            updates.membershipConfirmed = false
             updates.membershipStart = start.toISOString()
             updates.membershipExpiry = expiry.toISOString()
             updates.pendingMembership = JSON.stringify({
@@ -139,7 +142,7 @@ export function MemberDetailModal({
       {/* Access Pass Status */}
       <div className="flex items-start justify-between gap-3 border-t border-neutral-100 py-3">
         <div>
-          <p className="text-[11px] font-bold tracking-wide text-neutral-400 uppercase">Access Pass Status</p>
+          <p className="text-[11px] font-bold tracking-wide text-neutral-400 uppercase">Access Pass</p>
           {pendingMembership ? (
             <>
               <p className="mt-0.5 text-sm font-bold" style={{ color: KBC.orange }}>
@@ -151,18 +154,19 @@ export function MemberDetailModal({
                 </p>
               )}
             </>
-          ) : member.membershipStatus === 'active' && member.membershipStart ? (
+          ) : isDatedPass(member.membershipAccessPass) && member.membershipStart ? (
             <>
-              <p className="mt-0.5 text-sm font-bold" style={{ color: KBC.green }}>
-                {getPassLabel(member.membershipStart, member.membershipExpiry)}
+              <p className="mt-0.5 text-sm font-bold" style={{ color: passColor(member) }}>
+                {accessPassLabel(member.membershipAccessPass)}
+                {!member.membershipConfirmed && ' (pending)'}
               </p>
               <p className="text-xs text-neutral-500">
                 {formatDate(member.membershipStart)} → {formatDate(member.membershipExpiry)}
               </p>
             </>
           ) : (
-            <p className="mt-0.5 text-sm font-bold" style={{ color: STATUS_COLORS[member.membershipStatus] }}>
-              Inactive
+            <p className="mt-0.5 text-sm font-bold" style={{ color: passColor(member) }}>
+              {accessPassLabel(member.membershipAccessPass)}
             </p>
           )}
         </div>
@@ -196,9 +200,9 @@ export function MemberDetailModal({
           {canEditMembership && canDirectActivate && (
             <PendingActions
               onCancel={() =>
-                void onSave({ membershipStatus: 'inactive', pendingMembership: null, membershipStart: null, membershipExpiry: null })
+                void onSave({ membershipAccessPass: 'none', membershipConfirmed: true, pendingMembership: null, membershipStart: null, membershipExpiry: null })
               }
-              onConfirm={() => void onSave({ membershipStatus: 'active', pendingMembership: null })}
+              onConfirm={() => void onSave({ membershipConfirmed: true, pendingMembership: null })}
             />
           )}
         </PendingRow>
@@ -231,19 +235,22 @@ export function MemberDetailModal({
       {/* Inline edit panel */}
       {showEdit && canEditMembership && (
         <div className="mt-2 space-y-3 rounded-xl bg-neutral-50 p-4">
-          <FieldLabel>Access Pass Status</FieldLabel>
+          <FieldLabel>Access Pass</FieldLabel>
           <div className="flex flex-wrap gap-2">
             {PASS_OPTIONS.map((p) => (
               <PassButton key={p.id} active={selectedPass === p.id} onClick={() => setSelectedPass(p.id)}>
                 {p.label}
               </PassButton>
             ))}
-            <PassButton active={selectedPass === 'inactive'} onClick={() => setSelectedPass('inactive')} tone="inactive">
-              Inactive
+            <PassButton active={selectedPass === 'punch'} onClick={() => setSelectedPass('punch')}>
+              Punch pass
+            </PassButton>
+            <PassButton active={selectedPass === 'none'} onClick={() => setSelectedPass('none')} tone="inactive">
+              No pass
             </PassButton>
           </div>
 
-          {selectedPass !== 'inactive' && (
+          {isDatedPass(selectedPass) && (
             <>
               <FieldLabel>Start Date</FieldLabel>
               <input

@@ -1,41 +1,43 @@
 import { describe, expect, it } from 'vitest'
-import { nextMembershipStatus } from './membership'
+import { nextAccessPass } from './membership'
 
 const NOW = new Date('2026-06-01T00:00:00.000Z')
 const PAST = '2026-05-01T00:00:00.000Z'
 const FUTURE = '2026-07-01T00:00:00.000Z'
 
-describe('nextMembershipStatus', () => {
-  it('transitions active + expired to inactive', () => {
-    expect(
-      nextMembershipStatus({ membershipStatus: 'active', membershipExpiry: PAST }, NOW),
-    ).toBe('inactive')
+describe('nextAccessPass', () => {
+  it('clears an expired annual pass', () => {
+    expect(nextAccessPass({ membershipAccessPass: 'annual', membershipExpiry: PAST }, NOW)).toBe(
+      'none',
+    )
   })
 
-  it('transitions pending + expired to inactive', () => {
-    expect(
-      nextMembershipStatus({ membershipStatus: 'pending', membershipExpiry: PAST }, NOW),
-    ).toBe('inactive')
+  it('clears an expired 1-month pass', () => {
+    expect(nextAccessPass({ membershipAccessPass: '1month', membershipExpiry: PAST }, NOW)).toBe(
+      'none',
+    )
   })
 
-  it('leaves active + not-yet-expired untouched', () => {
+  it('leaves a pass that has not expired untouched', () => {
     expect(
-      nextMembershipStatus({ membershipStatus: 'active', membershipExpiry: FUTURE }, NOW),
+      nextAccessPass({ membershipAccessPass: 'annual', membershipExpiry: FUTURE }, NOW),
     ).toBeNull()
   })
 
-  it('leaves already-inactive + expired untouched (no-op, already inactive)', () => {
+  it('leaves a member with no pass untouched, expired date or not', () => {
+    expect(nextAccessPass({ membershipAccessPass: 'none', membershipExpiry: PAST }, NOW)).toBeNull()
+  })
+
+  it('leaves punch-pass and drop-in members untouched — they carry no expiry', () => {
+    expect(nextAccessPass({ membershipAccessPass: 'punch', membershipExpiry: null }, NOW)).toBeNull()
     expect(
-      nextMembershipStatus({ membershipStatus: 'inactive', membershipExpiry: PAST }, NOW),
+      nextAccessPass({ membershipAccessPass: 'dropin', membershipExpiry: null }, NOW),
     ).toBeNull()
   })
 
-  it('leaves null-expiry (punch-pass-only) members untouched regardless of status', () => {
+  it('does not transition a dated pass that has no expiry recorded', () => {
     expect(
-      nextMembershipStatus({ membershipStatus: 'active', membershipExpiry: null }, NOW),
-    ).toBeNull()
-    expect(
-      nextMembershipStatus({ membershipStatus: 'inactive', membershipExpiry: null }, NOW),
+      nextAccessPass({ membershipAccessPass: 'annual', membershipExpiry: null }, NOW),
     ).toBeNull()
   })
 })

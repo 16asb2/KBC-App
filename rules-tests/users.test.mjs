@@ -36,7 +36,8 @@ function profile(overrides = {}) {
     legalName: 'Test Member',
     email: 'member@example.com',
     photo: null,
-    membershipStatus: 'inactive',
+    membershipAccessPass: 'none',
+    membershipConfirmed: true,
     isAdmin: false,
     isSupervisor: false,
     punchPassRemaining: 0,
@@ -204,10 +205,36 @@ test('a member cannot grant themselves isSupervisor', async () => {
   await assertFails(updateDoc(doc(db, 'users', 'uid-m'), { isSupervisor: true }))
 })
 
-test('a member cannot self-approve membership to active', async () => {
+test('a member cannot confirm their own purchase', async () => {
   await seed('uid-m', profile({ email: 'm@example.com' }))
   const db = asUser('uid-m', 'm@example.com')
-  await assertFails(updateDoc(doc(db, 'users', 'uid-m'), { membershipStatus: 'active' }))
+  await assertFails(updateDoc(doc(db, 'users', 'uid-m'), { membershipConfirmed: true }))
+})
+
+test('a member cannot give themselves a pass and confirm it in one write', async () => {
+  await seed('uid-m', profile({ email: 'm@example.com' }))
+  const db = asUser('uid-m', 'm@example.com')
+  await assertFails(
+    updateDoc(doc(db, 'users', 'uid-m'), {
+      membershipAccessPass: 'annual',
+      membershipConfirmed: true,
+    }),
+  )
+})
+
+test('a member can clear their own lapsed pass but not grant one', async () => {
+  await seed(
+    'uid-m',
+    profile({ email: 'm@example.com', membershipAccessPass: 'annual', membershipConfirmed: true }),
+  )
+  const db = asUser('uid-m', 'm@example.com')
+  await assertSucceeds(
+    updateDoc(doc(db, 'users', 'uid-m'), {
+      membershipAccessPass: 'none',
+      lastUpdatedBy: 'system',
+      lastUpdatedAt: '2026-08-30T00:00:00.000Z',
+    }),
+  )
 })
 
 test('a member can self-purchase, pending admin confirmation', async () => {
@@ -215,7 +242,8 @@ test('a member can self-purchase, pending admin confirmation', async () => {
   const db = asUser('uid-m', 'm@example.com')
   await assertSucceeds(
     updateDoc(doc(db, 'users', 'uid-m'), {
-      membershipStatus: 'pending',
+      membershipAccessPass: 'annual',
+      membershipConfirmed: false,
       membershipStart: '2026-08-23T00:00:00.000Z',
       membershipExpiry: '2027-08-23T00:00:00.000Z',
       pendingMembership: JSON.stringify({ label: '1 Year', price: '$300' }),

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useAuth } from '@/context/AuthContext'
-import { checkAndUpdateMembershipStatus, findOrLinkProfile } from '@/services/profiles'
+import { checkAndClearLapsedPass, findOrLinkProfile } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
 
 type ProfileContextType = {
@@ -35,7 +35,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       let p = await findOrLinkProfile(user.uid, user.displayName ?? '', user.email ?? '', user.photoURL)
       if (p) {
         // Auto-transition membership status on every sign-in (e.g. expire outdated memberships)
-        const updated = await checkAndUpdateMembershipStatus(p, user.email ?? 'unknown')
+        const updated = await checkAndClearLapsedPass(p, user.email ?? 'unknown')
         if (updated) p = updated
       }
       setProfile(p)

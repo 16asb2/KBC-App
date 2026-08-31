@@ -62,6 +62,13 @@
     .stat-num{font-size:30px;font-weight:800;color:var(--cyan)}.stat-label{font-size:11px;color:var(--muted);margin-top:3px}
 
     .table-wrap{overflow-x:auto}
+    /* The member directory is wider than the page, so its last column — the
+       one holding Edit — sat off the right edge behind a horizontal scrollbar
+       that is easy to miss, and the button read as missing. Pinned open. */
+    th.col-actions,td.col-actions{position:sticky;right:0;box-shadow:-6px 0 6px -6px rgba(0,0,0,.18)}
+    td.col-actions{background:var(--card)}
+    th.col-actions{background:var(--bg)}
+    tr:hover td.col-actions{background:#f8fafc}
     table{width:100%;border-collapse:collapse;font-size:13px}
     th{text-align:left;padding:7px 10px;background:var(--bg);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border)}
     td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:middle}
@@ -69,6 +76,7 @@
     tr:hover td{background:#f8fafc}
 
     .badge{display:inline-block;padding:2px 7px;border-radius:9px;font-size:11px;font-weight:700}
+    code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em;background:rgba(0,0,0,.05);border-radius:4px;padding:1px 5px}
     .badge-green{background:rgba(46,204,113,.15);color:#27ae60}
     .badge-blue{background:rgba(0,180,216,.15);color:var(--cyan)}
     .badge-orange{background:rgba(247,127,0,.15);color:var(--orange)}
@@ -193,9 +201,9 @@
 
   <nav>
     <button class="nav-btn active" onclick="showSection('signinbook',this)">📋 Sign-In Book</button>
+    <button class="nav-btn"        onclick="showSection('purchases',this)">🧾 Purchases</button>
     <button class="nav-btn"        onclick="showSection('members',this)">👥 Members</button>
     <button class="nav-btn"        onclick="showSection('climbs',this)">🧗 KBC Climbs</button>
-    <button class="nav-btn"        onclick="showSection('purchases',this)">🧾 Purchases</button>
   </nav>
 
   <main>
@@ -245,6 +253,97 @@
       </div>
     </div>
 
+    <!-- PURCHASES -->
+    <div class="section" id="section-purchases">
+      <div class="card">
+        <div class="card-title">
+          <span>Purchases</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-outline btn-sm" onclick="togglePurchaseImportForm()">⬆ Import CSV</button>
+            <button class="btn btn-primary btn-sm" onclick="togglePurchaseAddForm()">＋ Add Purchase</button>
+          </div>
+        </div>
+
+        <!-- Back-filling the till: past purchases of access passes, day passes
+             and punch passes, so the receipt history predates the app. These
+             write sign-in-book entries only — a historical purchase does not
+             grant a pass or credit punches today. -->
+        <div class="add-form" id="purchase-import-form">
+          <div class="add-form-title">Import Purchases from CSV</div>
+          <p style="font-size:12px;color:var(--muted);margin:0 0 10px">
+            Paste the sheet or choose a .csv file. The first row must be headers — column order
+            doesn't matter, and unrecognised columns are ignored.
+            <strong>Member Name, Date and Purchase are required.</strong>
+          </p>
+          <p style="font-size:12px;color:var(--muted);margin:0 0 10px">
+            These are records of what was bought and when. They appear in the purchase history and on
+            receipts; they do <strong>not</strong> give anyone a pass or add punches to a profile —
+            set a member's current pass on the Members tab. Re-importing the same file overwrites the
+            same entries rather than adding duplicates, because each row's id is built from the
+            member, the moment and the purchase.
+          </p>
+          <p style="font-size:11px;color:var(--muted);margin:0 0 10px">
+            Recognised columns: Member Name · Email · Date · Purchase · Amount · Notes
+          </p>
+          <p style="font-size:11px;color:var(--muted);margin:0 0 10px">
+            <strong>Purchase</strong> accepts the same names as the member import:
+            <code>Annual</code> (or <code>12 months</code>, <code>Student Annual</code>) ·
+            <code>8-month</code> · <code>4-month</code> · <code>1-month</code> ·
+            <code>Punch Pass</code> · <code>Drop-In</code> (or <code>Day Pass</code>).
+            <code>Amount</code> is optional and free-form (<code>$160</code>, <code>160</code>) — left
+            out, the current price list is used.
+          </p>
+          <div class="form-row">
+            <div class="form-field" style="flex:1 1 100%">
+              <label>Paste CSV</label>
+              <textarea id="pur-import-text" rows="6" placeholder="Member Name,Date,Purchase,Amount&#10;Jane Smith,2026-03-14,Annual,$450&#10;Sam Lee,2026-04-02 18:30,Punch Pass,$160&#10;Ada Poe,2026-04-05,Drop-In,$20"
+                style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;padding:10px;border:1px solid #ddd;border-radius:8px"></textarea>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="file" id="pur-import-file" accept=".csv,text/csv" onchange="loadPurchaseImportFile(event)" style="font-size:12px">
+            <button class="btn btn-outline" onclick="previewPurchaseImport()">Preview</button>
+            <button class="btn btn-primary" id="pur-import-run" onclick="runPurchaseImport()" disabled>Import</button>
+            <button class="btn btn-outline" onclick="togglePurchaseImportForm()">Cancel</button>
+          </div>
+          <div id="pur-import-preview" style="margin-top:12px"></div>
+        </div>
+
+        <div class="add-form" id="purchase-add-form">
+          <div class="add-form-title">New Purchase</div>
+          <div class="form-row">
+            <div class="form-field"><label>Member Name *</label><input type="text" id="pur-name" placeholder="Jane Doe"></div>
+            <div class="form-field"><label>Date &amp; Time *</label><input type="datetime-local" id="pur-timestamp"></div>
+            <div class="form-field">
+              <label>Purchase Type *</label>
+              <select id="pur-type" onchange="onPurchaseTypeChange()">
+                <option value="dropin">Drop-In ($20)</option>
+                <option value="punch10">10× Punch Passes ($160)</option>
+                <option value="mem1m">1-month pass ($55)</option>
+                <option value="mem4m">4-months pass ($200)</option>
+                <option value="mem8m">8-months pass ($350)</option>
+                <option value="mem12m">Annual Pass ($450)</option>
+                <option value="student12m">Student Annual ($350)</option>
+              </select>
+            </div>
+            <div class="form-field wide"><label>Notes (override)</label><input type="text" id="pur-notes" placeholder="auto-filled from purchase type"></div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="submitPurchase()">Add Purchase</button>
+            <button class="btn btn-outline" onclick="togglePurchaseAddForm()">Cancel</button>
+          </div>
+        </div>
+
+        <div class="controls">
+          <label>From <input type="date" id="rec-from" onchange="loadReceipts()"></label>
+          <label>To   <input type="date" id="rec-to" onchange="loadReceipts()"></label>
+          <button class="btn btn-outline" id="btn-rec-csv" onclick="exportReceiptsCSV()" disabled>⬇ CSV</button>
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">All access pass purchases. Voucher redemptions are recorded in the Sign-In Book.</p>
+        <div id="rec-table" class="table-wrap"></div>
+      </div>
+    </div>
+
     <!-- MEMBERS -->
     <div class="section" id="section-members">
       <div class="card">
@@ -268,14 +367,40 @@
             first sign in. Rows missing anything else are still imported and flagged, and the member
             is asked to fill the gaps the first time they open the app.
           </p>
+          <p style="font-size:12px;color:var(--muted);margin:0 0 10px">
+            <strong>Re-importing updates.</strong> A row whose email already belongs to a member
+            edits that member rather than adding a second one. Only the columns your file carries are
+            touched — a blank cell leaves what is stored alone, and waivers, punch history and the
+            member's linked account are never affected. The preview lists exactly what each row will
+            change before anything is written.
+          </p>
           <p style="font-size:11px;color:var(--muted);margin:0 0 10px">
             Recognised columns: Legal Name · Preferred Name · Email · Phone · Emergency Contact ·
-            Relationship · Emergency Phone · Status · Expiry · Member Since · Punches · Supervisor · Admin
+            Relationship · Emergency Phone · Access Pass · Confirmed · Access Pass Start · Expiry ·
+            Member Since · Punches · Supervisor · Admin
+          </p>
+          <p style="font-size:11px;color:var(--muted);margin:0 0 10px">
+            <strong>Access Pass</strong> is the pass the member holds — it is written to the
+            <code>membershipAccessPass</code> field, and the column is named to match. It accepts:
+            <code>Annual</code> (or <code>12 months</code>, <code>Student Annual</code>) ·
+            <code>8-month</code> · <code>4-month</code> · <code>1-month</code> ·
+            <code>Punch Pass</code> (10 punches unless a Punches column says otherwise) ·
+            <code>Drop-In</code> · <code>None</code>. A dated pass runs from Access Pass Start — or
+            Member Since, or today — and the end date is worked out from its length unless the file
+            gives one; a row with dates and no pass column gets the pass those dates describe. Punch
+            passes and drop-ins grant no period, so they carry no dates.
+          </p>
+          <p style="font-size:11px;color:var(--muted);margin:0 0 10px">
+            <strong>Confirmed</strong> is the separate question of whether an admin has confirmed the
+            payment — <code>Yes</code>/<code>No</code>, or <code>Pending</code> for not yet. Left out,
+            a pass is taken as confirmed. There is no <code>Status</code> column any more: it used to
+            mean both of these at once, which is why a sheet saying "Annual pass" under it imported as
+            nothing at all.
           </p>
           <div class="form-row">
             <div class="form-field" style="flex:1 1 100%">
               <label>Paste CSV</label>
-              <textarea id="import-text" rows="6" placeholder="Legal Name,Email,Phone,Emergency Contact,Relationship,Emergency Phone&#10;Jane Smith,jane@example.com,613-555-0123,John Smith,Partner,613-555-0124"
+              <textarea id="import-text" rows="6" placeholder="Legal Name,Email,Phone,Emergency Contact,Relationship,Emergency Phone,Access Pass,Access Pass Start,Confirmed&#10;Jane Smith,jane@example.com,613-555-0123,John Smith,Partner,613-555-0124,Annual,2026-01-15,Yes"
                 style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;padding:10px;border:1px solid #ddd;border-radius:8px"></textarea>
             </div>
           </div>
@@ -296,11 +421,22 @@
             <div class="form-field"><label>Email *</label><input type="email" id="new-email" placeholder="jane@example.com"></div>
             <div class="form-field"><label>Phone</label><input type="text" id="new-phone" placeholder="613-555-0123"></div>
             <div class="form-field">
-              <label>Access Pass Status</label>
-              <select id="new-status">
-                <option value="inactive">Inactive</option>
-                <option value="pending">Pending</option>
-                <option value="active">Active</option>
+              <label>Access Pass</label>
+              <select id="new-pass">
+                <option value="none">No pass</option>
+                <option value="annual">Annual pass</option>
+                <option value="8month">8-month pass</option>
+                <option value="4month">4-month pass</option>
+                <option value="1month">1-month pass</option>
+                <option value="punch">Punch pass</option>
+                <option value="dropin">Drop-in</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Payment Confirmed</label>
+              <select id="new-confirmed">
+                <option value="yes">Yes</option>
+                <option value="no">No — awaiting confirmation</option>
               </select>
             </div>
             <div class="form-field"><label>Access Pass Start</label><input type="date" id="new-access-start"></div>
@@ -357,48 +493,6 @@
       </div>
     </div>
 
-    <!-- PURCHASES -->
-    <div class="section" id="section-purchases">
-      <div class="card">
-        <div class="card-title">
-          <span>Purchases</span>
-          <button class="btn btn-primary btn-sm" onclick="togglePurchaseAddForm()">＋ Add Purchase</button>
-        </div>
-
-        <div class="add-form" id="purchase-add-form">
-          <div class="add-form-title">New Purchase</div>
-          <div class="form-row">
-            <div class="form-field"><label>Member Name *</label><input type="text" id="pur-name" placeholder="Jane Doe"></div>
-            <div class="form-field"><label>Date &amp; Time *</label><input type="datetime-local" id="pur-timestamp"></div>
-            <div class="form-field">
-              <label>Purchase Type *</label>
-              <select id="pur-type" onchange="onPurchaseTypeChange()">
-                <option value="dropin">Drop-In ($20)</option>
-                <option value="punch10">10× Punch Passes ($160)</option>
-                <option value="mem1m">1-month pass ($55)</option>
-                <option value="mem4m">4-months pass ($200)</option>
-                <option value="mem8m">8-months pass ($350)</option>
-                <option value="mem12m">Annual Pass ($450)</option>
-                <option value="student12m">Student Annual ($350)</option>
-              </select>
-            </div>
-            <div class="form-field wide"><label>Notes (override)</label><input type="text" id="pur-notes" placeholder="auto-filled from purchase type"></div>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-primary" onclick="submitPurchase()">Add Purchase</button>
-            <button class="btn btn-outline" onclick="togglePurchaseAddForm()">Cancel</button>
-          </div>
-        </div>
-
-        <div class="controls">
-          <label>From <input type="date" id="rec-from" onchange="loadReceipts()"></label>
-          <label>To   <input type="date" id="rec-to" onchange="loadReceipts()"></label>
-          <button class="btn btn-outline" id="btn-rec-csv" onclick="exportReceiptsCSV()" disabled>⬇ CSV</button>
-        </div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">All access pass purchases. Voucher redemptions are recorded in the Sign-In Book.</p>
-        <div id="rec-table" class="table-wrap"></div>
-      </div>
-    </div>
 
   </main>
 </div>
@@ -421,12 +515,24 @@
 
     <div class="modal-section">
       <div class="modal-section-title">Access Pass</div>
-      <div class="modal-field"><label>Access Pass Status</label>
-        <select id="edit-status">
-          <option value="inactive">Inactive</option>
-          <option value="pending">Pending</option>
-          <option value="active">Active</option>
-        </select>
+      <div class="modal-row">
+        <div class="modal-field"><label>Access Pass</label>
+          <select id="edit-pass" onchange="onEditPassChange()">
+            <option value="none">No pass</option>
+            <option value="annual">Annual pass (12 months)</option>
+            <option value="8month">8-month pass</option>
+            <option value="4month">4-month pass</option>
+            <option value="1month">1-month pass</option>
+            <option value="punch">Punch pass</option>
+            <option value="dropin">Drop-in</option>
+          </select>
+        </div>
+        <div class="modal-field"><label>Payment Confirmed</label>
+          <select id="edit-confirmed">
+            <option value="yes">Yes</option>
+            <option value="no">No — awaiting confirmation</option>
+          </select>
+        </div>
       </div>
       <div class="modal-row">
         <div class="modal-field"><label>Access Pass Start</label><input type="date" id="edit-access-start"></div>
@@ -678,6 +784,46 @@ const ACCESS_OPTIONS = [
   { id:'student12m', label:'Student Annual',     accessType:'Active Member', notes:'Purchased: Student Annual Membership ($350)', months:12 },
 ];
 
+// The pass a member holds is stored on their profile, in the field
+// membershipAccessPass. It used to be a field called membershipStatus holding
+// active/pending/inactive, which answered a different question from the one
+// anyone was asking: which pass did they buy? The confirmation state that used
+// to hide inside those three words is now its own boolean, membershipConfirmed.
+//
+// Keep these ids and labels identical to web/src/domain/membershipPass.ts —
+// both read the same documents, and a member who reads as an annual here and
+// something else in the app is worse than either name alone.
+const PASS_OPTIONS = [
+  { id:'annual', label:'Annual pass',  months:12 },
+  { id:'8month', label:'8-month pass', months:8  },
+  { id:'4month', label:'4-month pass', months:4  },
+  { id:'1month', label:'1-month pass', months:1  },
+];
+const ACCESS_PASS_LABELS = {
+  annual:'Annual pass', '8month':'8-month pass', '4month':'4-month pass',
+  '1month':'1-month pass', punch:'Punch pass', dropin:'Drop-in', none:'No pass',
+};
+function accessPassLabel(pass) { return ACCESS_PASS_LABELS[pass] || 'Access pass'; }
+/** True for the passes that run for a period; punch and drop-in do not. */
+function isDatedPass(pass) { return PASS_OPTIONS.some(p=>p.id===pass); }
+function addMonths(iso, months) { const d=new Date(iso); d.setMonth(d.getMonth()+months); return d.toISOString(); }
+/**
+ * The dated pass a start/expiry pair describes. Only for reading a period that
+ * arrived without a pass named against it — an import row carrying two dates
+ * and no Access Pass column.
+ */
+function passFromDates(start, expiry) {
+  if(!start||!expiry) return 'none';
+  const months=Math.round((new Date(expiry)-new Date(start))/(30.44*24*60*60*1000));
+  if(months>=11) return 'annual';
+  if(months>=7)  return '8month';
+  if(months>=3)  return '4month';
+  if(months>=1)  return '1month';
+  return 'none';
+}
+function passOf(m) { return m.membershipAccessPass || 'none'; }
+function isConfirmed(m) { return m.membershipConfirmed !== false; }
+
 // ── FIREBASE ──────────────────────────────────────────────────────────────────
 firebase.initializeApp(FIREBASE_CONFIG);
 const auth    = firebase.auth();
@@ -841,9 +987,30 @@ function showSection(name, btn) {
   else if (name === 'members') loadMembers();
   else if (name === 'purchases') loadReceipts();
 }
-function statusBadge(s) {
-  const cls = { active:'badge-green', pending:'badge-orange', inactive:'badge-grey' };
-  return `<span class="badge ${cls[s]||'badge-grey'}">${s||'unknown'}</span>`;
+/**
+ * What a member's access pass is called — read straight off the profile rather
+ * than guessed at from the dates, so this screen and the app cannot disagree.
+ * A member who holds no pass but still has punches left is on a punch pass,
+ * which is the honest answer even though it grants entry per visit rather than
+ * for a period.
+ */
+function accessPassName(m) {
+  const pass=passOf(m);
+  if(pass==='none' && (m.punchPassRemaining||0)>0) return accessPassLabel('punch');
+  return accessPassLabel(pass);
+}
+/** The directory's Access Pass column. Colour carries the confirmation. */
+function accessPassCell(m) {
+  const pass=passOf(m);
+  const cls = pass==='none' ? ((m.punchPassRemaining||0)>0 ? 'badge-blue' : 'badge-grey')
+            : !isConfirmed(m) ? 'badge-orange'
+            : isDatedPass(pass) ? 'badge-green' : 'badge-blue';
+  const pending = pass!=='none' && !isConfirmed(m) ? ' · pending' : '';
+  return `<span class="badge ${cls}">${accessPassName(m)}${pending}</span>`;
+}
+/** The same name as plain text, for the PDF export. */
+function accessPassText(m) {
+  return accessPassName(m)+(passOf(m)!=='none' && !isConfirmed(m) ? ' (pending)' : '');
 }
 function dlBlob(blob, filename) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href); }
 function setLoading(id) { document.getElementById(id).innerHTML = '<div class="loading"><span class="spinner"></span>Loading…</div>'; }
@@ -961,15 +1128,50 @@ const IMPORT_ALIASES = {
   ecName:         ['emergency contact','emergency contact name','emergency name','ec name','next of kin'],
   ecRelationship: ['relationship','emergency contact relationship','ec relationship','emergency relationship','relation'],
   ecPhone:        ['emergency phone','emergency contact phone','ec phone','emergency contact number','emergency number','emergency contact phone number'],
-  membershipStatus:['status','membership status','access pass','access pass status','membership'],
-  membershipExpiry:['expiry','membership expiry','end date','access pass end','expires','expiry date'],
-  memberSince:    ['member since','joined','join date','start date','since'],
+  // Named to match the field it writes: membershipAccessPass. There is no
+  // "status" column any more — it used to share a name with this one, so a
+  // sheet saying "Annual pass" was read as a membership status, failed the
+  // active/pending/inactive test and landed as inactive with the pass thrown
+  // away. Whether an admin has confirmed the payment is its own column.
+  accessPass:     ['access pass','membership access pass','pass','pass type','access pass type','membership type','membership','plan'],
+  membershipConfirmed:['confirmed','payment confirmed','confirmation','approved','paid'],
+  membershipStart:['access pass start','pass start','membership start','start date','starts','valid from'],
+  membershipExpiry:['expiry','membership expiry','end date','access pass end','pass end','expires','expiry date','valid until'],
+  memberSince:    ['member since','joined','join date','since'],
   punchPassRemaining:['punches','punch passes','punch pass','punches remaining','punch pass remaining'],
   isSupervisor:   ['supervisor','sup','is supervisor'],
   isAdmin:        ['admin','is admin','administrator'],
 };
 
+/**
+ * What the Access Pass column accepts. Everything reduces to a number of
+ * months, because a period is all the member app stores — it names a pass by
+ * how long it runs. Punch passes and drop-ins are not memberships: they grant
+ * no period, and the app deliberately never counts them as 'active'
+ * (web/src/domain/membership.ts), so they set no dates.
+ */
+const IMPORT_PASS_VALUES = [
+  { pass:'annual', months:12, aliases:['annual','annual pass','yearly','year','12 month','12 months','12 month pass','12mo','student','student annual','student annual pass','student pass'] },
+  { pass:'8month', months:8,  aliases:['8 month','8 months','8 month pass','8month','8mo'] },
+  { pass:'4month', months:4,  aliases:['4 month','4 months','4 month pass','4month','4mo'] },
+  { pass:'1month', months:1,  aliases:['1 month','1 months','1 month pass','1month','1mo','month','monthly'] },
+  { pass:'punch',             aliases:['punch','punch pass','punch passes','punches','10 punch','10 punch pass','10x punch pass'] },
+  { pass:'dropin',            aliases:['drop in','dropin','drop in pass','day pass','day','single'] },
+  { pass:'none',              aliases:['none','no pass','inactive','expired','lapsed','n a'] },
+];
+/** Header normalisation does the job here too: case, dashes and × all vanish. */
+function parsePassValue(v) {
+  const s=normaliseHeader(v);
+  if(!s) return null;
+  return IMPORT_PASS_VALUES.find(p=>p.aliases.includes(s)) || null;
+}
+
 let importRows = [];
+
+// How much of the directory a page load holds. The CSV import matches rows
+// against this list, so anyone past the cap cannot be recognised and would be
+// re-created as a duplicate — previewImport() warns when the list is full.
+const MEMBER_PAGE_LIMIT = 2000;
 
 /** Header text to a comparable key: case, padding and separators all ignored. */
 function normaliseHeader(h) {
@@ -1014,12 +1216,24 @@ function isoOrNull(v) {
  * step: if they disagree, this screen calls a member complete while the app
  * keeps sending them back to the setup form, or the reverse.
  */
-function missingImportFields(r) {
+/**
+ * The same bar the app sets in web/src/domain/memberProfile.ts. Keep the two in
+ * step: if they disagree, this screen calls a member complete while the app
+ * keeps sending them back to the setup form, or the reverse.
+ *
+ * Judged on the record as it will be *after* the import, so a row that supplies
+ * the one field a member was missing counts as complete rather than as a fresh
+ * gap. Mirrors memberGaps() on the stored side.
+ */
+function missingImportFields(provided, existing) {
+  let ec={};
+  if(existing){ try { ec=JSON.parse(existing.emergencyContact||'{}')||{}; } catch {} }
+  const val=(field,current)=>String(provided[field] ?? current ?? '').trim();
   const missing=[];
-  if(!r.legalName) missing.push('legal name');
-  if(!r.ecName) missing.push('emergency contact');
-  if(!r.ecRelationship) missing.push('relationship');
-  if(!r.ecPhone) missing.push('emergency phone');
+  if(!val('legalName', existing && existing.legalName)) missing.push('legal name');
+  if(!val('ecName', ec.name)) missing.push('emergency contact');
+  if(!val('ecRelationship', ec.relationship)) missing.push('relationship');
+  if(!val('ecPhone', ec.phone)) missing.push('emergency phone');
   return missing;
 }
 
@@ -1031,6 +1245,11 @@ function loadImportFile(ev) {
   fr.readAsText(f);
 }
 
+/**
+ * Reads the sheet and decides, per row, whether it creates a member or updates
+ * one. Nothing is written here — every decision is shown first, because an
+ * import that silently overwrote the wrong record would be very hard to undo.
+ */
 function previewImport() {
   const text=document.getElementById('import-text').value.trim();
   const out=document.getElementById('import-preview');
@@ -1051,103 +1270,248 @@ function previewImport() {
   });
 
   if(colOf.email===undefined){
-    out.innerHTML='<p style="color:#c0392b;font-size:13px">No email column found. Email is required — it is what links a member to their account. Recognised headers: '+IMPORT_ALIASES.email.join(', ')+'.</p>';
+    out.innerHTML='<p style="color:#c0392b;font-size:13px">No email column found. Email is required — it is what links a member to their account, and what matches a row to an existing member. Recognised headers: '+IMPORT_ALIASES.email.join(', ')+'.</p>';
     return;
   }
 
+  // "Status" used to be a column here and no longer is. Ignoring it quietly
+  // would drop whatever it said, so name it instead.
+  const staleStatusCol=headers.some(h=>['status','membership status','access pass status'].includes(h));
+
   const cell=(row,field)=>colOf[field]===undefined?'':String(row[colOf[field]]??'').trim();
-  const existing=new Set((memberList||[]).map(m=>String(m.email||'').toLowerCase().trim()).filter(Boolean));
+  // "Given" means the column exists *and* the cell has something in it. A blank
+  // cell is left alone rather than written as empty, so re-importing a narrow
+  // sheet cannot wipe the columns it happens not to carry.
+  const given=(row,field)=>colOf[field]!==undefined && cell(row,field)!=='';
+
+  // Matching on email is what turns a re-import into an update: it is the one
+  // identifier the sheet, this panel and the member's Google account all agree
+  // on. Anything the directory did not load cannot be matched, so a truncated
+  // member list would silently create duplicates — hence the warning below.
+  const byEmail=new Map();
+  (memberList||[]).forEach(m=>{ const e=String(m.email||'').toLowerCase().trim(); if(e && !byEmail.has(e)) byEmail.set(e,m); });
   const seen=new Set();
 
   importRows=grid.slice(1).map((row,n)=>{
     const email=cell(row,'email').toLowerCase();
-    const r={
-      line:n+2,
-      legalName:cell(row,'legalName'), preferredName:cell(row,'preferredName'),
-      email, phone:cell(row,'phone'),
-      ecName:cell(row,'ecName'), ecRelationship:cell(row,'ecRelationship'), ecPhone:cell(row,'ecPhone'),
-      membershipStatus:(()=>{const s=cell(row,'membershipStatus').toLowerCase();return ['active','pending','inactive'].includes(s)?s:'inactive';})(),
-      membershipExpiry:isoOrNull(cell(row,'membershipExpiry')),
-      memberSince:isoOrNull(cell(row,'memberSince')),
-      punchPassRemaining:(()=>{const p=parseInt(cell(row,'punchPassRemaining'),10);return isNaN(p)?0:p;})(),
-      isSupervisor:truthy(cell(row,'isSupervisor')), isAdmin:truthy(cell(row,'isAdmin')),
-    };
-    if(!r.email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.email)) r.verdict='no-email';
-    else if(existing.has(r.email)) r.verdict='duplicate';
-    else if(seen.has(r.email)) r.verdict='repeat';
-    else { seen.add(r.email); r.verdict=missingImportFields(r).length?'incomplete':'ready'; }
-    r.missing=missingImportFields(r);
+    const r={ line:n+2, email, provided:{}, notes:[] };
+    const p=r.provided;
+
+    ['legalName','preferredName','phone','ecName','ecRelationship','ecPhone']
+      .forEach(f=>{ if(given(row,f)) p[f]=cell(row,f); });
+    if(given(row,'memberSince')){ const iso=isoOrNull(cell(row,'memberSince')); if(iso) p.memberSince=iso; else r.notes.push('unreadable member-since date'); }
+    if(given(row,'punchPassRemaining')){ const v=parseInt(cell(row,'punchPassRemaining'),10); if(!isNaN(v)) p.punchPassRemaining=Math.max(0,v); else r.notes.push('unreadable punch count'); }
+    if(given(row,'isSupervisor')) p.isSupervisor=truthy(cell(row,'isSupervisor'));
+    if(given(row,'isAdmin'))      p.isAdmin=truthy(cell(row,'isAdmin'));
+
+    // Access pass. The named pass sets the period; an explicit start or end
+    // column overrides what it worked out. A row that gives only dates still
+    // gets the pass those dates describe, so a sheet of renewal periods with no
+    // pass column imports as memberships rather than as nothing.
+    let start=given(row,'membershipStart')?isoOrNull(cell(row,'membershipStart')):null;
+    let expiry=given(row,'membershipExpiry')?isoOrNull(cell(row,'membershipExpiry')):null;
+    let pass=null;
+    if(given(row,'accessPass')){
+      const match=parsePassValue(cell(row,'accessPass'));
+      if(!match) r.notes.push('unknown pass "'+cell(row,'accessPass')+'"');
+      else {
+        pass=match.pass;
+        if(match.months){
+          if(!start) start=isoOrNull(cell(row,'memberSince'))||new Date().toISOString();
+          if(!expiry) expiry=addMonths(start,match.months);
+        } else {
+          // Per-visit access carries no period of its own.
+          if(match.pass==='punch' && p.punchPassRemaining===undefined) p.punchPassRemaining=10;
+          start=null; expiry=null;
+        }
+      }
+    } else if(start && expiry){
+      pass=passFromDates(start,expiry);
+    }
+    if(pass!==null){
+      p.membershipAccessPass=pass;
+      p.membershipStart=isDatedPass(pass)?start:null;
+      p.membershipExpiry=isDatedPass(pass)?expiry:null;
+      // A pass whose period has already run out is recorded as ended rather
+      // than revived by the import.
+      if(isDatedPass(pass) && expiry && new Date(expiry)<new Date()){
+        p.membershipAccessPass='none';
+        r.notes.push('pass already ended, imported as no pass');
+      }
+    } else {
+      if(start)  p.membershipStart=start;
+      if(expiry) p.membershipExpiry=expiry;
+    }
+    if(given(row,'membershipConfirmed')){
+      const v=normaliseHeader(cell(row,'membershipConfirmed'));
+      if(['pending','no','not confirmed','awaiting','unconfirmed'].includes(v)) p.membershipConfirmed=false;
+      else p.membershipConfirmed=truthy(cell(row,'membershipConfirmed'));
+    }
+
+    const existing=byEmail.get(email);
+    if(!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) r.verdict='no-email';
+    else if(seen.has(email)) r.verdict='repeat';
+    else {
+      seen.add(email);
+      if(existing){
+        r.existing=existing; r.uid=existing.uid;
+        r.changes=importChanges(r);
+        r.verdict=r.changes.length?'update':'nochange';
+      } else {
+        r.verdict=missingImportFields(p,null).length?'incomplete':'ready';
+      }
+    }
+    r.missing=missingImportFields(p, r.existing||null);
     return r;
   });
 
   const n=v=>importRows.filter(r=>r.verdict===v).length;
-  const importable=importRows.filter(r=>r.verdict==='ready'||r.verdict==='incomplete').length;
-  const chip=(txt,col)=>`<span class="badge" style="background:${col}22;color:${col}">${txt}</span>`;
+  const created=n('ready')+n('incomplete');
+  const updated=n('update');
+  const writable=created+updated;
+  const chip=(txt,col)=>'<span class="badge" style="background:'+col+'22;color:'+col+'">'+txt+'</span>';
   const verdictChip=r=>({
-    'ready':chip('Ready','#2e8b3d'),
-    'incomplete':chip('Incomplete','#e08600'),
-    'duplicate':chip('Already a member','#777'),
+    'ready':chip('New','#2e8b3d'),
+    'incomplete':chip('New · incomplete','#e08600'),
+    'update':chip('Update','#0077b6'),
+    'nochange':chip('No change','#777'),
     'repeat':chip('Repeated in file','#777'),
     'no-email':chip('No valid email','#c0392b'),
   })[r.verdict];
+  const detail=r=>{
+    if(r.verdict==='no-email') return 'email';
+    if(r.verdict==='update') return r.changes.join(', ')+(r.missing.length?' — still missing '+r.missing.join(', '):'');
+    if(r.verdict==='nochange') return 'already matches';
+    return r.missing.join(', ')||'—';
+  };
 
-  out.innerHTML=`
-    <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px">
-      <span><strong>${importable}</strong> to import</span>
-      <span style="color:#e08600"><strong>${n('incomplete')}</strong> incomplete (imported and flagged)</span>
-      <span style="color:#777"><strong>${n('duplicate')+n('repeat')}</strong> skipped as existing/repeat</span>
-      <span style="color:#c0392b"><strong>${n('no-email')}</strong> skipped, no valid email</span>
-    </div>
-    <div style="max-height:280px;overflow:auto;border:1px solid #eee;border-radius:8px">
-    <table><thead><tr><th>Row</th><th>Legal Name</th><th>Email</th><th>Status</th><th>Missing</th></tr></thead><tbody>
-    ${importRows.map(r=>`<tr>
-      <td style="color:var(--muted);font-size:12px">${r.line}</td>
-      <td style="font-size:12px">${r.legalName||'<span style="color:#c0392b">—</span>'}</td>
-      <td style="font-size:12px">${r.email||'<span style="color:#c0392b">—</span>'}</td>
-      <td>${verdictChip(r)}</td>
-      <td style="font-size:11px;color:var(--muted)">${r.verdict==='no-email'?'email':(r.missing.join(', ')||'—')}</td>
-    </tr>`).join('')}
-    </tbody></table></div>`;
+  // loadMembers() reads a capped page of the directory, and only what it loaded
+  // can be matched. Past that cap a re-import would start creating second
+  // copies of people already on file, so say so rather than let it happen.
+  const truncated=(memberList||[]).length>=MEMBER_PAGE_LIMIT;
 
-  runBtn.disabled = importable === 0;
-  runBtn.textContent = importable ? `Import ${importable} member${importable===1?'':'s'}` : 'Import';
+  out.innerHTML=
+    (staleStatusCol?'<p style="font-size:12px;color:#e08600;margin:0 0 8px"><strong>Note:</strong> the <code>Status</code> column is ignored — it was replaced by <code>Access Pass</code> (which pass they hold) and <code>Confirmed</code> (whether an admin has confirmed the payment).</p>':'')+
+    (truncated?'<p style="font-size:12px;color:#c0392b;margin:0 0 8px"><strong>Warning:</strong> the directory only loaded the first '+MEMBER_PAGE_LIMIT+' members, so rows beyond that cannot be matched and would be imported as duplicates. Narrow the file before importing.</p>':'')+
+    '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px">'+
+      '<span><strong>'+created+'</strong> new</span>'+
+      '<span style="color:#0077b6"><strong>'+updated+'</strong> to update</span>'+
+      '<span style="color:#e08600"><strong>'+n('incomplete')+'</strong> new but incomplete (imported and flagged)</span>'+
+      '<span style="color:#777"><strong>'+(n('nochange')+n('repeat'))+'</strong> skipped as unchanged/repeat</span>'+
+      '<span style="color:#c0392b"><strong>'+n('no-email')+'</strong> skipped, no valid email</span>'+
+    '</div>'+
+    '<div style="max-height:280px;overflow:auto;border:1px solid #eee;border-radius:8px">'+
+    '<table><thead><tr><th>Row</th><th>Legal Name</th><th>Email</th><th>Action</th><th>Detail</th></tr></thead><tbody>'+
+    importRows.map(r=>'<tr>'+
+      '<td style="color:var(--muted);font-size:12px">'+r.line+'</td>'+
+      '<td style="font-size:12px">'+(r.provided.legalName||(r.existing&&r.existing.legalName)||'<span style="color:#c0392b">—</span>')+'</td>'+
+      '<td style="font-size:12px">'+(r.email||'<span style="color:#c0392b">—</span>')+'</td>'+
+      '<td>'+verdictChip(r)+'</td>'+
+      '<td style="font-size:11px;color:var(--muted)">'+detail(r)+(r.notes.length?' <span style="color:#c0392b">('+r.notes.join('; ')+')</span>':'')+'</td>'+
+    '</tr>').join('')+
+    '</tbody></table></div>';
+
+  runBtn.disabled = writable === 0;
+  runBtn.textContent = writable ? 'Import '+writable+' member'+(writable===1?'':'s') : 'Import';
+}
+
+/**
+ * Which of a row's values actually differ from what is stored. Drives both the
+ * preview's "what will change" column and the decision to skip a row entirely,
+ * so re-running the same file twice is a genuine no-op rather than a second
+ * pass of identical writes.
+ */
+function importChanges(r) {
+  const m=r.existing, p=r.provided, out=[];
+  let ec={}; try { ec=JSON.parse(m.emergencyContact||'{}')||{}; } catch {}
+  const cmp=(label,current,next)=>{ if(next!==undefined && String(next??'')!==String(current??'')) out.push(label); };
+  cmp('legal name',m.legalName,p.legalName);
+  cmp('preferred name',m.preferredName,p.preferredName);
+  cmp('phone',m.phone,p.phone);
+  cmp('emergency contact',ec.name,p.ecName);
+  cmp('relationship',ec.relationship,p.ecRelationship);
+  cmp('emergency phone',ec.phone,p.ecPhone);
+  cmp('access pass',passOf(m),p.membershipAccessPass);
+  cmp('confirmed',isConfirmed(m),p.membershipConfirmed);
+  cmp('pass start',m.membershipStart,p.membershipStart);
+  cmp('pass end',m.membershipExpiry,p.membershipExpiry);
+  cmp('punches',m.punchPassRemaining??0,p.punchPassRemaining);
+  cmp('supervisor',!!m.isSupervisor,p.isSupervisor);
+  cmp('admin',!!m.isAdmin,p.isAdmin);
+  cmp('member since',m.memberSince,p.memberSince);
+  return out;
+}
+
+/**
+ * The Firestore fields for one row: only what the file actually supplied, so an
+ * update touches the columns the sheet carries and leaves the rest — waivers,
+ * the linked account, sign-in history — exactly as they are.
+ */
+function importPayload(r, now) {
+  const p=r.provided, m=r.existing||null, out={};
+  ['legalName','preferredName','phone','membershipAccessPass','membershipConfirmed','membershipStart','membershipExpiry','punchPassRemaining','isSupervisor','isAdmin','memberSince']
+    .forEach(f=>{ if(p[f]!==undefined) out[f]=p[f]; });
+  // name is the display name the app shows, derived the same way a hand-added
+  // member's is. Only recomputed when the file touches one of its inputs.
+  if(p.legalName!==undefined || p.preferredName!==undefined){
+    const legal=p.legalName ?? (m && m.legalName) ?? '';
+    const preferred=p.preferredName ?? (m && m.preferredName) ?? '';
+    out.name=preferred||legal||r.email;
+  }
+  // The emergency contact is one JSON blob, so a row supplying only the phone
+  // has to be merged into what is stored — writing it whole would drop the name
+  // and relationship the sheet left out.
+  if(p.ecName!==undefined || p.ecRelationship!==undefined || p.ecPhone!==undefined){
+    let ec={}; try { ec=JSON.parse((m&&m.emergencyContact)||'{}')||{}; } catch {}
+    out.emergencyContact=JSON.stringify({
+      name:         p.ecName         ?? ec.name         ?? '',
+      relationship: p.ecRelationship ?? ec.relationship ?? '',
+      phone:        p.ecPhone        ?? ec.phone        ?? '',
+    });
+  }
+  // Provenance, so an incomplete record can be told from one a member abandoned
+  // halfway through signing up.
+  out.importedAt=now; out.importedBy=currentUser.email;
+  return out;
 }
 
 async function runImport() {
-  const rows=importRows.filter(r=>r.verdict==='ready'||r.verdict==='incomplete');
+  const rows=importRows.filter(r=>['ready','incomplete','update'].includes(r.verdict));
   if(!rows.length) return;
   const btn=document.getElementById('import-run'); btn.disabled=true; btn.textContent='Importing…';
   const now=new Date().toISOString();
   try {
-    // Batched: a few hundred sequential add() calls is slow enough that an
-    // admin would reasonably think the page had hung. 400 leaves headroom under
+    // Batched: a few hundred sequential writes is slow enough that an admin
+    // would reasonably think the page had hung. 400 leaves headroom under
     // Firestore's 500-write batch limit.
     for(let i=0;i<rows.length;i+=400){
       const batch=db.batch();
       rows.slice(i,i+400).forEach(r=>{
-        const ec=(r.ecName||r.ecRelationship||r.ecPhone)
-          ? JSON.stringify({name:r.ecName,relationship:r.ecRelationship,phone:r.ecPhone}) : null;
-        batch.set(db.collection('users').doc(), {
-          legalName:r.legalName, name:r.preferredName||r.legalName||r.email,
-          ...(r.preferredName && {preferredName:r.preferredName}),
-          email:r.email,
-          ...(r.phone && {phone:r.phone}),
-          ...(ec && {emergencyContact:ec}),
-          membershipStatus:r.membershipStatus,
-          ...(r.membershipExpiry && {membershipExpiry:r.membershipExpiry}),
-          punchPassRemaining:r.punchPassRemaining,
-          isSupervisor:r.isSupervisor, isAdmin:r.isAdmin,
-          memberSince:r.memberSince||now,
-          createdAt:now, createdBy:currentUser.email,
-          // Provenance, so an incomplete record can be told from one a member
-          // abandoned halfway through signing up.
-          importedAt:now, importedBy:currentUser.email,
-        });
+        const payload=importPayload(r,now);
+        if(r.verdict==='update'){
+          // Merged, not replaced: the stored record holds plenty no CSV carries.
+          batch.set(db.collection('users').doc(r.uid),
+            Object.assign({}, payload, { amendedBy:currentUser.email, amendedAt:now }),
+            { merge:true });
+        } else {
+          batch.set(db.collection('users').doc(), Object.assign({
+            name:r.email, membershipAccessPass:'none', membershipConfirmed:true, punchPassRemaining:0,
+            membershipStart:null, membershipExpiry:null,
+            isSupervisor:false, isAdmin:false, memberSince:now,
+          }, payload, {
+            email:r.email, createdAt:now, createdBy:currentUser.email,
+          }));
+        }
       });
       await batch.commit();
     }
+    const updated=rows.filter(r=>r.verdict==='update').length;
+    const created=rows.length-updated;
     const flagged=rows.filter(r=>r.verdict==='incomplete').length;
-    toast(`Imported ${rows.length} member${rows.length===1?'':'s'}${flagged?` — ${flagged} flagged as incomplete`:''}`);
+    const parts=[];
+    if(created) parts.push('Imported '+created+' member'+(created===1?'':'s'));
+    if(updated) parts.push('updated '+updated);
+    toast(parts.join(' · ')+(flagged?' — '+flagged+' flagged as incomplete':''));
     document.getElementById('import-text').value='';
     document.getElementById('import-file').value='';
     document.getElementById('import-preview').innerHTML='';
@@ -1168,7 +1532,7 @@ function toggleImportForm() {
 
 function toggleAddForm() {
   const f=document.getElementById('add-form'); f.classList.toggle('open');
-  if (!f.classList.contains('open')) { ['new-legal','new-preferred','new-email','new-phone','new-ec-name','new-ec-rel','new-ec-phone','new-access-start','new-access-end'].forEach(id=>document.getElementById(id).value=''); document.getElementById('new-status').value='inactive'; document.getElementById('new-supervisor').checked=false; document.getElementById('new-admin').checked=false; }
+  if (!f.classList.contains('open')) { ['new-legal','new-preferred','new-email','new-phone','new-ec-name','new-ec-rel','new-ec-phone','new-access-start','new-access-end'].forEach(id=>document.getElementById(id).value=''); document.getElementById('new-pass').value='none'; document.getElementById('new-confirmed').value='yes'; document.getElementById('new-supervisor').checked=false; document.getElementById('new-admin').checked=false; }
 }
 
 async function addMember() {
@@ -1184,7 +1548,8 @@ async function addMember() {
   const ecRel     = document.getElementById('new-ec-rel').value.trim();
   const ecPhone   = document.getElementById('new-ec-phone').value.trim();
   if (!legal || !email) { toast('Legal name and email are required', true); return; }
-  const status      = document.getElementById('new-status').value;
+  const pass        = document.getElementById('new-pass').value;
+  const confirmed   = document.getElementById('new-confirmed').value === 'yes';
   const accessStart = document.getElementById('new-access-start').value;
   const accessEnd   = document.getElementById('new-access-end').value;
   const isSup  = document.getElementById('new-supervisor').checked;
@@ -1196,9 +1561,12 @@ async function addMember() {
       ...(preferred && { preferredName: preferred }),
       email, ...(phone && { phone }),
       ...(ecObj && { emergencyContact: ecObj }),
-      membershipStatus: status,
-      ...(accessStart && { accessPassStart: new Date(accessStart).toISOString() }),
-      ...(accessEnd   && { membershipExpiry: new Date(accessEnd).toISOString() }),
+      membershipAccessPass: pass,
+      membershipConfirmed: confirmed,
+      // Only a dated pass has a period; a punch pass or drop-in that carried
+      // dates would read back as a membership it is not.
+      membershipStart: isDatedPass(pass) && accessStart ? new Date(accessStart).toISOString() : null,
+      membershipExpiry: isDatedPass(pass) && accessEnd ? new Date(accessEnd).toISOString() : null,
       isSupervisor: isSup, isAdmin: isAdm,
       memberSince: new Date().toISOString(), createdAt: new Date().toISOString(), createdBy: currentUser.email,
     });
@@ -1211,13 +1579,21 @@ async function addMember() {
 async function loadMembers() {
   setLoading('mem-table');
   try {
-    const snap=await db.collection('users').limit(500).get();
+    const snap=await db.collection('users').limit(MEMBER_PAGE_LIMIT).get();
     memberList=snap.docs.map(d=>({uid:d.id,...d.data()}));
     renderMembersTable();
-    const counts={active:0,pending:0,inactive:0};
-    memberList.forEach(m=>{ if(m.membershipStatus in counts)counts[m.membershipStatus]++; });
+    // Counted by what the pass is, not by a status word: how many hold a
+    // membership, how many are waiting on an admin, how many hold nothing.
+    const counts={member:0,pending:0,punch:0,none:0};
+    memberList.forEach(m=>{
+      const pass=passOf(m);
+      if(pass!=='none' && !isConfirmed(m)) counts.pending++;
+      else if(isDatedPass(pass)) counts.member++;
+      else if(pass==='punch'||(m.punchPassRemaining||0)>0) counts.punch++;
+      else counts.none++;
+    });
     const st=document.getElementById('mem-stats'); st.style.display='flex';
-    st.innerHTML=`<div class="stat-card"><div class="stat-num">${memberList.length}</div><div class="stat-label">Total</div></div><div class="stat-card"><div class="stat-num" style="color:var(--green)">${counts.active}</div><div class="stat-label">Active</div></div><div class="stat-card"><div class="stat-num" style="color:var(--orange)">${counts.pending}</div><div class="stat-label">Pending</div></div><div class="stat-card"><div class="stat-num" style="color:var(--muted)">${counts.inactive}</div><div class="stat-label">Inactive</div></div><div class="stat-card"><div class="stat-num" style="color:var(--cyan)">${memberList.filter(m=>!!(m.waiverLiability||m.waiverPdfUrl)).length}</div><div class="stat-label">Waivers</div></div><div class="stat-card"><div class="stat-num" style="color:var(--orange)">${memberList.filter(m=>memberGaps(m).length>0).length}</div><div class="stat-label">Incomplete</div></div>`;
+    st.innerHTML=`<div class="stat-card"><div class="stat-num">${memberList.length}</div><div class="stat-label">Total</div></div><div class="stat-card"><div class="stat-num" style="color:var(--green)">${counts.member}</div><div class="stat-label">On a membership</div></div><div class="stat-card"><div class="stat-num" style="color:var(--orange)">${counts.pending}</div><div class="stat-label">Awaiting confirmation</div></div><div class="stat-card"><div class="stat-num" style="color:var(--cyan)">${counts.punch}</div><div class="stat-label">Punch pass</div></div><div class="stat-card"><div class="stat-num" style="color:var(--muted)">${counts.none}</div><div class="stat-label">No pass</div></div><div class="stat-card"><div class="stat-num" style="color:var(--cyan)">${memberList.filter(m=>!!(m.waiverLiability||m.waiverPdfUrl)).length}</div><div class="stat-label">Waivers</div></div><div class="stat-card"><div class="stat-num" style="color:var(--orange)">${memberList.filter(m=>memberGaps(m).length>0).length}</div><div class="stat-label">Incomplete</div></div>`;
     ['btn-mem-pdf','btn-mem-drive'].forEach(id=>document.getElementById(id).disabled=false);
   } catch(e) { document.getElementById('mem-table').innerHTML=`<p style="color:red;padding:16px">Error: ${e.message}</p>`; }
 }
@@ -1239,6 +1615,8 @@ function memberGaps(m) {
 function renderMembersTable() {
   const getVal=(m,col)=>{
     if(col==='legalName')return m.legalName||m.name||'';
+    if(col==='membershipAccessPass')return accessPassName(m);
+    if(col==='membershipStart')return m.membershipStart||'';
     if(col==='waiver')return(m.waiverLiability||m.waiverPdfUrl)?'1':'0';
     return m[col]??'';
   };
@@ -1251,27 +1629,29 @@ function renderMembersTable() {
     <th ${sh('preferredName')}>Preferred Name${sortIcon('members','preferredName')}</th>
     <th ${sh('email')}>Email${sortIcon('members','email')}</th>
     <th ${sh('phone')}>Phone${sortIcon('members','phone')}</th>
-    <th ${sh('membershipStatus')}>Access Pass${sortIcon('members','membershipStatus')}</th>
+    <th ${sh('membershipAccessPass')}>Access Pass${sortIcon('members','membershipAccessPass')}</th>
+    <th ${sh('membershipStart')}>Start Date${sortIcon('members','membershipStart')}</th>
     <th ${sh('membershipExpiry')}>End Date${sortIcon('members','membershipExpiry')}</th>
     <th ${sh('punchPassRemaining')}>Punches${sortIcon('members','punchPassRemaining')}</th>
     <th ${sh('memberSince')}>Member Since${sortIcon('members','memberSince')}</th>
     <th ${sh('waiver')}>Waiver${sortIcon('members','waiver')}</th>
     <th style="text-align:center">SUP</th>
     <th style="text-align:center">ADM</th>
-    <th style="text-align:right">Actions</th>
+    <th class="col-actions" style="text-align:right">Actions</th>
   </tr></thead><tbody>${memberList.map((m,i)=>`<tr>
     <td style="white-space:nowrap"><strong>${m.legalName||m.name||'—'}</strong>${memberGaps(m).length?`<br><span class="badge" style="background:#e0860022;color:#e08600" title="Missing ${memberGaps(m).join(', ')} — the member is asked for these when they next open the app">Incomplete</span>`:''}</td>
     <td style="font-size:12px;color:var(--muted)">${m.preferredName&&m.preferredName!==(m.legalName||m.name)?m.preferredName:'—'}</td>
     <td style="font-size:12px">${m.email||'—'}</td>
     <td style="font-size:12px;white-space:nowrap">${m.phone||'—'}</td>
-    <td>${statusBadge(m.membershipStatus)}</td>
+    <td>${accessPassCell(m)}</td>
+    <td style="font-size:12px;white-space:nowrap">${fmtDate(m.membershipStart)}</td>
     <td style="font-size:12px;white-space:nowrap">${fmtDate(m.membershipExpiry)}</td>
     <td>${(m.punchPassRemaining||0)>0?`<span class="badge badge-blue">${m.punchPassRemaining}</span>`:'—'}</td>
     <td style="font-size:12px;white-space:nowrap">${fmtDate(m.memberSince)}</td>
     <td>${(m.waiverLiability||m.waiverPdfUrl)?`<button class="btn btn-outline btn-sm" onclick="openEditModal(${i})">✅ View</button>`:'<span style="color:var(--muted);font-size:12px">—</span>'}</td>
     <td style="text-align:center">${m.isSupervisor?'<span class="badge badge-blue">SUP</span>':'<span style="color:#ddd">—</span>'}</td>
     <td style="text-align:center">${m.isAdmin?'<span class="badge badge-red">ADM</span>':'<span style="color:#ddd">—</span>'}</td>
-    <td style="text-align:right;white-space:nowrap">
+    <td class="col-actions" style="text-align:right;white-space:nowrap">
       <button class="btn btn-outline btn-sm" onclick="openEditModal(${i})">Edit</button>
     </td>
   </tr>`).join('')}</tbody></table>`;
@@ -1285,9 +1665,10 @@ function openEditModal(i) {
   document.getElementById('edit-preferred').value=m.preferredName||'';
   document.getElementById('edit-email').value=m.email||'';
   document.getElementById('edit-phone').value=m.phone||'';
-  document.getElementById('edit-status').value=m.membershipStatus||'inactive';
-  document.getElementById('edit-access-start').value=(m.accessPassStart||m.memberSince)?((m.accessPassStart||m.memberSince).slice(0,10)):'';
+  document.getElementById('edit-confirmed').value=isConfirmed(m)?'yes':'no';
+  document.getElementById('edit-access-start').value=m.membershipStart?m.membershipStart.slice(0,10):'';
   document.getElementById('edit-expiry').value=m.membershipExpiry?m.membershipExpiry.slice(0,10):'';
+  document.getElementById('edit-pass').value=passOf(m);
   document.getElementById('edit-punches').value=m.punchPassRemaining??0;
   document.getElementById('edit-sup').checked=!!m.isSupervisor;
   document.getElementById('edit-adm').checked=!!m.isAdmin;
@@ -1318,6 +1699,23 @@ function openEditModal(i) {
   document.getElementById('edit-modal').style.display='block';
 }
 function closeEditModal() { editingMember=null; document.getElementById('edit-modal').style.display='none'; }
+/**
+ * Choosing a pass fills the end date in from the start. The dates stay the
+ * stored truth — the pass name is derived back out of them, here and in the
+ * app — so this is a shortcut past the arithmetic, not a separate field.
+ */
+function onEditPassChange() {
+  const pass=document.getElementById('edit-pass').value;
+  const startEl=document.getElementById('edit-access-start');
+  const endEl=document.getElementById('edit-expiry');
+  const opt=PASS_OPTIONS.find(p=>p.id===pass);
+  // Punch passes and drop-ins run for no period at all, so their date fields
+  // are cleared and disabled rather than left holding a membership's dates.
+  startEl.disabled=endEl.disabled=!opt;
+  if(!opt){ startEl.value=''; endEl.value=''; return; }
+  if(!startEl.value) startEl.value=today();
+  endEl.value=addMonths(startEl.value+'T00:00:00',opt.months).slice(0,10);
+}
 async function saveEdit() {
   if (!editingMember) return;
   const ecName=document.getElementById('edit-ec-name').value.trim();
@@ -1332,13 +1730,20 @@ async function saveEdit() {
     ...(preferredName && { preferredName }),
     ...(phone && { phone }),
     ...(ecObj && { emergencyContact: ecObj }),
-    membershipStatus:document.getElementById('edit-status').value,
+    membershipAccessPass:document.getElementById('edit-pass').value,
+    membershipConfirmed:document.getElementById('edit-confirmed').value==='yes',
     isSupervisor:document.getElementById('edit-sup').checked,
     isAdmin:document.getElementById('edit-adm').checked,
     amendedBy:currentUser.email, amendedAt:new Date().toISOString()
   };
-  const accessStart=document.getElementById('edit-access-start').value; if (accessStart) updates.accessPassStart=new Date(accessStart).toISOString();
-  const expiry=document.getElementById('edit-expiry').value; if (expiry) updates.membershipExpiry=new Date(expiry).toISOString();
+  // Cleared rather than left stale when the pass goes, so no expired dates
+  // linger behind a member who holds nothing — and so a punch pass never
+  // carries a period that would read back as a membership.
+  const dated=isDatedPass(updates.membershipAccessPass);
+  const accessStart=document.getElementById('edit-access-start').value;
+  const expiry=document.getElementById('edit-expiry').value;
+  updates.membershipStart = dated && accessStart ? new Date(accessStart).toISOString() : null;
+  updates.membershipExpiry = dated && expiry ? new Date(expiry).toISOString() : null;
   const punches=parseInt(document.getElementById('edit-punches').value); if (!isNaN(punches)) updates.punchPassRemaining=punches;
   try { await db.collection('users').doc(editingMember.uid).update(updates); toast('Member updated'); closeEditModal(); loadMembers(); }
   catch(e) { toast('Error: '+e.message,true); }
@@ -1362,8 +1767,8 @@ async function deleteMemberFromModal() {
 }
 
 async function buildMembersPDF() {
-  const rows=memberList.map(m=>`<tr><td>${m.legalName||m.name||'—'}</td><td>${m.preferredName||'—'}</td><td>${m.email||'—'}</td><td>${m.phone||'—'}</td><td>${m.membershipStatus||'—'}</td><td>${fmtDate(m.membershipExpiry)}</td><td>${(m.punchPassRemaining||0)>0?m.punchPassRemaining:'—'}</td><td>${m.waiverLiability?'Digital':m.waiverPdfUrl?'PDF':''}</td><td>${fmtDate(m.memberSince)}</td></tr>`).join('');
-  return htmlToBlob(PDF_CSS+kbcHead('Member Directory',`${memberList.length} members · ${fmt(new Date().toISOString())}`)+`<table><thead><tr><th>Legal Name</th><th>Preferred</th><th>Email</th><th>Phone</th><th>Status</th><th>Expiry</th><th>Punches</th><th>Waiver</th><th>Member Since</th></tr></thead><tbody>${rows}</tbody></table><div class="foot">KBC Admin · Confidential</div>`,`KBC_Members_${today()}.pdf`);
+  const rows=memberList.map(m=>`<tr><td>${m.legalName||m.name||'—'}</td><td>${m.preferredName||'—'}</td><td>${m.email||'—'}</td><td>${m.phone||'—'}</td><td>${accessPassText(m)}</td><td>${fmtDate(m.membershipStart)}</td><td>${fmtDate(m.membershipExpiry)}</td><td>${(m.punchPassRemaining||0)>0?m.punchPassRemaining:'—'}</td><td>${m.waiverLiability?'Digital':m.waiverPdfUrl?'PDF':''}</td><td>${fmtDate(m.memberSince)}</td></tr>`).join('');
+  return htmlToBlob(PDF_CSS+kbcHead('Member Directory',`${memberList.length} members · ${fmt(new Date().toISOString())}`)+`<table><thead><tr><th>Legal Name</th><th>Preferred</th><th>Email</th><th>Phone</th><th>Access Pass</th><th>Start</th><th>Expiry</th><th>Punches</th><th>Waiver</th><th>Member Since</th></tr></thead><tbody>${rows}</tbody></table><div class="foot">KBC Admin · Confidential</div>`,`KBC_Members_${today()}.pdf`);
 }
 async function exportMembersPDF() { toast('Generating PDF…'); try { dlBlob(await buildMembersPDF(),`KBC_Members_${today()}.pdf`); } catch(e) { toast('Error: '+e.message,true); } }
 async function saveMembersToDrive() { try { toast('Generating PDF…'); const b=await buildMembersPDF(); toast('Uploading…'); await uploadToDrive(`KBC_Members_${today()}.pdf`,b,'application/pdf','members'); toast('Saved to Drive!'); } catch(e) { toast('Error: '+e.message,true); } }
@@ -1639,6 +2044,212 @@ function exportBouldersCSV() { dlBlob(buildBouldersCSVBlob(),`KBC_Climbs_${today
 async function saveClimbsToDrive() { try { toast('Uploading…'); await uploadToDrive(`KBC_Climbs_${today()}.csv`,buildBouldersCSVBlob(),'text/csv','climbs'); toast('KBC Climbs saved to Drive!'); } catch(e) { toast('Error: '+e.message,true); } }
 
 // ── PURCHASES ─────────────────────────────────────────────────────────────────
+// ─── Purchase import ─────────────────────────────────────────────────────────
+//
+// A purchase is a sign-in-book entry whose notes begin "Purchased:" — that is
+// what loadReceipts() filters on, and what makes it show up here rather than as
+// an ordinary visit. Imported rows follow the same shape so the history reads
+// as one thing regardless of how it got in.
+
+const PURCHASE_IMPORT_ALIASES = {
+  userName: ['member name','member','name','climber','customer','purchaser','full name','legal name'],
+  email:    ['email','e mail','email address','mail'],
+  timestamp:['date','date time','datetime','timestamp','purchased','purchase date','when','date of purchase'],
+  purchase: ['purchase','purchase type','access pass','pass','pass type','type','item','product','plan'],
+  amount:   ['amount','price','paid','cost','total','value'],
+  notes:    ['notes','note','comment','comments','details','memo'],
+};
+
+let purchaseImportRows = [];
+
+/**
+ * A stable id for an imported purchase, so running the same file twice
+ * overwrites rather than doubling the takings. The manual form uses a random
+ * suffix, which is right for a live entry and wrong for a backfill.
+ */
+function purchaseImportId(r) {
+  const who = r.userName.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'') || 'member';
+  const when = r.timestamp.replace(/[:.]/g,'-').slice(0,19);
+  return 'imp-' + when + '-' + r.pass + '-' + who;
+}
+
+/** The price list entry a pass corresponds to, for the default note. */
+function purchaseOptionFor(pass) {
+  const byPass = { annual:'mem12m', '8month':'mem8m', '4month':'mem4m', '1month':'mem1m', punch:'punch10', dropin:'dropin' };
+  return ACCESS_OPTIONS.find(o=>o.id===byPass[pass]) || null;
+}
+
+/**
+ * Dates in a till export are rarely ISO. Accept a plain date, a date and time,
+ * and the two orderings people actually write, rather than silently reading
+ * 03/04 as March in a file that meant April.
+ */
+function parsePurchaseDate(v) {
+  const s = String(v||'').trim();
+  if (!s) return null;
+  // Unambiguous first: ISO, with or without a time.
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if (m) return new Date(Date.UTC(+m[1],+m[2]-1,+m[3],+(m[4]||0),+(m[5]||0))).toISOString();
+  // d/m/y or d-m-y. Day-first: this is a Canadian gym, and a 13+ in the first
+  // slot settles it either way.
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if (m) {
+    let [, d1, d2, y, hh, mm] = m;
+    let day = +d1, mon = +d2;
+    if (day <= 12 && mon > 12) { day = +d2; mon = +d1; }
+    const year = +y < 100 ? 2000 + +y : +y;
+    if (mon < 1 || mon > 12 || day < 1 || day > 31) return null;
+    return new Date(Date.UTC(year, mon-1, day, +(hh||0), +(mm||0))).toISOString();
+  }
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function loadPurchaseImportFile(ev) {
+  const f=ev.target.files && ev.target.files[0]; if(!f) return;
+  const fr=new FileReader();
+  fr.onload=()=>{ document.getElementById('pur-import-text').value=String(fr.result||''); previewPurchaseImport(); };
+  fr.onerror=()=>toast('Could not read that file',true);
+  fr.readAsText(f);
+}
+
+function togglePurchaseImportForm() {
+  const el=document.getElementById('purchase-import-form');
+  el.classList.toggle('open');
+  if(!el.classList.contains('open')) document.getElementById('pur-import-preview').innerHTML='';
+}
+
+function previewPurchaseImport() {
+  const text=document.getElementById('pur-import-text').value.trim();
+  const out=document.getElementById('pur-import-preview');
+  const runBtn=document.getElementById('pur-import-run');
+  purchaseImportRows=[]; runBtn.disabled=true;
+  if(!text){ out.innerHTML='<p style="color:var(--muted);font-size:13px">Nothing to preview yet.</p>'; return; }
+
+  const grid=parseCSV(text, detectDelimiter(text));
+  if(grid.length<2){ out.innerHTML='<p style="color:#c0392b;font-size:13px">Needs a header row and at least one purchase.</p>'; return; }
+
+  const headers=grid[0].map(normaliseHeader);
+  const colOf={};
+  Object.keys(PURCHASE_IMPORT_ALIASES).forEach(field=>{
+    const i=headers.findIndex(h=>PURCHASE_IMPORT_ALIASES[field].includes(h));
+    if(i>=0) colOf[field]=i;
+  });
+
+  const missingCols=['userName','timestamp','purchase'].filter(f=>colOf[f]===undefined);
+  if(missingCols.length){
+    const names={userName:'Member Name',timestamp:'Date',purchase:'Purchase'};
+    out.innerHTML='<p style="color:#c0392b;font-size:13px">Missing required column'+(missingCols.length>1?'s':'')+': '+
+      missingCols.map(f=>'<strong>'+names[f]+'</strong>').join(', ')+'.</p>';
+    return;
+  }
+
+  const cell=(row,field)=>colOf[field]===undefined?'':String(row[colOf[field]]??'').trim();
+  const byEmail=new Map();
+  (memberList||[]).forEach(m=>{ const e=String(m.email||'').toLowerCase().trim(); if(e && !byEmail.has(e)) byEmail.set(e,m); });
+  const seenIds=new Set();
+
+  purchaseImportRows=grid.slice(1).map((row,n)=>{
+    const r={ line:n+2, notes:[] };
+    r.userName=cell(row,'userName');
+    r.email=cell(row,'email').toLowerCase();
+    r.timestamp=parsePurchaseDate(cell(row,'timestamp'));
+    const rawPass=cell(row,'purchase');
+    const match=parsePassValue(rawPass);
+    r.pass=match?match.pass:null;
+    r.amount=cell(row,'amount');
+    r.noteOverride=cell(row,'notes');
+
+    // Linking to a member is a bonus, not a requirement: a purchase from before
+    // anyone had an account still belongs in the history under the name on it.
+    const member=r.email?byEmail.get(r.email):null;
+    r.userId=member?member.uid:'';
+    r.matched=!!member;
+
+    if(!r.userName) r.verdict='no-name';
+    else if(!r.timestamp) r.verdict='bad-date';
+    else if(!r.pass || r.pass==='none') r.verdict='bad-pass';
+    else {
+      r.id=purchaseImportId(r);
+      if(seenIds.has(r.id)) r.verdict='repeat';
+      else { seenIds.add(r.id); r.verdict='ready'; }
+    }
+    if(r.email && !member) r.notes.push('no member with that email — recorded by name only');
+    return r;
+  });
+
+  const n=v=>purchaseImportRows.filter(r=>r.verdict===v).length;
+  const ready=n('ready');
+  const chip=(txt,col)=>'<span class="badge" style="background:'+col+'22;color:'+col+'">'+txt+'</span>';
+  const verdictChip=r=>({
+    'ready':chip('Ready','#2e8b3d'),
+    'repeat':chip('Repeated in file','#777'),
+    'no-name':chip('No member name','#c0392b'),
+    'bad-date':chip('Unreadable date','#c0392b'),
+    'bad-pass':chip('Unknown purchase','#c0392b'),
+  })[r.verdict];
+
+  out.innerHTML=
+    '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px">'+
+      '<span><strong>'+ready+'</strong> to import</span>'+
+      '<span style="color:#777"><strong>'+n('repeat')+'</strong> repeated in file</span>'+
+      '<span style="color:#c0392b"><strong>'+(n('no-name')+n('bad-date')+n('bad-pass'))+'</strong> skipped</span>'+
+      '<span style="color:var(--muted)"><strong>'+purchaseImportRows.filter(r=>r.matched).length+'</strong> linked to a member record</span>'+
+    '</div>'+
+    '<div style="max-height:280px;overflow:auto;border:1px solid #eee;border-radius:8px">'+
+    '<table><thead><tr><th>Row</th><th>Member</th><th>Date</th><th>Purchase</th><th>Action</th><th>Detail</th></tr></thead><tbody>'+
+    purchaseImportRows.map(r=>'<tr>'+
+      '<td style="color:var(--muted);font-size:12px">'+r.line+'</td>'+
+      '<td style="font-size:12px">'+(r.userName||'<span style="color:#c0392b">—</span>')+'</td>'+
+      '<td style="font-size:12px;white-space:nowrap">'+(r.timestamp?fmt(r.timestamp):'<span style="color:#c0392b">—</span>')+'</td>'+
+      '<td style="font-size:12px">'+(r.pass&&r.pass!=='none'?accessPassLabel(r.pass):'<span style="color:#c0392b">—</span>')+'</td>'+
+      '<td>'+verdictChip(r)+'</td>'+
+      '<td style="font-size:11px;color:var(--muted)">'+r.notes.join('; ')+'</td>'+
+    '</tr>').join('')+
+    '</tbody></table></div>';
+
+  runBtn.disabled = ready === 0;
+  runBtn.textContent = ready ? 'Import '+ready+' purchase'+(ready===1?'':'s') : 'Import';
+}
+
+async function runPurchaseImport() {
+  const rows=purchaseImportRows.filter(r=>r.verdict==='ready');
+  if(!rows.length) return;
+  const btn=document.getElementById('pur-import-run'); btn.disabled=true; btn.textContent='Importing…';
+  const now=new Date().toISOString();
+  try {
+    for(let i=0;i<rows.length;i+=400){
+      const batch=db.batch();
+      rows.slice(i,i+400).forEach(r=>{
+        const opt=purchaseOptionFor(r.pass);
+        const price=r.amount || (opt?opt.notes.replace(/^.*\(/,'(').replace(/\)$/,')'):'');
+        // "Purchased:" is the marker loadReceipts() filters the sign-in book on.
+        // Without it the entry exists but never appears as a purchase.
+        const notes=r.noteOverride || ('Purchased: '+accessPassLabel(r.pass)+(price?' '+price:''));
+        batch.set(db.collection('logs').doc(r.id), {
+          userName:r.userName, userId:r.userId,
+          timestamp:r.timestamp,
+          accessType:(opt?opt.accessType:accessPassLabel(r.pass)),
+          notes,
+          importedAt:now, importedBy:currentUser.email,
+          amendedBy:currentUser.email, amendedAt:now,
+        });
+      });
+      await batch.commit();
+    }
+    toast('Imported '+rows.length+' purchase'+(rows.length===1?'':'s'));
+    document.getElementById('pur-import-text').value='';
+    document.getElementById('pur-import-file').value='';
+    document.getElementById('pur-import-preview').innerHTML='';
+    purchaseImportRows=[];
+    togglePurchaseImportForm();
+    loadReceipts();
+  } catch(e) {
+    toast('Import failed: '+e.message,true);
+    btn.disabled=false; previewPurchaseImport();
+  }
+}
+
 function togglePurchaseAddForm() {
   const f=document.getElementById('purchase-add-form'); f.classList.toggle('open');
   if (f.classList.contains('open')) { document.getElementById('pur-timestamp').value=nowLocal(); document.getElementById('pur-name').value=''; document.getElementById('pur-notes').value=''; onPurchaseTypeChange(); }
@@ -1745,7 +2356,7 @@ async function backupAllToDrive() {
     await uploadToDrive(`KBC_Backup_${today()}.json`,new Blob([JSON.stringify({exportedAt:new Date().toISOString(),counts:{users:users.length,logs:logs.length,boulders:boulders.length},users,logs,boulders},null,2)],{type:'application/json'}),'application/json','backup');
 
     toast('Saving members CSV… (2/5)');
-    await uploadToDrive(`KBC_Members_${today()}.csv`,new Blob([toCSV([['Legal Name','Preferred Name','Email','Status','Member Since','Expiry','Punches','Supervisor','Admin','Waiver'],...users.sort((a,b)=>(a.legalName||a.name||'').localeCompare(b.legalName||b.name||'')).map(m=>[m.legalName||m.name,m.preferredName||'',m.email,m.membershipStatus,fmtDate(m.memberSince),fmtDate(m.membershipExpiry),m.punchPassRemaining||0,m.isSupervisor?'Yes':'No',m.isAdmin?'Yes':'No',m.waiverLiability?'Signed':'No'])])],{type:'text/csv'}),'text/csv','members');
+    await uploadToDrive(`KBC_Members_${today()}.csv`,new Blob([toCSV([['Legal Name','Preferred Name','Email','Access Pass','Member Since','Expiry','Punches','Supervisor','Admin','Waiver'],...users.sort((a,b)=>(a.legalName||a.name||'').localeCompare(b.legalName||b.name||'')).map(m=>[m.legalName||m.name,m.preferredName||'',m.email,accessPassText(m),fmtDate(m.memberSince),fmtDate(m.membershipExpiry),m.punchPassRemaining||0,m.isSupervisor?'Yes':'No',m.isAdmin?'Yes':'No',m.waiverLiability?'Signed':'No'])])],{type:'text/csv'}),'text/csv','members');
 
     toast('Saving sign-in book CSV… (3/5)');
     await uploadToDrive(`KBC_SignInBook_${today()}.csv`,new Blob([toCSV([['Date/Time','Member','Access Type','Notes','Amended By','Amended At'],...logs.map(e=>[fmt(e.timestamp),e.userName,e.accessType,e.notes,e.amendedBy,e.amendedAt?fmtDate(e.amendedAt):''])])],{type:'text/csv'}),'text/csv','logbook');
