@@ -426,6 +426,30 @@ test('a member cannot repoint linkedFrom after creating their profile', async ()
   await assertFails(updateDoc(doc(db, 'users', 'uid-m'), { linkedFrom: 'victim_doc' }))
 })
 
+test('a member cannot repoint linkedFrom by hiding it in a purchase', async () => {
+  // The write above is refused by the profile branch of `allow update`, but a
+  // member's own write reaches their document down two branches, and the
+  // second one asks about roles and purchases rather than about this field.
+  // A purchase is a write that branch exists to allow, so it is the shape
+  // anyone repointing the field would actually use.
+  await seed('uid-m', profile({ email: 'm@example.com', linkedFrom: 'imported_1' }))
+  const db = asUser('uid-m', 'm@example.com')
+  await assertFails(
+    updateDoc(doc(db, 'users', 'uid-m'), {
+      linkedFrom: 'victim_doc',
+      membershipAccessPass: 'annual',
+      membershipConfirmed: false,
+    }),
+  )
+})
+
+test('an admin can still repair a linkedFrom', async () => {
+  await seed('uid-admin', profile({ email: 'admin@example.com', isAdmin: true }))
+  await seed('uid-m', profile({ email: 'm@example.com', linkedFrom: 'imported_1' }))
+  const db = asUser('uid-admin', 'admin@example.com')
+  await assertSucceeds(updateDoc(doc(db, 'users', 'uid-m'), { linkedFrom: 'imported_2' }))
+})
+
 test('an admin can still delete anyone', async () => {
   await seed('uid-admin', profile({ email: 'admin@example.com', isAdmin: true }))
   await seed(

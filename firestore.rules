@@ -58,6 +58,12 @@ service cloud.firestore {
     // linkedFrom is in this list because the delete branch below trusts it: a
     // member may name their pre-registration record once, as they create their
     // own document, and never rewrite it afterwards to point somewhere else.
+    //
+    // Naming it here is not enough on its own to make that true. A member's own
+    // write can reach their document down two branches of `allow update`, and
+    // this function gates only the first — canSelfUpdateAccess() is a separate
+    // path that asks about roles and purchases and nothing else, so it has to
+    // refuse the field as well or the write simply arrives the other way.
     function touchesMemberPrivilegedFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'isAdmin', 'isSupervisor', 'membershipAccessPass', 'membershipConfirmed',
@@ -178,7 +184,12 @@ service cloud.firestore {
     function canSelfUpdateAccess(uid) {
       return isAuthenticated() &&
         request.auth.uid == uid &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'isSupervisor', 'amendedBy']) &&
+        // linkedFrom rides along with the role fields here rather than being
+        // about access at all: this branch is the other way a member's own
+        // write reaches their document, and the delete branch above is only
+        // sound while the field cannot be repointed after it is first written.
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['isAdmin', 'isSupervisor', 'amendedBy', 'linkedFrom']) &&
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['membershipConfirmed']) ||
           request.resource.data.membershipConfirmed == false) &&
         !(request.resource.data.get('membershipConfirmed', true) == true &&
