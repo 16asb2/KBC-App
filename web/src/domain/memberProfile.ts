@@ -127,75 +127,54 @@ export function normaliseLegalName(name: string | undefined | null): string {
 }
 
 /**
- * Whether a stored record is one nobody has ever signed into.
+ * The record the gym already holds for the person signing in, matched on either
+ * of the two things they and their record can be expected to share.
  *
- * Only such a record may be claimed by legal name (see
- * `findClaimableByLegalName`). A waiver, a sign-in or a confirmed profile all
- * mean a real person has used the account, and a matching name is nowhere near
- * enough to take it from them — `profileReviewedAt` covers the member who
- * completed the setup form and then wandered off before signing anything.
- * Privileged records are excluded outright: a name is public knowledge, so
- * letting one be claimed would hand supervisor rights to whoever typed it.
+ * **Email first**, because it is the strong one: it is what the account
+ * actually proves, and what `firestore.rules` can re-check independently.
  *
- * Kept in step with `claimedByLegalName()` in firestore.rules, which decides
- * whether the superseded document may then be deleted.
+ * **Then legal name**, because email alone was not enough. A record entered
+ * under a personal address, or an address the member has since stopped using,
+ * is invisible to an email match — and the app's answer to that was to treat a
+ * member of years' standing as somebody it had never met, which is how a live
+ * membership came to be replaced by a blank one.
+ *
+ * The names are tried in the order given: the legal name the member typed into
+ * the setup form first, if there is one, then whatever Google reports as their
+ * account name, which is a real full name often enough to be worth asking.
+ *
+ * Two rules survive from the narrower version this replaces, and neither is
+ * negotiable:
+ *
+ * - **Ambiguity is not a match.** Two records under one legal name are two
+ *   people until somebody says otherwise, and handing over the wrong one gives
+ *   a member somebody else's membership.
+ * - **A name match never carries isAdmin or isSupervisor.** A legal name is
+ *   public knowledge around a gym. `firestore.rules` enforces this
+ *   independently — a name-matched write reaches only the self-create branch,
+ *   which rejects a document arriving with either flag set — so the caller must
+ *   clear them or the write is refused outright.
+ *
+ * What is deliberately *not* checked any more is whether the record looks
+ * untouched. It used to require no waiver, no sign-in and no confirmation by
+ * its owner, which sounds prudent and meant that the records most worth finding
+ * — real members, with real history — were the exact ones it would not find.
  */
-export function isClaimablePreRegistration(
-  profile: Pick<
-    UserProfile,
-    | 'waiverMembership'
-    | 'waiverLiability'
-    | 'lastSignInAt'
-    | 'profileReviewedAt'
-    | 'isAdmin'
-    | 'isSupervisor'
-  >,
-): boolean {
-  return (
-    !profile.waiverMembership &&
-    !profile.waiverLiability &&
-    !profile.lastSignInAt &&
-    !profile.profileReviewedAt &&
-    !profile.isAdmin &&
-    !profile.isSupervisor
-  )
-}
+export function findExistingRecord<
+  T extends Pick<UserProfile, 'uid' | 'email' | 'legalName'>,
+>(profiles: T[], email: string, names: (string | undefined | null)[], excludeUid: string): T | null {
+  const candidates = profiles.filter((p) => p.uid !== excludeUid)
 
-/**
- * The pre-registered record a member is entitled to claim by typing their legal
- * name into the setup form.
- *
- * The case: they are on the imported list, but they sign in with a Google
- * account whose address is not the one in the spreadsheet, so
- * `findOrLinkProfile`'s email lookup finds nothing and they arrive at setup as
- * a stranger. Their legal name is what identifies them instead.
- *
- * Ambiguity is answered with `null`, never a guess. Two unclaimed records
- * sharing a legal name are two people as far as this function is concerned, and
- * picking one of them would hand a member somebody else's membership.
- */
-export function findClaimableByLegalName<
-  T extends Pick<
-    UserProfile,
-    | 'uid'
-    | 'legalName'
-    | 'waiverMembership'
-    | 'waiverLiability'
-    | 'lastSignInAt'
-    | 'profileReviewedAt'
-    | 'isAdmin'
-    | 'isSupervisor'
-  >,
->(profiles: T[], legalName: string, excludeUid: string): T | null {
-  const target = normaliseLegalName(legalName)
-  if (!target) return null
-  const matches = profiles.filter(
-    (p) =>
-      p.uid !== excludeUid &&
-      normaliseLegalName(p.legalName) === target &&
-      isClaimablePreRegistration(p),
-  )
-  return matches.length === 1 ? matches[0] : null
+  const byEmail = findProfileByEmailIn(candidates, email)
+  if (byEmail) return byEmail
+
+  for (const name of names) {
+    const target = normaliseLegalName(name)
+    if (!target) continue
+    const matches = candidates.filter((p) => normaliseLegalName(p.legalName) === target)
+    if (matches.length === 1) return matches[0]
+  }
+  return null
 }
 
 /**
