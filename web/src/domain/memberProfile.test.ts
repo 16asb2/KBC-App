@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  findExistingRecord,
   findProfileByEmailIn,
+  findRecordsByLegalName,
+  maskEmail,
   isProfileComplete,
   mergeAdditionalEmails,
   missingProfileFields,
@@ -156,83 +157,60 @@ describe('normaliseLegalName', () => {
   })
 })
 
-describe('findExistingRecord', () => {
-  const row = (over = {}) => ({
-    uid: 'imported_1',
-    email: 'onfile@example.com',
-    legalName: 'Jane Smith',
-    ...over,
-  })
+describe('findRecordsByLegalName', () => {
+  const row = (over = {}) => ({ uid: 'imported_1', email: 'onfile@example.com', legalName: 'Jane Smith', ...over })
 
-  it('prefers the email, which is the thing the account actually proves', () => {
-    const rows = [
-      row({ uid: 'by_name', email: 'stale@example.com' }),
-      row({ uid: 'by_email', legalName: 'Someone Else' }),
-    ]
-    expect(findExistingRecord(rows, 'onfile@example.com', ['Jane Smith'], 'uid-new')?.uid).toBe(
-      'by_email',
-    )
-  })
-
-  it('falls back to the legal name when no record carries the address', () => {
-    // The case that cost a real membership: the gym holds the member under an
-    // address they no longer use, so an email match finds nobody and the app
-    // greeted a member of years' standing as a stranger.
-    expect(findExistingRecord([row()], 'new@gmail.com', ['Jane Smith'], 'uid-new')?.uid).toBe(
+  it('finds the record filed under that name', () => {
+    expect(findRecordsByLegalName([row()], 'Jane Smith', 'uid-new').map((r) => r.uid)).toEqual([
       'imported_1',
-    )
+    ])
   })
 
-  it('tries the names in the order given', () => {
-    // The typed legal name first, then whatever Google calls the account.
-    const rows = [row({ uid: 'typed' }), row({ uid: 'google', legalName: 'Janey Smith' })]
-    expect(findExistingRecord(rows, 'new@x.com', ['Jane Smith', 'Janey Smith'], 'u')?.uid).toBe(
-      'typed',
-    )
-    expect(findExistingRecord(rows, 'new@x.com', [undefined, 'Janey Smith'], 'u')?.uid).toBe(
-      'google',
-    )
+  it('matches whatever the case, accents or spacing', () => {
+    expect(findRecordsByLegalName([row()], '  jane   SMITH ', 'u')).toHaveLength(1)
+    expect(findRecordsByLegalName([row({ legalName: 'José Núñez' })], 'jose nunez', 'u')).toHaveLength(1)
   })
 
-  it('matches a name whatever its case, accents or spacing', () => {
-    expect(findExistingRecord([row()], 'new@x.com', ['  jane   SMITH '], 'u')?.uid).toBe(
+  it('returns every match rather than giving up on two', () => {
+    // The version this replaces matched only when exactly one record carried
+    // the name — so two Jane Smiths read as "we have never heard of you" and
+    // quietly became three. Who they are has an answer; the form asks.
+    const rows = [row(), row({ uid: 'imported_2', email: 'other@example.com' })]
+    expect(findRecordsByLegalName(rows, 'Jane Smith', 'uid-new').map((r) => r.uid)).toEqual([
       'imported_1',
-    )
+      'imported_2',
+    ])
   })
 
   it('finds records a member has really used, which is the point', () => {
-    // The narrower version this replaced skipped anything bearing a waiver, a
-    // sign-in or a confirmation — so the records most worth finding, belonging
-    // to real members with real history, were the ones it would not find.
-    const used = row({
-      waiverMembership: '{"signedAt":"x"}',
-      lastSignInAt: '2026-08-30T18:00:00.000Z',
-      profileReviewedAt: '2026-08-30T18:00:00.000Z',
-    })
-    expect(findExistingRecord([used], 'new@gmail.com', ['Jane Smith'], 'uid-new')?.uid).toBe(
-      'imported_1',
-    )
+    const used = row({ waiverMembership: '{"signedAt":"x"}', lastSignInAt: '2026-08-30T18:00:00.000Z' })
+    expect(findRecordsByLegalName([used], 'Jane Smith', 'uid-new')).toHaveLength(1)
   })
 
-  it('refuses to guess between two people of the same name', () => {
-    const rows = [row(), row({ uid: 'imported_2' })]
-    expect(findExistingRecord(rows, 'new@x.com', ['Jane Smith'], 'uid-new')).toBeNull()
+  it('never offers the caller their own record', () => {
+    expect(findRecordsByLegalName([row({ uid: 'uid-new' })], 'Jane Smith', 'uid-new')).toEqual([])
   })
 
-  it('still matches by email when the name is ambiguous', () => {
-    const rows = [row({ email: 'a@x.com' }), row({ uid: 'imported_2', email: 'b@x.com' })]
-    expect(findExistingRecord(rows, 'b@x.com', ['Jane Smith'], 'uid-new')?.uid).toBe('imported_2')
+  it('refuses an empty name rather than matching every nameless record', () => {
+    const rows = [row({ legalName: '' }), row({ uid: 'i2', legalName: undefined })]
+    expect(findRecordsByLegalName(rows, '   ', 'uid-new')).toEqual([])
+    expect(findRecordsByLegalName(rows, '', 'uid-new')).toEqual([])
+  })
+})
+
+describe('maskEmail', () => {
+  it('keeps enough to recognise your own address and no more', () => {
+    // Shown to whoever typed a matching legal name, which is public knowledge
+    // around a gym — so this must not become a way to look up a member's email.
+    expect(maskEmail('jane@example.com')).toBe('j•••@example.com')
+    expect(maskEmail('  JANE@Example.com ')).toBe('j•••@example.com')
   })
 
-  it('never matches the caller against their own record', () => {
-    expect(
-      findExistingRecord([row({ uid: 'uid-new' })], 'onfile@example.com', ['Jane Smith'], 'uid-new'),
-    ).toBeNull()
-  })
-
-  it('ignores empty names rather than matching every record without one', () => {
-    const rows = [row({ legalName: '' }), row({ uid: 'imported_2', legalName: undefined })]
-    expect(findExistingRecord(rows, 'new@x.com', ['', '   ', undefined], 'uid-new')).toBeNull()
+  it('gives nothing away for an address it cannot read', () => {
+    expect(maskEmail('')).toBe('•••')
+    expect(maskEmail(undefined)).toBe('•••')
+    expect(maskEmail('@nolocalpart.com')).toBe('•••')
+    expect(maskEmail('not-an-email')).toBe('•••')
   })
 })
 

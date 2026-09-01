@@ -179,37 +179,52 @@ have to happen on that first Google sign-in, and each is a separate rule:
    real Firebase uid and the original deleted. `linkedFrom` names the original,
    which is what lets `firestore.rules` verify that any `isAdmin`/`isSupervisor`
    being carried over was already granted, and now also what permits the delete.
-2. **Matched by legal name**, for the member whose Google address is not the
-   one the gym has on file. Tried twice, because there are two names available
-   at two different moments: at sign-in, against whatever Google reports as the
-   account name, so the setup form can open already filled in; and again when
-   that form is saved, against the legal name the member typed, which is the
-   name the gym's own records are kept under and often not the one Google has.
+2. **Identified by legal name, by the member themselves.** Email finds the
+   easy cases and misses the ones that matter: members change addresses, and
+   the sheet has whichever one they used years ago. So the setup form opens by
+   asking for the legal name — the identity the gym actually files records
+   under — looks for every record carrying it, and shows what it found:
 
-   Two limits, and they are the only ones: a name matching two records matches
-   neither, and roles never cross a name match — `firestore.rules` enforces the
-   second independently, since a name-matched write reaches only the self-create
-   branch, which refuses a document carrying either flag. An imported supervisor
-   must therefore sign in with the address on their record, or be re-granted.
+   > *We already have a member on file under that name. Is this you?*
+   > **Jane Smith** · j•••@gmail.com · Member since 2019
 
-   **This is the widest rule in the system, and it is deliberate.** A legal name
-   is not a credential; it is public knowledge around a gym. An earlier version
-   matched only records nobody had ever used — no waiver, no sign-in, not
-   confirmed by its owner — which sounds prudent and excluded precisely the
-   records worth finding: real members with real history. In production that
-   version greeted a member of years' standing as a stranger and let a blank
-   membership be written where a paid one had been. Given a choice between
-   losing a member's membership and letting someone who knows a member's full
-   legal name reach their record, this app now takes the second. Revisit if the
-   co-op grows past the point where members are known to each other.
-3. **Never lossy.** Whichever way a record is matched, the sign-in overwrites
+   Choosing one adopts it whole. "None of these" registers a new member.
+
+   **Nothing is guessed.** An earlier version matched a name silently, and only
+   when exactly one record carried it — so two Jane Smiths matched neither,
+   which reads as "we have never heard of you" and quietly created a third. Who
+   somebody is has an answer, and the person signing in is the only one who
+   knows it, so they are asked rather than guessed at.
+
+   **The address is masked**, always. Whoever reads that screen has proved only
+   that they can type a name, and a name is public knowledge around a gym; the
+   full address would make the form a way of looking up any member's email.
+
+   **Roles never cross a name match.** `firestore.rules` enforces this
+   independently — a name-matched write reaches only the self-create branch,
+   which refuses a document carrying either flag — so an imported supervisor
+   must sign in with the address on their record, or be re-granted.
+
+   **The trade is deliberate.** A member who knows another's full legal name,
+   and is willing to claim to be them on a screen that says so, can reach their
+   record. That is a smaller risk than the alternative, which was losing
+   people's memberships, and it is one a co-op where members know each other can
+   carry. Revisit if that stops being true.
+
+3. **Two addresses, not one.** `email` is the Google account that signs in;
+   `preferredEmail` is where KBC writes. Joining with whichever account is on
+   the phone in your hand while being reached somewhere else entirely is the
+   ordinary case, not an anomaly — so adopting a record keeps the address it was
+   filed under as `preferredEmail`, and the setup form lets it be edited.
+
+4. **Never lossy.**3. **Never lossy.** Whichever way a record is matched, the sign-in overwrites
    exactly three things on it — email, display name, photo — plus whatever the
    member typed into the setup form. Pass, punches, dates, waivers,
    `memberSince` and sign-in history are carried across untouched
    (`linkRecordToUid`). The one path that writes a whole fresh document checks
    first that the uid really is empty.
 
-4. **Shown to its owner once** (`needsProfileReview`). A record can be complete
+5. **Shown to its owner once** (`needsProfileReview`). A record can be complete
    and still wrong: nobody has checked what the spreadsheet said, and the waiver
    on the next screen is signed against it. The setup form appears prefilled,
    and `profileReviewedAt` records that they confirmed it. Members who onboarded

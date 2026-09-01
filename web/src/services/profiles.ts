@@ -13,7 +13,8 @@ import {
 import { db } from '@/lib/firebase'
 import { nextAccessPass } from '@/domain/membership'
 import {
-  findExistingRecord,
+  findRecordsByLegalName,
+  findProfileByEmailIn,
   mergeAdditionalEmails,
   normaliseEmail,
 } from '@/domain/memberProfile'
@@ -136,7 +137,7 @@ export async function findOrLinkProfile(
   // gets the new-member form and registers a second time over the top. It is
   // raised instead, so ProfileContext can say so and offer Try Again. A
   // genuinely new member loses nothing by retrying.
-  const match = await findRecordFor(uid, email, name).catch((e: unknown) => {
+  const match = await findRecordByEmail(email).catch((e: unknown) => {
     throw new Error(
       `Could not check whether KBC already holds a record for ${email}: ${
         e instanceof Error ? e.message : String(e)
@@ -144,36 +145,48 @@ export async function findOrLinkProfile(
     )
   })
   if (!match) {
-    // Nobody by this address or this name. The setup form asks for the legal
-    // name directly and tries once more with that, Google's account name being
-    // a nickname often enough to be worth a second attempt.
+    // No record under this address. That is not the same as no record: the gym
+    // files members under their legal name, and the address on file is often
+    // one they stopped using years ago. The setup form asks for the name and
+    // settles it there — see findRecordsForLegalName. Guessing here, silently,
+    // on whatever Google reports as the account name, is what this used to do,
+    // and it is not a decision to make on somebody's behalf.
     return null
   }
 
-  const byEmail = normaliseEmail(match.email) === normaliseEmail(email)
-  console.log('[Profile] Linking', uid, 'to record', match.uid, byEmail ? 'by email' : 'by name')
-  // Roles cross only on an email match, which firestore.rules re-checks against
-  // the linkedFrom record for itself. A name proves nothing, so a name match
-  // arrives as an ordinary member whatever the record said.
-  return linkRecordToUid(uid, match, { name, email, photo }, byEmail)
+  console.log('[Profile] Linking', uid, 'to record', match.uid, 'by email')
+  // Roles cross on an email match because firestore.rules can re-check it
+  // against the linkedFrom record for itself.
+  return linkRecordToUid(uid, match, { name, email, photo }, true)
 }
 
 /**
- * The record the gym holds for this person, by address or by name.
+ * The record filed under an address, if there is one.
  *
  * The indexed query first, because it settles the common case in a single read.
- * Everything else needs the collection — a stored address that is not lower
- * case, or a match on the account name — so it is read once and both questions
- * are asked of it, rather than paying for it twice.
+ * A miss is not an answer, though — it matches only a record whose stored
+ * address is already lower case — so the collection is read and compared
+ * properly before concluding there is nothing.
  */
-async function findRecordFor(
-  uid: string,
-  email: string,
-  googleName: string,
-): Promise<UserProfile | null> {
+async function findRecordByEmail(email: string): Promise<UserProfile | null> {
   const fast = await queryProfileByEmailExact(email)
   if (fast) return fast
-  return findExistingRecord(await getAllProfiles(), email, [googleName], uid)
+  return findProfileByEmailIn(await getAllProfiles(), email)
+}
+
+/**
+ * Every record filed under a legal name, for the setup form to offer.
+ *
+ * This is the lookup that actually finds returning members, and it deliberately
+ * does not decide anything: it hands back what it found, masked, and the person
+ * signing in says which is them. They are the only one who knows, and a wrong
+ * guess hands somebody else's membership over.
+ */
+export async function findRecordsForLegalName(
+  uid: string,
+  legalName: string,
+): Promise<UserProfile[]> {
+  return findRecordsByLegalName(await getAllProfiles(), legalName, uid)
 }
 
 /**
@@ -189,6 +202,7 @@ export async function createSelfRegisteredProfile(
   emergencyContact: EmergencyContact,
   preferredName?: string,
   phone?: string,
+  preferredEmail?: string,
 ): Promise<UserProfile> {
   const now = new Date().toISOString()
   const fresh: Omit<UserProfile, 'uid'> = {
@@ -210,36 +224,38 @@ export async function createSelfRegisteredProfile(
     profileReviewedAt: now,
     ...(preferredName ? { preferredName } : {}),
     ...(phone ? { phone } : {}),
+    ...(preferredEmail ? { preferredEmail } : {}),
   }
   await setDoc(doc(db, USERS, uid), fresh)
   return { uid, ...fresh }
 }
 
 /**
- * Saving the setup form for someone the app believes has no record.
+ * Saving the setup form.
  *
- * It asks once more before believing it. `findOrLinkProfile` has already tried
- * this member's email and their Google account name; what is new here is the
- * legal name they have just typed, which is the name the gym's own records are
- * kept under and frequently not the one Google reports. This is the last point
- * at which a member of years' standing can still be recognised, and the cost of
- * missing them is the whole reason this function exists: they register a second
- * time, and the record holding their pass is left orphaned behind them.
+ * `chosen` is the record the member picked out of the ones filed under their
+ * legal name, or null if they said none of them were theirs. Either way this is
+ * the only place a first-time profile is written, and the difference between
+ * the two is the difference between keeping a membership and losing one.
  *
- * A match keeps everything on the stored record — see `linkRecordToUid`. The
- * fields the member filled in here are applied on top, because those they have
- * just affirmed; nothing else is touched. Only when all of it genuinely finds
- * nobody is a fresh profile created.
+ * A chosen record keeps everything on it (see `linkRecordToUid`) with the
+ * form's answers applied on top. The address the gym had on file becomes
+ * `preferredEmail` — a member who signs in with a Google account but is reached
+ * at another address is the ordinary case here, not an anomaly, and dropping
+ * the old address would mean the gym could no longer contact the person it just
+ * recognised.
  */
-export async function registerOrClaimProfile(
+export async function saveSetupProfile(
   uid: string,
-  name: string,
-  email: string,
-  photo: string | null,
-  legalName: string,
-  emergencyContact: EmergencyContact,
-  preferredName?: string,
-  phone?: string,
+  google: { name: string; email: string; photo: string | null },
+  form: {
+    legalName: string
+    emergencyContact: EmergencyContact
+    preferredName?: string
+    phone?: string
+    preferredEmail?: string
+  },
+  chosen: UserProfile | null,
 ): Promise<UserProfile> {
   // Believing the member has no record is not the same as checking. This is
   // the only path that setDocs a whole profile, so if something upstream was
@@ -251,49 +267,54 @@ export async function registerOrClaimProfile(
     console.warn('[Profile] Asked to register a uid that already has a profile — updating instead')
     await completeMemberProfile(
       uid,
-      { name, photo, legalName, emergencyContact, preferredName, phone },
-      email,
+      {
+        name: google.name,
+        photo: google.photo,
+        legalName: form.legalName,
+        emergencyContact: form.emergencyContact,
+        preferredName: form.preferredName,
+        phone: form.phone,
+        preferredEmail: form.preferredEmail,
+      },
+      google.email,
     )
     return (await getProfileByUid(uid)) as UserProfile
   }
 
+  if (!chosen) {
+    return createSelfRegisteredProfile(
+      uid,
+      google.name,
+      google.email,
+      google.photo,
+      form.legalName,
+      form.emergencyContact,
+      form.preferredName,
+      form.phone,
+      form.preferredEmail,
+    )
+  }
+
+  console.log('[Profile] Joining', uid, 'to the record the member identified:', chosen.uid)
+  const onFile = normaliseEmail(chosen.email)
+  const preferred = form.preferredEmail?.trim() ||
+    chosen.preferredEmail ||
+    (onFile && onFile !== normaliseEmail(google.email) ? chosen.email : undefined)
+
   const typed: Partial<Omit<UserProfile, 'uid'>> = {
-    legalName,
-    emergencyContact: JSON.stringify(emergencyContact),
+    legalName: form.legalName,
+    emergencyContact: JSON.stringify(form.emergencyContact),
     profileReviewedAt: new Date().toISOString(),
-    ...(preferredName ? { preferredName } : {}),
-    ...(phone ? { phone } : {}),
+    ...(form.preferredName ? { preferredName: form.preferredName } : {}),
+    ...(form.phone ? { phone: form.phone } : {}),
+    ...(preferred ? { preferredEmail: preferred } : {}),
   }
 
-  let match: UserProfile | null = null
-  try {
-    match = findExistingRecord(await getAllProfiles(), email, [legalName, name], uid)
-  } catch (e) {
-    // Unlike the lookup in findOrLinkProfile, this one does not raise. The
-    // member is standing in front of a completed form, and refusing to save it
-    // costs them their sign-up; the worst case here is the duplicate record an
-    // admin can merge, which is what used to happen every time regardless.
-    console.warn('[Profile] Could not check for an existing record before registering:', e)
-  }
-
-  if (match) {
-    console.log('[Profile] Registering', uid, 'onto the existing record', match.uid)
-    // Roles are kept only when the match was the email, which the rules can
-    // verify for themselves; a name match must arrive without them.
-    const byEmail = normaliseEmail(match.email) === normaliseEmail(email)
-    return linkRecordToUid(uid, match, { name, email, photo }, byEmail, typed)
-  }
-
-  return createSelfRegisteredProfile(
-    uid,
-    name,
-    email,
-    photo,
-    legalName,
-    emergencyContact,
-    preferredName,
-    phone,
-  )
+  // Roles never cross here. The member has proved they can type a legal name,
+  // which is public knowledge around a gym; firestore.rules refuses this write
+  // outright if it arrives carrying either flag, so this is what makes it legal
+  // rather than merely what makes it prudent.
+  return linkRecordToUid(uid, chosen, google, false, typed)
 }
 
 /**
@@ -323,6 +344,7 @@ export async function completeMemberProfile(
     emergencyContact: EmergencyContact
     preferredName?: string
     phone?: string
+    preferredEmail?: string
   },
   updatedByEmail: string,
 ): Promise<void> {
@@ -336,6 +358,7 @@ export async function completeMemberProfile(
       profileReviewedAt: new Date().toISOString(),
       ...(updates.preferredName ? { preferredName: updates.preferredName } : {}),
       ...(updates.phone ? { phone: updates.phone } : {}),
+      ...(updates.preferredEmail ? { preferredEmail: updates.preferredEmail } : {}),
     },
     updatedByEmail,
   )
