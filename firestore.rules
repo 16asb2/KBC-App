@@ -101,12 +101,32 @@ service cloud.firestore {
     // is mark it confirmed, which is what used to be expressed as "cannot set
     // membershipStatus to 'active'". Splitting the pass from the confirmation
     // made that distinction sayable rather than encoded in one enum.
+    //
+    // There are two ways to arrive at a confirmed pass and both are closed
+    // here. Flipping membershipConfirmed is the obvious one. The other is not
+    // touching it at all: the field rests at TRUE for everyone holding no pass
+    // — that is how "there is nothing awaiting confirmation" is stored, for
+    // every new member and for every pass an admin denies — so a member who
+    // wrote nothing but membershipAccessPass: 'annual' left the diff clean and
+    // ended up reading as a confirmed annual membership. The second condition
+    // therefore asks what the write LEAVES BEHIND rather than what it changed.
+    //
+    // Punch passes are deliberately not caught by it: a punch admits one visit
+    // and is held to account by pendingPunches and by the count itself, so the
+    // self-purchase flow legitimately moves a member onto 'punch' without
+    // touching membershipConfirmed at all.
     function canSelfUpdateAccess(uid) {
       return isAuthenticated() &&
         request.auth.uid == uid &&
         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isAdmin', 'isSupervisor', 'amendedBy']) &&
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['membershipConfirmed']) ||
-          request.resource.data.membershipConfirmed == false);
+          request.resource.data.membershipConfirmed == false) &&
+        !(request.resource.data.get('membershipConfirmed', true) == true &&
+          // The dated passes: the ones that admit someone for a period on the
+          // strength of a payment, rather than per visit off a punch count.
+          request.resource.data.get('membershipAccessPass', 'none') in ['annual', '8month', '4month', '1month'] &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['membershipAccessPass', 'membershipStart', 'membershipExpiry']));
     }
 
     // ── users/{uid} ───────────────────────────────────────────────────────────
