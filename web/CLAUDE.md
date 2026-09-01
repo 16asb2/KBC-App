@@ -57,6 +57,9 @@ src/
 
   domain/        — pure logic, no Firestore/env reads. Each has a *.test.ts.
     membership.ts       — nextAccessPass(): lapsed-pass decision
+    memberProfile.ts    — what a finished member record is, whether its owner
+                          has confirmed it, and which pre-registered record a
+                          member may claim by legal name
     membershipPass.ts   — PASS_OPTIONS, accessPassLabel(), isDatedPass(),
                           membershipGrantsEntry(), passFromDates()
     roles.ts            — isAdminFor()/isAdmin()/isPrivileged()
@@ -81,8 +84,9 @@ src/
   routes/
     RequireAuth.tsx     — redirects to /login if signed out
     RequireRole.tsx     — generic role gate; takes a check from domain/roles.ts
-    OnboardingGate.tsx  — no profile/legalName → /setup; missing waivers →
-                          /waiver/:type; else render the app
+    OnboardingGate.tsx  — needsProfileReview → /setup (no profile, a gap in one,
+                          or an imported record its owner has never confirmed);
+                          missing waivers → /waiver/:type; else render the app
 
   layout/AppShell.tsx, layout/nav.ts — header + responsive nav (sidebar ≥md,
                                         bottom bar <md); NAV_ITEMS + tab colors

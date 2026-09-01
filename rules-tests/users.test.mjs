@@ -10,13 +10,19 @@
  * commit 505d58c. The linkedFrom branch that fixes it is also the only place
  * the rules let a create keep those flags, so the attacks it could have opened
  * are covered here too.
+ *
+ * The delete branch below is the other half of that link: the copy leaves the
+ * original record behind, and until claimsThisRecord() existed an ordinary
+ * member could not remove it, so the directory showed them twice. Deleting
+ * somebody's record is the most destructive thing these rules permit a member
+ * to do, so the ways it must *not* work are covered at length.
  */
 
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing'
-import { doc, setDoc, updateDoc } from 'firebase/firestore'
+import { deleteDoc, doc, setDoc, updateDoc } from 'firebase/firestore'
 
 const rulesPath = fileURLToPath(new URL('../firestore.rules', import.meta.url))
 
@@ -206,7 +212,13 @@ test('a member cannot grant themselves isSupervisor', async () => {
 })
 
 test('a member cannot confirm their own purchase', async () => {
-  await seed('uid-m', profile({ email: 'm@example.com' }))
+  // Seeded mid-purchase: they have recorded an annual pass and an admin has
+  // yet to confirm the payment. Seeding the default profile instead made this
+  // a write of true over true — an empty diff, which no rule can deny.
+  await seed(
+    'uid-m',
+    profile({ email: 'm@example.com', membershipAccessPass: 'annual', membershipConfirmed: false }),
+  )
   const db = asUser('uid-m', 'm@example.com')
   await assertFails(updateDoc(doc(db, 'users', 'uid-m'), { membershipConfirmed: true }))
 })
@@ -219,6 +231,46 @@ test('a member cannot give themselves a pass and confirm it in one write', async
       membershipAccessPass: 'annual',
       membershipConfirmed: true,
     }),
+  )
+})
+
+/**
+ * The escalation the two tests above did not reach: membershipConfirmed rests
+ * at true for a member holding no pass, so granting yourself a pass and simply
+ * not mentioning the confirmation left a diff containing nothing the rules were
+ * checking, and the record read back as a confirmed annual membership.
+ */
+test('a member cannot grant themselves a pass by leaving membershipConfirmed alone', async () => {
+  await seed('uid-m', profile({ email: 'm@example.com' }))
+  const db = asUser('uid-m', 'm@example.com')
+  await assertFails(updateDoc(doc(db, 'users', 'uid-m'), { membershipAccessPass: 'annual' }))
+})
+
+test('a member cannot extend their own confirmed membership', async () => {
+  await seed(
+    'uid-m',
+    profile({
+      email: 'm@example.com',
+      membershipAccessPass: 'annual',
+      membershipConfirmed: true,
+      membershipStart: '2026-01-01T00:00:00.000Z',
+      membershipExpiry: '2027-01-01T00:00:00.000Z',
+    }),
+  )
+  const db = asUser('uid-m', 'm@example.com')
+  await assertFails(
+    updateDoc(doc(db, 'users', 'uid-m'), { membershipExpiry: '2030-01-01T00:00:00.000Z' }),
+  )
+})
+
+test('a member on a confirmed membership can still sign in', async () => {
+  await seed(
+    'uid-m',
+    profile({ email: 'm@example.com', membershipAccessPass: 'annual', membershipConfirmed: true }),
+  )
+  const db = asUser('uid-m', 'm@example.com')
+  await assertSucceeds(
+    updateDoc(doc(db, 'users', 'uid-m'), { lastSignInAt: '2026-08-23T12:00:00.000Z' }),
   )
 })
 
@@ -251,6 +303,22 @@ test('a member can self-purchase, pending admin confirmation', async () => {
   )
 })
 
+test('a member can self-purchase a punch pass, pending admin confirmation', async () => {
+  await seed('uid-m', profile({ email: 'm@example.com' }))
+  const db = asUser('uid-m', 'm@example.com')
+  // What HomePage writes when someone with no pass buys ten punches and spends
+  // one on the way in. It never touches membershipConfirmed: a punch admits a
+  // single visit, and pendingPunches is what an admin confirms.
+  await assertSucceeds(
+    updateDoc(doc(db, 'users', 'uid-m'), {
+      membershipAccessPass: 'punch',
+      punchPassRemaining: 9,
+      pendingPunches: 10,
+      lastSignInAt: '2026-08-23T12:00:00.000Z',
+    }),
+  )
+})
+
 test('a member can spend a punch pass on sign-in', async () => {
   await seed('uid-m', profile({ email: 'm@example.com', punchPassRemaining: 5 }))
   const db = asUser('uid-m', 'm@example.com')
@@ -266,4 +334,141 @@ test('an unauthenticated caller cannot write profiles', async () => {
   await seed('uid-m', profile())
   const db = testEnv.unauthenticatedContext().firestore()
   await assertFails(setDoc(doc(db, 'users', 'uid-x'), profile()))
+})
+
+// ─── delete: removing the record a member has just claimed ───────────────────
+
+/** A record written before its owner ever signed in, and their claim of it. */
+async function seedClaim(recordOver = {}, claimerOver = {}) {
+  await seed('imported_1', profile({ email: 'onfile@example.com', ...recordOver }))
+  await seed(
+    'uid-claimer',
+    profile({ email: 'claimer@example.com', linkedFrom: 'imported_1', ...claimerOver }),
+  )
+  return asUser('uid-claimer', 'claimer@example.com')
+}
+
+test('a member can delete the pre-registration record they claimed', async () => {
+  const db = await seedClaim()
+  await assertSucceeds(deleteDoc(doc(db, 'users', 'imported_1')))
+})
+
+test('the claim tolerates case and padding in the legal name', async () => {
+  const db = await seedClaim({ legalName: '  test member  ' }, { legalName: 'Test Member' })
+  await assertSucceeds(deleteDoc(doc(db, 'users', 'imported_1')))
+})
+
+test('the email-linked member can delete a record already signed in at the desk', async () => {
+  // A supervisor signing a walk-in in stamps lastSignInAt on their
+  // pre-registration record. That blocks a name claim, but not this member:
+  // the address on the record is the one they are signed in with.
+  await seed(
+    'imported_1',
+    profile({
+      email: 'claimer@example.com',
+      legalName: 'Someone Else Entirely',
+      lastSignInAt: '2026-08-30T18:00:00.000Z',
+    }),
+  )
+  await seed('uid-claimer', profile({ email: 'claimer@example.com', linkedFrom: 'imported_1' }))
+  const db = asUser('uid-claimer', 'claimer@example.com')
+  await assertSucceeds(deleteDoc(doc(db, 'users', 'imported_1')))
+})
+
+test('a member cannot delete a record under a different legal name', async () => {
+  const db = await seedClaim({ legalName: 'Someone Else' })
+  await assertFails(deleteDoc(doc(db, 'users', 'imported_1')))
+})
+
+test('a member cannot delete a record they do not name in linkedFrom', async () => {
+  await seed('victim_doc', profile({ email: 'victim@example.com' }))
+  const db = await seedClaim()
+  await assertFails(deleteDoc(doc(db, 'users', 'victim_doc')))
+})
+
+test('a member cannot delete a record whose owner has signed a waiver', async () => {
+  // Someone has used this account. A matching name is nowhere near enough.
+  for (const used of [
+    { waiverMembership: JSON.stringify({ signedAt: '2026-01-01', signedBy: 'Test Member' }) },
+    { waiverLiability: JSON.stringify({ signedAt: '2026-01-01', signedBy: 'Test Member' }) },
+    { lastSignInAt: '2026-08-30T18:00:00.000Z' },
+    // Completed the setup form, then wandered off before signing anything.
+    { profileReviewedAt: '2026-08-30T18:00:00.000Z' },
+  ]) {
+    await testEnv.clearFirestore()
+    const db = await seedClaim(used)
+    await assertFails(deleteDoc(doc(db, 'users', 'imported_1')))
+  }
+})
+
+test('a member cannot delete a privileged record by claiming it', async () => {
+  // A pre-registered supervisor links by email instead, and once linked is
+  // isSupervisorOrAdmin() and covered by the ordinary branch.
+  for (const flag of [{ isAdmin: true }, { isSupervisor: true }]) {
+    await testEnv.clearFirestore()
+    const db = await seedClaim(flag)
+    await assertFails(deleteDoc(doc(db, 'users', 'imported_1')))
+  }
+})
+
+test('a member cannot delete another member outright', async () => {
+  await seed('uid-victim', profile({ email: 'victim@example.com' }))
+  await seed('uid-m', profile({ email: 'm@example.com' }))
+  const db = asUser('uid-m', 'm@example.com')
+  await assertFails(deleteDoc(doc(db, 'users', 'uid-victim')))
+})
+
+test('a member cannot repoint linkedFrom after creating their profile', async () => {
+  // Write-once is what bounds the delete branch: whatever record a member
+  // named as they signed up is the only one they can ever remove.
+  await seed('uid-m', profile({ email: 'm@example.com', linkedFrom: 'imported_1' }))
+  const db = asUser('uid-m', 'm@example.com')
+  await assertFails(updateDoc(doc(db, 'users', 'uid-m'), { linkedFrom: 'victim_doc' }))
+})
+
+test('a member cannot repoint linkedFrom by hiding it in a purchase', async () => {
+  // The write above is refused by the profile branch of `allow update`, but a
+  // member's own write reaches their document down two branches, and the
+  // second one asks about roles and purchases rather than about this field.
+  // A purchase is a write that branch exists to allow, so it is the shape
+  // anyone repointing the field would actually use.
+  await seed('uid-m', profile({ email: 'm@example.com', linkedFrom: 'imported_1' }))
+  const db = asUser('uid-m', 'm@example.com')
+  await assertFails(
+    updateDoc(doc(db, 'users', 'uid-m'), {
+      linkedFrom: 'victim_doc',
+      membershipAccessPass: 'annual',
+      membershipConfirmed: false,
+    }),
+  )
+})
+
+test('an admin can still repair a linkedFrom', async () => {
+  await seed('uid-admin', profile({ email: 'admin@example.com', isAdmin: true }))
+  await seed('uid-m', profile({ email: 'm@example.com', linkedFrom: 'imported_1' }))
+  const db = asUser('uid-admin', 'admin@example.com')
+  await assertSucceeds(updateDoc(doc(db, 'users', 'uid-m'), { linkedFrom: 'imported_2' }))
+})
+
+test('an admin can still delete anyone', async () => {
+  await seed('uid-admin', profile({ email: 'admin@example.com', isAdmin: true }))
+  await seed(
+    'uid-victim',
+    profile({ email: 'victim@example.com', waiverMembership: '{"signedAt":"2026-01-01"}' }),
+  )
+  const db = asUser('uid-admin', 'admin@example.com')
+  await assertSucceeds(deleteDoc(doc(db, 'users', 'uid-victim')))
+})
+
+test('a member claiming by legal name still cannot carry roles across', async () => {
+  // registerOrClaimProfile() forces both flags false; the rules say so too,
+  // since a name-matched claim only ever reaches the self-create branch.
+  await seed('imported_2', profile({ email: 'onfile@example.com', isSupervisor: true }))
+  const db = asUser('uid-claimer', 'claimer@example.com')
+  await assertFails(
+    setDoc(
+      doc(db, 'users', 'uid-claimer'),
+      profile({ email: 'claimer@example.com', isSupervisor: true, linkedFrom: 'imported_2' }),
+    ),
+  )
 })

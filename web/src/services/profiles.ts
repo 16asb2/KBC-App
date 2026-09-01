@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { nextAccessPass } from '@/domain/membership'
+import { findClaimableByLegalName, mergeAdditionalEmails } from '@/domain/memberProfile'
 import type { EmergencyContact, UserProfile } from '@/types/member'
 
 // Same Firestore collection mobile/ reads and writes — the schema is shared
@@ -114,11 +115,100 @@ export async function createSelfRegisteredProfile(
     membershipStart: null,
     membershipExpiry: null,
     emergencyContact: JSON.stringify(emergencyContact),
+    // They typed every word of this document a second ago, so it is reviewed by
+    // definition — and marking it keeps OnboardingGate from sending them back.
+    profileReviewedAt: now,
     ...(preferredName ? { preferredName } : {}),
     ...(phone ? { phone } : {}),
   }
   await setDoc(doc(db, USERS, uid), fresh)
   return { uid, ...fresh }
+}
+
+/**
+ * Self-registration that first checks whether the gym was already expecting
+ * this person under a different email address.
+ *
+ * `findOrLinkProfile` matches a pre-registered record by email at sign-in, and
+ * that covers the ordinary case. It misses the member who is on the imported
+ * list under a personal address and signs in with a work one — nothing matches,
+ * and they would end up as a second, empty record beside the one holding the
+ * membership they paid for. The legal name they type here is what identifies
+ * them instead: the claimed record moves to their Firebase uid carrying its
+ * membership, punches and history, and the old document is removed so the
+ * directory shows one member rather than two.
+ *
+ * A name is not a credential, so the claim is deliberately narrow — see
+ * `findClaimableByLegalName` for what it will and will not match. Roles are the
+ * one thing never carried across: an imported supervisor has to keep using the
+ * email on their record, or be re-granted by an admin. `firestore.rules` agrees
+ * independently, since this write goes through the ordinary self-create branch,
+ * which rejects a document that arrives holding either flag.
+ */
+export async function registerOrClaimProfile(
+  uid: string,
+  name: string,
+  email: string,
+  photo: string | null,
+  legalName: string,
+  emergencyContact: EmergencyContact,
+  preferredName?: string,
+  phone?: string,
+): Promise<UserProfile> {
+  let claim: UserProfile | null = null
+  try {
+    claim = findClaimableByLegalName(await getAllProfiles(), legalName, uid)
+  } catch (e) {
+    // A failed lookup must not block someone signing up. They get a fresh
+    // record, and an admin can merge the duplicate from the members screen.
+    console.warn('[Profile] Legal-name lookup failed:', e)
+  }
+
+  if (!claim) {
+    return createSelfRegisteredProfile(
+      uid,
+      name,
+      email,
+      photo,
+      legalName,
+      emergencyContact,
+      preferredName,
+      phone,
+    )
+  }
+
+  console.log('[Profile] Claiming pre-registered record', claim.uid, 'by legal name')
+  const now = new Date().toISOString()
+  const { uid: oldUid, ...claimed } = claim
+  const additional = mergeAdditionalEmails(claimed.additionalEmails, claimed.email, email)
+  const merged: Omit<UserProfile, 'uid'> = {
+    ...claimed,
+    name,
+    email,
+    photo,
+    legalName,
+    emergencyContact: JSON.stringify(emergencyContact),
+    isAdmin: false,
+    isSupervisor: false,
+    profileReviewedAt: now,
+    linkedFrom: oldUid,
+    lastUpdatedBy: email,
+    lastUpdatedAt: now,
+    ...(additional.length > 0 ? { additionalEmails: JSON.stringify(additional) } : {}),
+    ...(preferredName ? { preferredName } : {}),
+    ...(phone ? { phone } : {}),
+  }
+  await setDoc(doc(db, USERS, uid), merged)
+  // Non-fatal, exactly as in findOrLinkProfile: the member already holds the
+  // record either way, and an orphan is an admin cleanup rather than a failed
+  // sign-up. firestore.rules lets this through on the strength of the
+  // linkedFrom written above.
+  try {
+    await deleteProfile(oldUid)
+  } catch (e) {
+    console.warn('[Profile] Failed to delete claimed profile doc:', oldUid, e)
+  }
+  return { uid, ...merged }
 }
 
 /**
@@ -134,6 +224,10 @@ export async function createSelfRegisteredProfile(
  *
  * `name`/`photo` come from Google and are refreshed here too, since an imported
  * record has whatever the spreadsheet said rather than their account's own.
+ *
+ * It also runs when nothing was missing at all — a complete imported record is
+ * still shown to its owner once for confirmation, and `profileReviewedAt` is
+ * what records that they gave it.
  */
 export async function completeMemberProfile(
   uid: string,
@@ -154,6 +248,7 @@ export async function completeMemberProfile(
       photo: updates.photo,
       legalName: updates.legalName,
       emergencyContact: JSON.stringify(updates.emergencyContact),
+      profileReviewedAt: new Date().toISOString(),
       ...(updates.preferredName ? { preferredName: updates.preferredName } : {}),
       ...(updates.phone ? { phone: updates.phone } : {}),
     },
