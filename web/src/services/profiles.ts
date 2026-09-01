@@ -78,12 +78,21 @@ export async function findOrLinkProfile(
   }
 
   // Check for an existing profile by email (manually created before first Google sign-in)
-  let existing: UserProfile | null = null
-  try {
-    existing = await findProfileByEmail(email)
-  } catch (e) {
-    console.warn('[Profile] Email lookup failed:', e)
-  }
+  //
+  // This used to swallow its own failure and carry on with `existing = null`,
+  // on the reasoning that a broken lookup should not stop someone signing up.
+  // But null here does not mean "no record" — it means "did not find one", and
+  // the caller cannot tell those apart: a member the gym has held for years
+  // gets the new-member form, and registers a second time over the top. The
+  // failure is raised instead, so ProfileContext can say so and offer Try
+  // Again. A genuinely new member loses nothing by retrying.
+  const existing = await findProfileByEmail(email).catch((e: unknown) => {
+    throw new Error(
+      `Could not check whether KBC already holds a record for ${email}: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    )
+  })
 
   if (existing) {
     console.log('[Profile] Linking Firebase UID to existing member profile for', email)

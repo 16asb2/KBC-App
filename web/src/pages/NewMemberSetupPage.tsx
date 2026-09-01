@@ -107,6 +107,20 @@ export function NewMemberSetupPage() {
         <div className="mb-6 rounded-[20px] p-6" style={{ backgroundColor: KBC.black }}>
           <h1 className="text-2xl font-black text-white">{HEADINGS[mode]}</h1>
           <p className="mt-2 text-sm leading-5 text-neutral-400">{BLURBS[mode]}</p>
+          {/* The one case this screen used to have no answer for. Arriving here
+              as 'new' when the gym does hold your record means the record is
+              under an address other than the one you are signed in with, and
+              nothing said so — you filled the form in and became a second
+              member. The header above names the account; this says why that
+              matters and what to do about it. */}
+          {mode === 'new' && (
+            <p className="mt-3 rounded-[10px] p-3 text-[13px] leading-5 text-neutral-300">
+              <span className="font-bold text-white">Already a KBC member?</span> Your details should
+              have appeared here. If they haven&rsquo;t, KBC most likely holds you under a different
+              email — check the account named above, and sign out to switch. Filling this in will
+              start a new membership rather than find your old one.
+            </p>
+          )}
           {/* Naming the gaps beats leaving someone to hunt for the empty box. */}
           {isTopUp && missing.length > 0 && (
             <ul className="mt-3 flex flex-wrap gap-1.5">
