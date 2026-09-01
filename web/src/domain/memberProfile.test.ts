@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { isProfileComplete, missingProfileFields, parseEmergencyContact } from './memberProfile'
+import {
+  findClaimableByLegalName,
+  isProfileComplete,
+  mergeAdditionalEmails,
+  missingProfileFields,
+  needsProfileReview,
+  normaliseLegalName,
+  parseEmergencyContact,
+} from './memberProfile'
 
 const FULL_EC = JSON.stringify({
   name: 'John Smith',
@@ -86,5 +94,147 @@ describe('missingProfileFields', () => {
   it('carries a label fit to show the member', () => {
     const missing = missingProfileFields({ legalName: '', emergencyContact: FULL_EC })
     expect(missing[0].label).toBe('Legal name')
+  })
+})
+
+describe('needsProfileReview', () => {
+  const COMPLETE = { legalName: 'Jane Smith', emergencyContact: FULL_EC }
+
+  it('sends a member with nothing on file to the form', () => {
+    expect(needsProfileReview(null)).toBe(true)
+    expect(needsProfileReview(undefined)).toBe(true)
+  })
+
+  it('sends an incomplete record to the form', () => {
+    expect(needsProfileReview({ legalName: 'Jane Smith' })).toBe(true)
+  })
+
+  it('shows a complete but unreviewed record to its owner once', () => {
+    // The imported case: everything the app asks for is there, but the member
+    // has never seen it, and the waiver after this is signed against it.
+    expect(needsProfileReview(COMPLETE)).toBe(true)
+  })
+
+  it('stops asking once the member has confirmed it', () => {
+    expect(needsProfileReview({ ...COMPLETE, profileReviewedAt: '2026-08-31T12:00:00.000Z' })).toBe(
+      false,
+    )
+  })
+
+  it('leaves members who onboarded before the field existed alone', () => {
+    // A signed membership waiver can only have come from this app's own
+    // onboarding, which is behind this very form. Without this, every existing
+    // member would be marched back through setup on their next visit.
+    expect(needsProfileReview({ ...COMPLETE, waiverMembership: '{"signedAt":"2026-01-01"}' })).toBe(
+      false,
+    )
+  })
+
+  it('still asks an old member for a gap, waiver or no waiver', () => {
+    expect(
+      needsProfileReview({ legalName: 'Jane Smith', waiverMembership: '{"signedAt":"x"}' }),
+    ).toBe(true)
+  })
+})
+
+describe('normaliseLegalName', () => {
+  it('ignores case, accents and repeated whitespace', () => {
+    expect(normaliseLegalName('  JANE   Smith ')).toBe('jane smith')
+    expect(normaliseLegalName('José Núñez')).toBe(normaliseLegalName('jose nunez'))
+  })
+
+  it('keeps punctuation, which distinguishes real names', () => {
+    expect(normaliseLegalName("Jane O'Neill")).toBe("jane o'neill")
+    expect(normaliseLegalName("Jane O'Neill")).not.toBe(normaliseLegalName('Jane ONeill'))
+  })
+
+  it('treats absent as empty', () => {
+    expect(normaliseLegalName(undefined)).toBe('')
+    expect(normaliseLegalName('   ')).toBe('')
+  })
+})
+
+describe('findClaimableByLegalName', () => {
+  const preRegistered = (over = {}) => ({
+    uid: 'imported_1',
+    legalName: 'Jane Smith',
+    isAdmin: false,
+    isSupervisor: false,
+    ...over,
+  })
+
+  it('matches an imported record on the name the member types', () => {
+    const rows = [preRegistered()]
+    expect(findClaimableByLegalName(rows, ' jane   smith ', 'uid-new')?.uid).toBe('imported_1')
+  })
+
+  it('finds nothing when no name matches', () => {
+    expect(findClaimableByLegalName([preRegistered()], 'Someone Else', 'uid-new')).toBeNull()
+  })
+
+  it('refuses an empty name rather than matching every blank record', () => {
+    expect(findClaimableByLegalName([preRegistered({ legalName: '' })], '  ', 'uid-new')).toBeNull()
+  })
+
+  it('never claims a record someone has already signed into', () => {
+    // A name is not a credential. Anything showing a real person has used the
+    // account puts it out of reach.
+    for (const used of [
+      { waiverMembership: '{"signedAt":"x"}' },
+      { waiverLiability: '{"signedAt":"x"}' },
+      { lastSignInAt: '2026-08-30T18:00:00.000Z' },
+      // Completed the setup form, then wandered off before signing anything.
+      { profileReviewedAt: '2026-08-30T18:00:00.000Z' },
+    ]) {
+      expect(findClaimableByLegalName([preRegistered(used)], 'Jane Smith', 'uid-new')).toBeNull()
+    }
+  })
+
+  it('never claims a privileged record', () => {
+    // Legal names are public knowledge around a gym, so a match here would
+    // hand out supervisor rights to whoever typed one.
+    expect(
+      findClaimableByLegalName([preRegistered({ isSupervisor: true })], 'Jane Smith', 'uid-new'),
+    ).toBeNull()
+    expect(
+      findClaimableByLegalName([preRegistered({ isAdmin: true })], 'Jane Smith', 'uid-new'),
+    ).toBeNull()
+  })
+
+  it('refuses to guess between two people of the same name', () => {
+    const rows = [preRegistered(), preRegistered({ uid: 'imported_2' })]
+    expect(findClaimableByLegalName(rows, 'Jane Smith', 'uid-new')).toBeNull()
+  })
+
+  it('does not match the caller against their own record', () => {
+    expect(findClaimableByLegalName([preRegistered({ uid: 'uid-new' })], 'Jane Smith', 'uid-new'))
+      .toBeNull()
+  })
+})
+
+describe('mergeAdditionalEmails', () => {
+  it('keeps the address the gym had on file when it is replaced', () => {
+    expect(mergeAdditionalEmails(undefined, 'old@example.com', 'new@example.com')).toEqual([
+      'old@example.com',
+    ])
+  })
+
+  it('appends rather than replacing what is already listed', () => {
+    expect(
+      mergeAdditionalEmails('["other@example.com"]', 'old@example.com', 'new@example.com'),
+    ).toEqual(['other@example.com', 'old@example.com'])
+  })
+
+  it('does not list an address twice, whatever its case', () => {
+    expect(mergeAdditionalEmails('["OLD@example.com"]', 'old@example.com', 'new@x.com')).toEqual([
+      'OLD@example.com',
+    ])
+    expect(mergeAdditionalEmails('[]', 'Same@example.com', 'same@example.com')).toEqual([])
+  })
+
+  it('survives an unparseable stored value', () => {
+    expect(mergeAdditionalEmails('{ not json', 'old@example.com', 'new@x.com')).toEqual([
+      'old@example.com',
+    ])
   })
 })

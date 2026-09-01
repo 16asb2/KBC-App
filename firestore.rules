@@ -55,11 +55,14 @@ service cloud.firestore {
 
     // Fields that only admins/supervisors may change on a member document.
     // A member updating their own profile cannot escalate privileges.
+    // linkedFrom is in this list because the delete branch below trusts it: a
+    // member may name their pre-registration record once, as they create their
+    // own document, and never rewrite it afterwards to point somewhere else.
     function touchesMemberPrivilegedFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'isAdmin', 'isSupervisor', 'membershipAccessPass', 'membershipConfirmed',
         'membershipStart', 'membershipExpiry', 'punchPassRemaining',
-        'pendingMembership', 'pendingPunches', 'amendedBy'
+        'pendingMembership', 'pendingPunches', 'amendedBy', 'linkedFrom'
       ]);
     }
 
@@ -91,6 +94,63 @@ service cloud.firestore {
         linkSource().data.get('email', '').lower() == request.auth.token.email.lower() &&
         request.resource.data.get('isAdmin', false) == linkSource().data.get('isAdmin', false) &&
         request.resource.data.get('isSupervisor', false) == linkSource().data.get('isSupervisor', false);
+    }
+
+    // Removing the pre-registration record a member has just taken over.
+    //
+    // Both link paths in services/profiles.ts copy that record onto the real
+    // Firebase uid and then delete the original, or the directory would show
+    // the same person twice — once as themselves and once as the row an admin
+    // imported. Only a supervisor could delete, so for an ordinary member that
+    // second step silently failed and the duplicate stayed.
+    //
+    // In every case the target must be the record the member's own profile names
+    // in linkedFrom, which is write-once (see touchesMemberPrivilegedFields), so
+    // whatever they pointed at as they signed up is the only document they can
+    // ever remove. Beyond that the two link paths are held to their own proof.
+    //
+    // Matched by email: the address on the record is the one they are signed in
+    // with. That is the same evidence linksOwnExistingProfile() accepts on the
+    // way in, and it is proof of identity, so nothing further is asked — a
+    // walk-in whom a supervisor had already signed in at the desk carries a
+    // lastSignInAt, and their duplicate should still go.
+    //
+    // Claimed by legal name: no proof at all, since a name is public knowledge
+    // around a gym. Only a record nobody has ever used qualifies — no waiver,
+    // no sign-in, no confirmation of it by its owner, neither role flag —
+    // which is the same bar
+    // domain/memberProfile.ts#isClaimablePreRegistration sets client-side.
+    // Anyone able to satisfy that could have claimed the record instead, which
+    // moves it just as surely, so the delete grants nothing new.
+    //
+    // The name test here is only case- and padding-insensitive, where the
+    // client also folds accents. A pair that matches there and not here simply
+    // leaves the old row behind for an admin to remove — the member is already
+    // on the record either way.
+    //
+    // A pre-registered supervisor or admin is excluded throughout and does not
+    // need this branch: once linked they are isSupervisorOrAdmin() themselves.
+    function claimedByEmail() {
+      return request.auth.token.get('email', '') != '' &&
+        resource.data.get('email', '').lower() == request.auth.token.email.lower();
+    }
+
+    function claimedByLegalName() {
+      return resource.data.get('waiverMembership', '') == '' &&
+        resource.data.get('waiverLiability', '') == '' &&
+        resource.data.get('lastSignInAt', '') == '' &&
+        resource.data.get('profileReviewedAt', '') == '' &&
+        resource.data.get('legalName', '').trim().lower() ==
+          memberDoc().data.get('legalName', '').trim().lower();
+    }
+
+    function claimsThisRecord(uid) {
+      return isAuthenticated() &&
+        memberDocExists() &&
+        memberDoc().data.get('linkedFrom', '') == uid &&
+        resource.data.get('isAdmin', false) == false &&
+        resource.data.get('isSupervisor', false) == false &&
+        (claimedByEmail() || claimedByLegalName());
     }
 
     // A member may update their own access/purchase state as long as they
@@ -140,7 +200,7 @@ service cloud.firestore {
                         request.resource.data.get('isAdmin', false) == false &&
                         request.resource.data.get('isSupervisor', false) == false) ||
                        linksOwnExistingProfile(uid);
-      allow delete: if isSupervisorOrAdmin();
+      allow delete: if isSupervisorOrAdmin() || claimsThisRecord(uid);
       allow update: if isSupervisorOrAdmin() ||
                        (isAuthenticated() &&
                         request.auth.uid == uid &&

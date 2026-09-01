@@ -165,9 +165,34 @@ users/{uid}:
   pendingPunches:     number | null
   pendingMembership:  string | null // JSON { label, price, start, expiry }
   lastSignInAt:       string?       // ISO — enforces 24h rule
+  profileReviewedAt:  string?       // ISO — the member confirmed this record themselves
+  linkedFrom:         string?       // id of the pre-registration record this was claimed from
   lastUpdatedBy:      string?
   lastUpdatedAt:      string?
 ```
+
+**Joining a member to their account (v0.6).** Members exist as documents before
+they ever sign in — a CSV import, or a supervisor adding a walk-in. Three things
+have to happen on that first Google sign-in, and each is a separate rule:
+
+1. **Matched by email** (`findOrLinkProfile`). The record is copied onto the
+   real Firebase uid and the original deleted. `linkedFrom` names the original,
+   which is what lets `firestore.rules` verify that any `isAdmin`/`isSupervisor`
+   being carried over was already granted, and now also what permits the delete.
+2. **Matched by legal name** (`registerOrClaimProfile`), for the member whose
+   Google address is not the one on the sheet. They arrive at the setup form as
+   a stranger and the name they type identifies them. Deliberately narrower than
+   the email path, because *a name is not a credential*: it only ever matches a
+   record nobody has used (no waiver, no sign-in, not confirmed by its owner), a
+   name matching two such records matches neither, and roles are never carried
+   across — an imported supervisor has to sign in with the address on their
+   record, or be re-granted.
+3. **Shown to its owner once** (`needsProfileReview`). A record can be complete
+   and still wrong: nobody has checked what the spreadsheet said, and the waiver
+   on the next screen is signed against it. The setup form appears prefilled,
+   and `profileReviewedAt` records that they confirmed it. Members who onboarded
+   before the field existed are recognised by holding a membership waiver, which
+   an import cannot write.
 
 **Membership status transitions:**
 - New sign-up → `non-member`
