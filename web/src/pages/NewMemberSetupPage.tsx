@@ -4,17 +4,26 @@ import { KBC, tint } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { missingProfileFields, parseEmergencyContact } from '@/domain/memberProfile'
-import { completeMemberProfile, createSelfRegisteredProfile } from '@/services/profiles'
+import { completeMemberProfile, registerOrClaimProfile } from '@/services/profiles'
 import type { EmergencyContact } from '@/types/member'
 
 // Ported from mobile@1cdfada/app/new-member-setup.tsx.
 //
-// Two arrivals now, not one. A brand-new member has no record and fills this in
-// from scratch; someone an admin imported from a CSV, or a supervisor added at
-// the desk, already has one and is here only for the gaps in it. The second
-// case is prefilled from what is on file and *updates* the record rather than
-// replacing it — writing a fresh document over an imported member would reset
-// the membership and punches the import had set.
+// Three arrivals now, not one:
+//
+//   'new'    — no record at all. Fills this in from scratch. Saving may still
+//              find them on the pre-registered list under another address, by
+//              the legal name they type here (registerOrClaimProfile).
+//   'gaps'   — imported from a CSV, or added at the desk, and something the app
+//              insists on is missing.
+//   'review' — the same, but nothing is missing. They see it anyway, once:
+//              whatever the spreadsheet said about their emergency contact has
+//              never been checked by the person it belongs to, and the waiver
+//              on the next screen is signed against it.
+//
+// Both stored cases prefill from what is on file and *update* the record rather
+// than replacing it — writing a fresh document over an imported member would
+// reset the membership and punches the import had set.
 export function NewMemberSetupPage() {
   const { user } = useAuth()
   const { profile, reloadProfile } = useProfile()
@@ -23,6 +32,7 @@ export function NewMemberSetupPage() {
   const existingEc = parseEmergencyContact(profile?.emergencyContact)
   const missing = missingProfileFields(profile)
   const isTopUp = !!profile
+  const mode: 'new' | 'gaps' | 'review' = !profile ? 'new' : missing.length > 0 ? 'gaps' : 'review'
 
   const [legalName, setLegalName] = useState(profile?.legalName ?? '')
   const [preferredName, setPreferredName] = useState(profile?.preferredName ?? '')
@@ -69,7 +79,7 @@ export function NewMemberSetupPage() {
           user.email ?? 'unknown',
         )
       } else {
-        await createSelfRegisteredProfile(
+        await registerOrClaimProfile(
           user.uid,
           user.displayName ?? user.email ?? '',
           user.email ?? '',
@@ -93,14 +103,8 @@ export function NewMemberSetupPage() {
     <div className="min-h-svh bg-[#f2f2f2]">
       <form onSubmit={handleSave} className="mx-auto max-w-xl px-6 py-8">
         <div className="mb-6 rounded-[20px] p-6" style={{ backgroundColor: KBC.black }}>
-          <h1 className="text-2xl font-black text-white">
-            {isTopUp ? 'Just a couple of details' : 'Welcome to KBC!'}
-          </h1>
-          <p className="mt-2 text-sm leading-5 text-neutral-400">
-            {isTopUp
-              ? 'We already have you on file, but a few things are missing. Fill them in and you are set — everything else on your membership stays as it is.'
-              : 'Before you get started, please complete your member profile. This information is kept on file for your membership.'}
-          </p>
+          <h1 className="text-2xl font-black text-white">{HEADINGS[mode]}</h1>
+          <p className="mt-2 text-sm leading-5 text-neutral-400">{BLURBS[mode]}</p>
           {/* Naming the gaps beats leaving someone to hunt for the empty box. */}
           {isTopUp && missing.length > 0 && (
             <ul className="mt-3 flex flex-wrap gap-1.5">
@@ -191,12 +195,29 @@ export function NewMemberSetupPage() {
           className="mt-7 w-full rounded-2xl p-4 text-base font-extrabold text-black shadow-lg disabled:opacity-60"
           style={{ backgroundColor: KBC.cyan }}
         >
-          {saving ? 'Saving…' : 'Continue to Membership Forms'}
+          {saving
+            ? 'Saving…'
+            : mode === 'review'
+              ? 'Confirm & Continue to Membership Forms'
+              : 'Continue to Membership Forms'}
         </button>
       </form>
     </div>
   )
 }
+
+const HEADINGS = {
+  new: 'Welcome to KBC!',
+  gaps: 'Just a couple of details',
+  review: 'Does this look right?',
+} as const
+
+const BLURBS = {
+  new: 'Before you get started, please complete your member profile. This information is kept on file for your membership.',
+  gaps: 'We already have you on file, but a few things are missing. Fill them in and you are set — everything else on your membership stays as it is.',
+  review:
+    'We already have you on file. Have a look over what we hold, correct anything that is wrong, and confirm — your membership, passes and history stay exactly as they are.',
+} as const
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (

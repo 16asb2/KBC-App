@@ -1,10 +1,12 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useProfile } from '@/context/ProfileContext'
-import { isProfileComplete } from '@/domain/memberProfile'
+import { needsProfileReview } from '@/domain/memberProfile'
 
 /**
  * Mirrors mobile@1cdfada/app/_layout.tsx's RootLayoutNav cascade:
- *   no profile / incomplete one → /setup           (brand-new user, or a partial record)
+ *   no profile / not yet reviewed → /setup           (brand-new user, a partial
+ *                                                     record, or one written for
+ *                                                     someone before they arrived)
  *   no waiverMembership         → /waiver/membership
  *   no waiverLiability          → /waiver/liability
  *   otherwise                   → render the app (AppShell + tabs)
@@ -18,6 +20,10 @@ import { isProfileComplete } from '@/domain/memberProfile'
  * email and no emergency contact — a member whose record was missing their next
  * of kin would sail past this gate and climb. It now asks for anything the
  * setup form itself would insist on.
+ *
+ * A complete imported record stops here too, once. Nobody has checked what the
+ * spreadsheet said about them, and the waiver on the next screen is signed
+ * against exactly that. `needsProfileReview` holds the whole rule.
  */
 export function OnboardingGate() {
   const { profile, profileReady } = useProfile()
@@ -25,7 +31,7 @@ export function OnboardingGate() {
 
   if (!profileReady) return null
 
-  if (!profile || !isProfileComplete(profile)) {
+  if (!profile || needsProfileReview(profile)) {
     if (pathname !== '/setup') return <Navigate to="/setup" replace />
   } else if (!profile.waiverMembership) {
     if (pathname !== '/waiver/membership') return <Navigate to="/waiver/membership" replace />

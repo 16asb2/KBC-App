@@ -47,6 +47,11 @@ export type UserProfile = {
   pendingPunches?: number | null // total punch passes in purchase awaiting admin confirmation
   pendingMembership?: string | null // JSON { label, price, start, expiry } awaiting admin confirmation
   lastSignInAt?: string // ISO — last completed session sign-in (enforces 24h rule)
+  // ISO — when the member themselves confirmed the details on this record via
+  // the setup form. Absent on a record written for them by a CSV import or a
+  // supervisor, which is how OnboardingGate knows to show them the form once,
+  // prefilled, before they sign a waiver against what it says.
+  profileReviewedAt?: string
   lastUpdatedBy?: string
   lastUpdatedAt?: string
   // Id of the pre-registration profile this doc was copied from on first
