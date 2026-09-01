@@ -187,6 +187,22 @@ export async function registerOrClaimProfile(
   preferredName?: string,
   phone?: string,
 ): Promise<UserProfile> {
+  // Believing the member has no record is not the same as checking. This is
+  // the only path that setDocs a whole profile, so if something upstream was
+  // wrong about that — a lookup that threw and was read as "not found", a
+  // stale render — this is where a live membership would be replaced by a
+  // blank one. One read is a cheap price for that not being possible.
+  const alreadyThere = await getDoc(doc(db, USERS, uid))
+  if (alreadyThere.exists()) {
+    console.warn('[Profile] Asked to register a uid that already has a profile — updating instead')
+    await completeMemberProfile(
+      uid,
+      { name, photo, legalName, emergencyContact, preferredName, phone },
+      email,
+    )
+    return (await getProfileByUid(uid)) as UserProfile
+  }
+
   let claim: UserProfile | null = null
   try {
     claim = findClaimableByLegalName(await getAllProfiles(), legalName, uid)

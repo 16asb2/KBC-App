@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
+import { ProfileLoadError } from '@/components/ProfileLoadError'
 import { useProfile } from '@/context/ProfileContext'
 import { needsProfileReview } from '@/domain/memberProfile'
 
@@ -24,12 +25,29 @@ import { needsProfileReview } from '@/domain/memberProfile'
  * A complete imported record stops here too, once. Nobody has checked what the
  * spreadsheet said about them, and the waiver on the next screen is signed
  * against exactly that. `needsProfileReview` holds the whole rule.
+ *
+ * All of that reads a profile that loaded. One that *failed* to load is a
+ * separate answer from one that came back empty, and conflating them sent
+ * members with years of membership to a blank registration form — see
+ * `profileError` on ProfileContext.
  */
 export function OnboardingGate() {
-  const { profile, profileReady } = useProfile()
+  const { profile, profileReady, profileError, profileLoading, reloadProfile } = useProfile()
   const { pathname } = useLocation()
 
   if (!profileReady) return null
+
+  // A lookup that *failed* is not a member without a record, and must never be
+  // answered with the setup form — see ProfileLoadError for what that costs.
+  if (profileError) {
+    return (
+      <ProfileLoadError
+        error={profileError}
+        onRetry={() => void reloadProfile()}
+        retrying={profileLoading}
+      />
+    )
+  }
 
   if (!profile || needsProfileReview(profile)) {
     if (pathname !== '/setup') return <Navigate to="/setup" replace />
