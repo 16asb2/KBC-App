@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { OnboardingHeader } from '@/components/OnboardingHeader'
 import { KBC } from '@/constants/theme'
 import { WAIVER_META, type WaiverType } from '@/constants/waivers'
 import { useAuth } from '@/context/AuthContext'
@@ -126,6 +127,10 @@ export function WaiverPage() {
 
   return (
     <div className="min-h-svh bg-[#f2f2f2]">
+      {/* Only on a member's own waiver. A supervisor signing for somebody else
+          came from inside the app and already has the Back button below; what
+          they need is a way back to Home, not a way out of their session. */}
+      {!isForOther && <OnboardingHeader />}
       <div className="mx-auto max-w-2xl space-y-5 px-5 py-6 pb-24">
         {isForOther && (
           <button
