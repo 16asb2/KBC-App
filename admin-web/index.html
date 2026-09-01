@@ -1068,13 +1068,32 @@ const PDF_CSS = `<style>body{font-family:Arial,sans-serif;font-size:12px;color:#
 function kbcHead(title, sub) { return `<h1>Kingston Boulder Cooperative</h1><div class="sub">${title}</div><div class="meta">${sub}</div>`; }
 
 // ── UTILS ─────────────────────────────────────────────────────────────────────
-function fmt(iso) { if (!iso) return '—'; return new Date(iso).toLocaleString('en-CA',{ year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
-function fmtDate(iso) { if (!iso) return '—'; return new Date(iso).toLocaleDateString('en-CA',{ year:'numeric', month:'short', day:'numeric' }); }
-/** Just the day, as yyyy-mm-dd. en-CA is already that order, so asking for
- *  2-digit parts is the whole of it — and it reads in LOCAL time, where
- *  slicing an ISO string would report the UTC day and be off by one all
- *  evening. */
-function fmtDay(iso) { if (!iso) return '—'; return new Date(iso).toLocaleDateString('en-CA',{ year:'numeric', month:'2-digit', day:'2-digit' }); }
+/**
+ * Every date the panel prints, in one shape: yyyy-mm-dd, and yyyy-mm-dd hh:mm
+ * where the time of day is part of the record.
+ *
+ * Assembled from the local parts rather than handed to toLocaleString. The
+ * locale route reaches the same order under en-CA but decides the rest for
+ * itself — a comma between the date and the time, a 12-hour clock with "p.m."
+ * on some runtimes and not others — and a table read down a column wants one
+ * width and one shape, not whichever the browser felt like. Local, not UTC:
+ * slicing an ISO string would report the UTC day and be a day out all evening.
+ *
+ * A date that will not parse prints as an em dash rather than "Invalid Date".
+ */
+function two(n) { return String(n).padStart(2,'0'); }
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return `${d.getFullYear()}-${two(d.getMonth()+1)}-${two(d.getDate())}`;
+}
+function fmt(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return `${fmtDate(iso)} ${two(d.getHours())}:${two(d.getMinutes())}`;
+}
 function today() { return new Date().toISOString().slice(0,10); }
 function daysAgo(n) { const d = new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); }
 function nowLocal() { const d = new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
@@ -1890,7 +1909,7 @@ function renderMembersTable() {
     const ec=emergency(m), w=waiverOf(m), gaps=memberGaps(m), changed=lastChangedAt(m), by=lastChangedBy(m);
     return `<tr class="row-link" onclick="openEditModal(${i})" title="Open ${txt(m.legalName||m.name)}">
     <td class="col-name"><strong>${txt(m.legalName||m.name)}</strong></td>
-    <td style="font-size:12px" title="${by?'Last changed by '+txt(by):''}">${changed?fmtDay(changed):dash}</td>
+    <td style="font-size:12px" title="${by?'Last changed by '+txt(by):''}">${changed?fmtDate(changed):dash}</td>
     <td style="text-align:center">${m.isAdmin?'<span class="badge badge-red">ADM</span>':'<span style="color:#ddd">—</span>'}</td>
     <td style="text-align:center">${m.isSupervisor?'<span class="badge badge-blue">SUP</span>':'<span style="color:#ddd">—</span>'}</td>
     <td ${dim}>${m.preferredName&&m.preferredName!==(m.legalName||m.name)?txt(m.preferredName):dash}</td>
@@ -1905,10 +1924,10 @@ function renderMembersTable() {
     <td style="font-size:12px">${txt(ec.phone)}</td>
     <td style="font-size:12px">${w.signedAt?fmt(w.signedAt):(m.waiverPdfUrl?'<span class="badge badge-grey">Scan on file</span>':dash)}</td>
     <td style="font-size:12px">${m.memberSince?fmtDate(m.memberSince):dash}</td>
-    <td style="font-size:12px">${m.lastSignInAt?fmtDay(m.lastSignInAt):dash}</td>
+    <td style="font-size:12px">${m.lastSignInAt?fmtDate(m.lastSignInAt):dash}</td>
     <td>${isActiveMember(m)
       ? '<span class="badge badge-green">Active</span>'
-      : `<span class="badge badge-grey" title="${m.lastSignInAt?'Last signed in '+fmtDay(m.lastSignInAt):'Has never signed in'}">Inactive</span>`}</td>
+      : `<span class="badge badge-grey" title="${m.lastSignInAt?'Last signed in '+fmtDate(m.lastSignInAt):'Has never signed in'}">Inactive</span>`}</td>
     <td>${gaps.length?`<span class="badge" style="background:#e0860022;color:#e08600" title="Missing ${gaps.join(', ')} — the member is asked for these when they next open the app">Incomplete</span>`:'<span class="badge badge-green">Complete</span>'}</td>
   </tr>`;}).join('')}</tbody></table>`;
   fitTableToViewport('mem-table');

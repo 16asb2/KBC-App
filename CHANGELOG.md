@@ -73,7 +73,9 @@ All notable changes to KBC Scheduler are documented here.
 
   **An Activity column, and "Include inactive members".** Activity is the gym's own record of a visit — a member is active if they have signed in within six months. A member who has never signed in has never been seen and counts as inactive, which is most of an imported roster until people start using the app; that is exactly what the checkbox is for.
 
-  **Last Changed is a date**, `yyyy-mm-dd`, read in local time. Who changed it moved to the cell's tooltip.
+  **Last Changed is a date**, read in local time, and who changed it moved to the cell's tooltip.
+
+- **`admin-web/`: every date in the panel is `yyyy-mm-dd`**, and `yyyy-mm-dd hh:mm` where the time of day is part of the record — tables, CSV exports and PDF headers alike, since all three read the same two helpers. They now assemble the string from the local parts rather than handing it to `toLocaleString`: the locale route reaches the same order under en-CA but decides the rest for itself, putting a comma between date and time and a 12-hour clock with "p.m." on some runtimes and not others. A column read downwards wants one width and one shape. A date that will not parse prints as an em dash rather than `Invalid Date`.
 
 - **`admin-web/`: a purchase opens from its row.** The same gesture the member directory uses. The three per-row buttons are gone: PDF and Drive were a filing cabinet nobody was opening, and Delete now sits inside the modal, one deliberate step past opening the record rather than beside every row. Date, member, access type and details are all editable. The receipt-PDF machinery went with the buttons rather than staying as a decoy.
 
