@@ -1716,7 +1716,6 @@ function renderMembersTable() {
     if(col==='ecRelationship')return emergency(m).relationship||'';
     if(col==='ecPhone')return emergency(m).phone||'';
     if(col==='waiverSignedAt')return waiverOf(m).signedAt||'';
-    if(col==='waiverSignedBy')return waiverOf(m).signedBy||'';
     // ISO strings throughout, so lexical order is chronological order.
     if(col==='lastChanged')return lastChangedAt(m);
     return m[col]??'';
@@ -1728,8 +1727,17 @@ function renderMembersTable() {
   const dim='style="font-size:12px;color:var(--muted)"';
   const dash='<span style="color:var(--muted)">—</span>';
   const txt=v=>v?String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])):'—';
+  // Order matters more than it looks on a table this wide. The three that used
+  // to sit at the far right — the two role flags and when the record last
+  // changed — are the ones you scan down a page for, and they were the ones you
+  // had to scroll sideways to reach. They now sit immediately after the pinned
+  // name, so the whole answer to "who are the supervisors and has anyone
+  // touched them lately" is on screen without scrolling at all.
   tbl.innerHTML=`<table class="wide"><thead><tr>
     ${th('legalName','Legal Name')}
+    ${th('lastChanged','Last Changed')}
+    ${th('isAdmin','ADM','text-align:center')}
+    ${th('isSupervisor','SUP','text-align:center')}
     ${th('preferredName','Preferred Name')}
     ${th('email','Email')}
     ${th('phone','Phone')}
@@ -1741,17 +1749,16 @@ function renderMembersTable() {
     ${th('ecRelationship','Relationship')}
     ${th('ecPhone','Emergency Phone')}
     ${th('waiverSignedAt','Waiver Signed')}
-    ${th('waiverSignedBy','Waiver Signed By')}
     ${th('memberSince','Member Since')}
     ${th('lastSignInAt','Last Sign-In')}
     ${th('incomplete','Profile')}
-    ${th('isSupervisor','SUP','text-align:center')}
-    ${th('isAdmin','ADM','text-align:center')}
-    ${th('lastChanged','Last Changed')}
   </tr></thead><tbody>${memberList.map((m,i)=>{
     const ec=emergency(m), w=waiverOf(m), gaps=memberGaps(m), changed=lastChangedAt(m), by=lastChangedBy(m);
     return `<tr class="row-link" onclick="openEditModal(${i})" title="Open ${txt(m.legalName||m.name)}">
     <td class="col-name"><strong>${txt(m.legalName||m.name)}</strong></td>
+    <td style="font-size:12px">${changed?fmt(changed)+(by?` <span style="color:var(--muted)">· ${txt(by)}</span>`:''):dash}</td>
+    <td style="text-align:center">${m.isAdmin?'<span class="badge badge-red">ADM</span>':'<span style="color:#ddd">—</span>'}</td>
+    <td style="text-align:center">${m.isSupervisor?'<span class="badge badge-blue">SUP</span>':'<span style="color:#ddd">—</span>'}</td>
     <td ${dim}>${m.preferredName&&m.preferredName!==(m.legalName||m.name)?txt(m.preferredName):dash}</td>
     <td style="font-size:12px">${txt(m.email)}</td>
     <td style="font-size:12px">${txt(m.phone)}</td>
@@ -1763,13 +1770,9 @@ function renderMembersTable() {
     <td ${dim}>${txt(ec.relationship)}</td>
     <td style="font-size:12px">${txt(ec.phone)}</td>
     <td style="font-size:12px">${w.signedAt?fmt(w.signedAt):(m.waiverPdfUrl?'<span class="badge badge-grey">Scan on file</span>':dash)}</td>
-    <td ${dim}>${txt(w.signedBy)}</td>
     <td style="font-size:12px">${m.memberSince?fmtDate(m.memberSince):dash}</td>
     <td style="font-size:12px">${m.lastSignInAt?fmtDate(m.lastSignInAt):dash}</td>
     <td>${gaps.length?`<span class="badge" style="background:#e0860022;color:#e08600" title="Missing ${gaps.join(', ')} — the member is asked for these when they next open the app">Incomplete</span>`:'<span class="badge badge-green">Complete</span>'}</td>
-    <td style="text-align:center">${m.isSupervisor?'<span class="badge badge-blue">SUP</span>':'<span style="color:#ddd">—</span>'}</td>
-    <td style="text-align:center">${m.isAdmin?'<span class="badge badge-red">ADM</span>':'<span style="color:#ddd">—</span>'}</td>
-    <td style="font-size:12px">${changed?fmt(changed)+(by?` <span style="color:var(--muted)">· ${txt(by)}</span>`:''):dash}</td>
   </tr>`;}).join('')}</tbody></table>`;
 }
 
@@ -2354,9 +2357,13 @@ async function runPurchaseImport() {
       rows.slice(i,i+400).forEach(r=>{
         const opt=purchaseOptionFor(r.pass);
         const price=r.amount || (opt?opt.notes.replace(/^.*\(/,'(').replace(/\)$/,')'):'');
-        // "Purchased:" is the marker loadReceipts() filters the sign-in book on.
-        // Without it the entry exists but never appears as a purchase.
-        const notes=r.noteOverride || ('Purchased: '+accessPassLabel(r.pass)+(price?' '+price:''));
+        // "Purchased:" is the marker loadReceipts() filters the sign-in book
+        // on. A Notes column in the file used to REPLACE this line rather than
+        // extend it, which took the marker with it: the rows imported, the
+        // write succeeded, the count was right, and not one of them ever
+        // appeared on the Purchases tab. The file's note is appended now.
+        const base='Purchased: '+accessPassLabel(r.pass)+(price?' '+price:'');
+        const notes=r.noteOverride ? base+' — '+r.noteOverride : base;
         batch.set(db.collection('logs').doc(r.id), {
           userName:r.userName, userId:r.userId,
           timestamp:r.timestamp,
