@@ -12,7 +12,12 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { nextAccessPass } from '@/domain/membership'
-import { findClaimableByLegalName, mergeAdditionalEmails } from '@/domain/memberProfile'
+import {
+  findClaimableByLegalName,
+  findProfileByEmailIn,
+  mergeAdditionalEmails,
+  normaliseEmail,
+} from '@/domain/memberProfile'
 import type { EmergencyContact, UserProfile } from '@/types/member'
 
 // Same Firestore collection mobile/ reads and writes — the schema is shared
@@ -20,13 +25,40 @@ import type { EmergencyContact, UserProfile } from '@/types/member'
 // objects) must stay wire-compatible with mobile@1cdfada/services/firestore.ts.
 const USERS = 'users'
 
+/**
+ * The pre-registered record for an address, if the gym holds one.
+ *
+ * Two passes, because the cheap one is not reliable. The equality filter is
+ * indexed and answers in a single document read, but it can only match a record
+ * whose *stored* address is already lower case — which is a property of
+ * whatever wrote it, not something this app can assume. `admin-web/` lowercases
+ * on import and on manual add; a list loaded through the Firebase console or a
+ * one-off script need not have. A miss there is therefore not an answer, so it
+ * falls back to reading the collection and comparing case-insensitively, the
+ * way `firestore.rules` has always compared these addresses.
+ *
+ * The fallback costs a full read of `users`, and only ever on a first sign-in
+ * that found nothing — the same read `registerOrClaimProfile` does moments
+ * later on that path. Getting this wrong is far more expensive: the member
+ * silently registers from scratch, beside the membership they paid for.
+ */
 async function findProfileByEmail(email: string): Promise<UserProfile | null> {
+  const target = normaliseEmail(email)
+  if (!target) return null
+
   const snap = await getDocs(
-    query(collection(db, USERS), where('email', '==', email.toLowerCase().trim()), fsLimit(1)),
+    query(collection(db, USERS), where('email', '==', target), fsLimit(1)),
   )
-  if (snap.empty) return null
-  const docSnap = snap.docs[0]
-  return { uid: docSnap.id, ...(docSnap.data() as Omit<UserProfile, 'uid'>) }
+  if (!snap.empty) {
+    const docSnap = snap.docs[0]
+    return { uid: docSnap.id, ...(docSnap.data() as Omit<UserProfile, 'uid'>) }
+  }
+
+  const found = findProfileByEmailIn(await getAllProfiles(), target)
+  if (found) {
+    console.log('[Profile] Matched', target, 'only by case-insensitive scan — stored as', found.email)
+  }
+  return found
 }
 
 /**
@@ -258,9 +290,16 @@ export async function completeMemberProfile(
 
 export async function getAllProfiles(): Promise<UserProfile[]> {
   const snap = await getDocs(collection(db, USERS))
-  return snap.docs
-    .map((docSnap) => ({ uid: docSnap.id, ...(docSnap.data() as Omit<UserProfile, 'uid'>) }))
-    .sort((a, b) => a.name.localeCompare(b.name))
+  return (
+    snap.docs
+      .map((docSnap) => ({ uid: docSnap.id, ...(docSnap.data() as Omit<UserProfile, 'uid'>) }))
+      // `name` is absent on a record written by hand rather than by this app or
+      // admin-web/, and localeCompare on undefined throws. That used to cost one
+      // row on the members screen; this list now also decides whether a member
+      // is joined to their pre-registered record at all, and one malformed
+      // document must not be able to fail that for everybody.
+      .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+  )
 }
 
 export async function updateProfile(

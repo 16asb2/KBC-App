@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { OnboardingHeader } from '@/components/OnboardingHeader'
 import { KBC, tint } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
@@ -101,6 +102,7 @@ export function NewMemberSetupPage() {
 
   return (
     <div className="min-h-svh bg-[#f2f2f2]">
+      <OnboardingHeader />
       <form onSubmit={handleSave} className="mx-auto max-w-xl px-6 py-8">
         <div className="mb-6 rounded-[20px] p-6" style={{ backgroundColor: KBC.black }}>
           <h1 className="text-2xl font-black text-white">{HEADINGS[mode]}</h1>

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   findClaimableByLegalName,
+  findProfileByEmailIn,
   isProfileComplete,
   mergeAdditionalEmails,
   missingProfileFields,
   needsProfileReview,
+  normaliseEmail,
   normaliseLegalName,
   parseEmergencyContact,
 } from './memberProfile'
@@ -236,5 +238,39 @@ describe('mergeAdditionalEmails', () => {
     expect(mergeAdditionalEmails('{ not json', 'old@example.com', 'new@x.com')).toEqual([
       'old@example.com',
     ])
+  })
+})
+
+describe('findProfileByEmailIn', () => {
+  it('matches however the address happens to be stored', () => {
+    // The whole join hangs on this. An indexed equality filter only ever
+    // matches a record already saved lower case, and a list loaded outside
+    // admin-web/ need not be — the member then registers from scratch beside
+    // the membership they paid for.
+    const rows = [{ uid: 'imported_1', email: 'Jane@Example.COM' }]
+    expect(findProfileByEmailIn(rows, 'jane@example.com')?.uid).toBe('imported_1')
+    expect(findProfileByEmailIn(rows, '  JANE@example.com  ')?.uid).toBe('imported_1')
+  })
+
+  it('finds nothing for an address nobody holds', () => {
+    expect(findProfileByEmailIn([{ uid: 'a', email: 'jane@example.com' }], 'sam@x.com')).toBeNull()
+  })
+
+  it('refuses an empty address rather than matching a record with none', () => {
+    expect(findProfileByEmailIn([{ uid: 'a', email: '' }], '  ')).toBeNull()
+    expect(findProfileByEmailIn([{ uid: 'a', email: undefined as unknown as string }], '')).toBeNull()
+  })
+
+  it('takes the first of a duplicated address, as the query it backs up would', () => {
+    const rows = [
+      { uid: 'first', email: 'jane@example.com' },
+      { uid: 'second', email: 'JANE@example.com' },
+    ]
+    expect(findProfileByEmailIn(rows, 'jane@example.com')?.uid).toBe('first')
+  })
+
+  it('normalises the same way on both sides', () => {
+    expect(normaliseEmail('  Jane@Example.com ')).toBe('jane@example.com')
+    expect(normaliseEmail(undefined)).toBe('')
   })
 })

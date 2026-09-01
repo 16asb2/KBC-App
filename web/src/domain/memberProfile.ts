@@ -222,3 +222,34 @@ export function mergeAdditionalEmails(
   if (old && !known.has(old)) list.push(old)
   return list
 }
+
+/** An email reduced to what two spellings of the same address share. */
+export function normaliseEmail(email: string | undefined | null): string {
+  return (email ?? '').trim().toLowerCase()
+}
+
+/**
+ * The stored record for an address, compared case-insensitively.
+ *
+ * `services/profiles.ts` asks Firestore first, with an equality filter on the
+ * lowercased address — but that only ever matches a record whose *stored* value
+ * is already lower case. `admin-web/` is careful about this, and a list loaded
+ * into Firestore by any other route (the console, a one-off script, an older
+ * importer) need not be: one row saved as `Jane@Example.com` is invisible to
+ * that query, and the member registers from scratch beside the membership they
+ * paid for. `firestore.rules` has always compared these addresses with
+ * `.lower()` on both sides, so the rules were the only half of the join that
+ * was case-insensitive.
+ *
+ * Duplicates take the first match, which is what the `limit(1)` query it backs
+ * up would have done. Two records for one address is a data fault for an admin
+ * to resolve, not something to decide here.
+ */
+export function findProfileByEmailIn<T extends Pick<UserProfile, 'email'>>(
+  profiles: T[],
+  email: string,
+): T | null {
+  const target = normaliseEmail(email)
+  if (!target) return null
+  return profiles.find((p) => normaliseEmail(p.email) === target) ?? null
+}
