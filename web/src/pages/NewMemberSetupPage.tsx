@@ -4,7 +4,7 @@ import { OnboardingHeader } from '@/components/OnboardingHeader'
 import { KBC, tint } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
-import { maskEmail, parseEmergencyContact } from '@/domain/memberProfile'
+import { isSelfClaimable, maskEmail, parseEmergencyContact } from '@/domain/memberProfile'
 import {
   completeMemberProfile,
   findRecordsForLegalName,
@@ -204,29 +204,44 @@ export function NewMemberSetupPage() {
                 knowledge around a gym — so a full address would turn this
                 screen into a way of looking up any member's email. */}
             <ul className="mt-4 space-y-3">
-              {candidates.map((c) => (
-                <li key={c.uid}>
-                  <button
-                    type="button"
-                    onClick={() => claim(c)}
-                    className="w-full rounded-2xl border-2 border-transparent bg-white p-4 text-left shadow-sm hover:border-neutral-300"
-                  >
-                    <p className="text-[15px] font-bold text-black">{c.legalName}</p>
-                    <p className="mt-0.5 text-[13px] text-neutral-500">{maskEmail(c.email)}</p>
-                    {c.memberSince && (
-                      <p className="mt-1 text-[12px] text-neutral-400">
-                        Member since {new Date(c.memberSince).getFullYear()}
-                      </p>
-                    )}
-                    <span
-                      className="mt-2 inline-block rounded-full px-2.5 py-1 text-[11px] font-bold"
-                      style={{ backgroundColor: tint(KBC.cyan), color: KBC.cyan }}
+              {candidates.map((c) => {
+                const claimable = isSelfClaimable(c)
+                return (
+                  <li key={c.uid}>
+                    <button
+                      type="button"
+                      disabled={!claimable}
+                      onClick={() => claim(c)}
+                      className="w-full rounded-2xl border-2 border-transparent bg-white p-4 text-left shadow-sm enabled:hover:border-neutral-300 disabled:opacity-70"
                     >
-                      This is me
-                    </span>
-                  </button>
-                </li>
-              ))}
+                      <p className="text-[15px] font-bold text-black">{c.legalName}</p>
+                      <p className="mt-0.5 text-[13px] text-neutral-500">{maskEmail(c.email)}</p>
+                      {c.memberSince && (
+                        <p className="mt-1 text-[12px] text-neutral-400">
+                          Member since {new Date(c.memberSince).getFullYear()}
+                        </p>
+                      )}
+                      {/* A staff record cannot be joined this way at all — see
+                          isSelfClaimable. Shown rather than hidden, so somebody
+                          who is that member knows they were found and why
+                          nothing happened when they tapped. */}
+                      {claimable ? (
+                        <span
+                          className="mt-2 inline-block rounded-full px-2.5 py-1 text-[11px] font-bold"
+                          style={{ backgroundColor: tint(KBC.cyan), color: KBC.cyan }}
+                        >
+                          This is me
+                        </span>
+                      ) : (
+                        <span className="mt-2 block text-[12px] leading-4 text-neutral-500">
+                          This record has staff permissions, so it can’t be joined from here. Sign in
+                          with the email address already on it, or ask a KBC admin to link it.
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
             <button
               type="button"

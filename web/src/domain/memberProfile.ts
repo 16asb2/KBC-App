@@ -151,6 +151,26 @@ export function findRecordsByLegalName<
 }
 
 /**
+ * Whether a member may join themselves to this record by typing its legal name.
+ *
+ * A record carrying isAdmin or isSupervisor may not be, and the reason is not
+ * only that a name is weak proof. It cannot work at all: `firestore.rules`
+ * refuses a name-matched write that arrives holding either flag, so the copy
+ * must drop them — and then refuses the delete of the original, because it
+ * still has them. The record would be joined to the member's account and the
+ * old one left standing beside it, which is a duplicate every single time.
+ *
+ * So it is offered as found and not as claimable. An admin joins it by hand,
+ * or the member signs in with the address already on the record, which the
+ * rules can verify for themselves and which carries the roles across intact.
+ */
+export function isSelfClaimable(
+  record: Pick<UserProfile, 'isAdmin' | 'isSupervisor'>,
+): boolean {
+  return !record.isAdmin && !record.isSupervisor
+}
+
+/**
  * An address shown to somebody who has typed a matching legal name, reduced to
  * what identifies it to its owner and to nobody else.
  *

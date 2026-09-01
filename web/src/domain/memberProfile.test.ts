@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   findProfileByEmailIn,
   findRecordsByLegalName,
+  isSelfClaimable,
   maskEmail,
   isProfileComplete,
   mergeAdditionalEmails,
@@ -272,5 +273,20 @@ describe('findProfileByEmailIn', () => {
   it('normalises the same way on both sides', () => {
     expect(normaliseEmail('  Jane@Example.com ')).toBe('jane@example.com')
     expect(normaliseEmail(undefined)).toBe('')
+  })
+})
+
+describe('isSelfClaimable', () => {
+  it('lets an ordinary record be joined by the member it describes', () => {
+    expect(isSelfClaimable({ isAdmin: false, isSupervisor: false })).toBe(true)
+  })
+
+  it('refuses a staff record, because joining one cannot work', () => {
+    // Not caution — arithmetic. firestore.rules rejects a name-matched write
+    // carrying either flag, so the copy must drop them, and then rejects the
+    // delete of the original, which still has them. The member ends up listed
+    // twice, every time. Offering it would be offering a broken outcome.
+    expect(isSelfClaimable({ isAdmin: true, isSupervisor: false })).toBe(false)
+    expect(isSelfClaimable({ isAdmin: false, isSupervisor: true })).toBe(false)
   })
 })
