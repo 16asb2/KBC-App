@@ -6,6 +6,20 @@ All notable changes to KBC Scheduler are documented here.
 
 ## [Unreleased] — 2026-08-25
 
+### Fixed
+- **Three silent caps, and a fourth that mattered more than the rest.** `admin-web/` read a first page of each collection and then presented it as the whole thing, which is a wrong answer rather than a slow one — nothing on screen said anything had been left out.
+
+  **The member directory stopped at 2000.** Beyond that, members were missing from the table and from the PDF export, and — the part with teeth — invisible to the CSV import's duplicate check, which matches rows against the loaded list. Re-importing a roster of 2500 would have created a second record for each of the 500 it could not see. The directory now reads the collection whole.
+
+  **The Purchases tab showed nothing after a backfill.** Two separate causes stacked. It queried a date range defaulting to the last thirty days, so imported historical sales — the entire reason to backfill — fell outside it; and it capped at 1000 entries *before* picking the purchases out of the sign-in book, so ordinary visits counted against the total and could crowd out the purchases inside the window. The From/To filter is gone (a history tab defaulting to one month was the wrong default, not a mistuned one) and every purchase on record is loaded.
+
+  **The Drive backup captured 500 members.** This is the one where a silent cap does real damage: it wrote 500 members, 2000 log entries and 1000 boulders to a file named `KBC_Backup_<date>.json`, counted them in its own manifest, and said nothing about the rest. A co-op of 2500 members had a backup of a fifth of them and no way to tell. All three reads are uncapped now.
+
+- **The member directory's horizontal scrollbar stays on screen.** The table was wide enough to scroll sideways but scrolled the *page* vertically, so the bar sat under the last row — on two thousand members you had to scroll to the very bottom to reach it, and then scroll back up to see what you had moved. The table now scrolls inside a box no taller than the viewport, which keeps the bar in view from anywhere in the list. The header row sticks to the top of that box, so the sort controls stay reachable and the columns stay identifiable a thousand rows down, and the pinned name column takes the higher stacking rank at the corner where the two overlap. The Purchases table scrolls the same way, since it now loads everything.
+
+  Not changed: the Sign-In Book still reads a date range with a 1000-entry cap. That one is a genuine filter on a log that grows forever, rather than a page size standing in for one — but the cap inside the range is silent in the same way, and is worth revisiting.
+
+
 ### Added
 - **"Connect with KBC" is back on the Home screen.** The Discord, Facebook and Instagram buttons from `mobile@1cdfada/app/(tabs)/home.tsx`, at the same brand colours and the same three destinations, plus the KBC email underneath. The email differs from mobile in what a tap does: mobile opened a `mailto:`, which on a desktop browser hands off to whatever mail client the machine has registered — often none at all — so it now copies the address to the clipboard instead, which is what you wanted anyway when e-transferring a membership. Falls back to the old select-and-`execCommand` path when `navigator.clipboard` is unavailable, as it is on a dev server reached over the LAN by IP.
 - **`utils/datetime.ts`**: the one place that turns a date into text, with tests. Nine files had reimplemented these formats and they had drifted — two screens hand-rolled a 12-hour clock (`${h % 12 || 12}:${min} ${ampm}` → "9:05 PM") while the rest asked `Intl` for a 2-digit hour ("09:05 PM"), so the same session read differently on the Schedule and in the Calendar list. Everything now routes through here on the no-leading-zero form. Also folds together the three separate today/tomorrow/yesterday checks — two comparing `toDateString()`, one comparing midnight-normalised timestamps — into `relativeDayLabel()`, and absorbs `isSameDay`, which existed identically in `domain/calendarEvent.ts`.

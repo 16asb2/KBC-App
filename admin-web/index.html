@@ -69,6 +69,15 @@
     .stat-num{font-size:30px;font-weight:800;color:var(--cyan)}.stat-label{font-size:11px;color:var(--muted);margin-top:3px}
 
     .table-wrap{overflow-x:auto}
+    /* A long table scrolls INSIDE a viewport-sized box rather than running the
+       page down past the bottom of the screen. Without this, the horizontal
+       scrollbar belongs to the page's own overflow and sits under the last row,
+       so on a directory of two thousand members the only way to reach it was to
+       scroll to the very bottom first. Bounded like this, the bar is always on
+       screen — and the header row can stick, which is what keeps the sort
+       controls reachable and the columns identifiable that far down. */
+    .table-scroll{overflow:auto;max-height:calc(100svh - 200px);min-height:320px}
+    .table-scroll thead th{position:sticky;top:0;z-index:2}
     /* The member directory carries a column per profile field, so it is far
        wider than the page and scrolls sideways rather than wrapping: every row
        stays one line tall, which is what makes a column readable down the page.
@@ -78,9 +87,10 @@
        are all on the row. */
     table.wide{width:auto;min-width:100%}
     table.wide th,table.wide td{white-space:nowrap}
-    th.col-name,td.col-name{position:sticky;left:0;z-index:1;box-shadow:6px 0 6px -6px rgba(0,0,0,.18)}
-    td.col-name{background:var(--card)}
-    th.col-name{background:var(--bg)}
+    th.col-name,td.col-name{position:sticky;left:0;box-shadow:6px 0 6px -6px rgba(0,0,0,.18)}
+    td.col-name{background:var(--card);z-index:1}
+    /* The corner cell is stuck on both axes, so it has to outrank each of them. */
+    th.col-name{background:var(--bg);z-index:3}
     tr:hover td.col-name{background:#f8fafc}
     tr.row-link{cursor:pointer}
     table{width:100%;border-collapse:collapse;font-size:13px}
@@ -348,13 +358,15 @@
           </div>
         </div>
 
+        <!-- No date range here, deliberately. It defaulted to the last thirty
+             days, which is the wrong default for a tab whose whole point is the
+             history: a backfill of years of past sales imported fine and then
+             showed nothing at all. -->
         <div class="controls">
-          <label>From <input type="date" id="rec-from" onchange="loadReceipts()"></label>
-          <label>To   <input type="date" id="rec-to" onchange="loadReceipts()"></label>
           <button class="btn btn-outline" id="btn-rec-csv" onclick="exportReceiptsCSV()" disabled>⬇ CSV</button>
         </div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">All access pass purchases. Voucher redemptions are recorded in the Sign-In Book.</p>
-        <div id="rec-table" class="table-wrap"></div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Every access pass purchase on record. Voucher redemptions are recorded in the Sign-In Book.</p>
+        <div id="rec-table" class="table-wrap table-scroll"></div>
       </div>
     </div>
 
@@ -478,7 +490,7 @@
           <button class="btn btn-green"   id="btn-mem-drive" onclick="saveMembersToDrive()" disabled>☁ Drive</button>
         </div>
         <div id="mem-stats" class="stats" style="display:none"></div>
-        <div id="mem-table" class="table-wrap"></div>
+        <div id="mem-table" class="table-wrap table-scroll"></div>
       </div>
     </div>
 
@@ -989,8 +1001,6 @@ function show(id) { ['login-screen','denied-screen','app-screen'].forEach(s => {
 function setDefaultDates() {
   document.getElementById('log-from').value = daysAgo(30);
   document.getElementById('log-to').value   = today();
-  document.getElementById('rec-from').value = daysAgo(30);
-  document.getElementById('rec-to').value   = today();
 }
 function showSection(name, btn) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
@@ -1223,11 +1233,6 @@ function parsePassValue(v) {
 
 let importRows = [];
 
-// How much of the directory a page load holds. The CSV import matches rows
-// against this list, so anyone past the cap cannot be recognised and would be
-// re-created as a duplicate — previewImport() warns when the list is full.
-const MEMBER_PAGE_LIMIT = 2000;
-
 /** Header text to a comparable key: case, padding and separators all ignored. */
 function normaliseHeader(h) {
   return String(h||'').toLowerCase().replace(/[_\-.]+/g,' ').replace(/[^a-z0-9 ]/g,'').replace(/\s+/g,' ').trim();
@@ -1341,8 +1346,9 @@ function previewImport() {
 
   // Matching on email is what turns a re-import into an update: it is the one
   // identifier the sheet, this panel and the member's Google account all agree
-  // on. Anything the directory did not load cannot be matched, so a truncated
-  // member list would silently create duplicates — hence the warning below.
+  // on. Only a member the directory loaded can be matched, which is why
+  // loadMembers() reads the collection whole rather than a first page of it —
+  // anyone missing from this map is re-created rather than updated.
   const byEmail=new Map();
   (memberList||[]).forEach(m=>{ const e=String(m.email||'').toLowerCase().trim(); if(e && !byEmail.has(e)) byEmail.set(e,m); });
   const seen=new Set();
@@ -1440,14 +1446,8 @@ function previewImport() {
     return r.missing.join(', ')||'—';
   };
 
-  // loadMembers() reads a capped page of the directory, and only what it loaded
-  // can be matched. Past that cap a re-import would start creating second
-  // copies of people already on file, so say so rather than let it happen.
-  const truncated=(memberList||[]).length>=MEMBER_PAGE_LIMIT;
-
   out.innerHTML=
     (staleStatusCol?'<p style="font-size:12px;color:#e08600;margin:0 0 8px"><strong>Note:</strong> the <code>Status</code> column is ignored — it was replaced by <code>Access Pass</code> (which pass they hold) and <code>Confirmed</code> (whether an admin has confirmed the payment).</p>':'')+
-    (truncated?'<p style="font-size:12px;color:#c0392b;margin:0 0 8px"><strong>Warning:</strong> the directory only loaded the first '+MEMBER_PAGE_LIMIT+' members, so rows beyond that cannot be matched and would be imported as duplicates. Narrow the file before importing.</p>':'')+
     '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px">'+
       '<span><strong>'+created+'</strong> new</span>'+
       '<span style="color:#0077b6"><strong>'+updated+'</strong> to update</span>'+
@@ -1635,7 +1635,12 @@ async function addMember() {
 async function loadMembers() {
   setLoading('mem-table');
   try {
-    const snap=await db.collection('users').limit(MEMBER_PAGE_LIMIT).get();
+    // Every member, uncapped. This used to stop at 2000, which is a silent
+    // wrong answer rather than a slow one: members past it were missing from
+    // the directory, missing from the PDF, and — worse — invisible to the CSV
+    // import's duplicate check, so re-importing the roster would have created
+    // a second record for each of them.
+    const snap=await db.collection('users').get();
     memberList=snap.docs.map(d=>({uid:d.id,...d.data()}));
     renderMembersTable();
     // Counted by what the pass is, not by a status word: how many hold a
@@ -2416,12 +2421,22 @@ async function deletePurchase(i) {
   catch(e) { toast('Error: '+e.message,true); }
 }
 
+/**
+ * Every purchase on record. A purchase is a sign-in-book entry whose notes
+ * carry "Purchased:", and that marker is not something Firestore can be asked
+ * about — so the whole book is read and the purchases picked out here.
+ *
+ * This used to run inside a date window defaulting to the last thirty days,
+ * with a 1000-entry cap applied BEFORE the purchases were picked out. Both were
+ * wrong for this tab. The window hid every imported historical sale, which is
+ * the main reason to backfill in the first place; and the cap counted ordinary
+ * sign-ins against the total, so a busy month could fill it with visits and
+ * leave the purchases inside it unreachable.
+ */
 async function loadReceipts() {
-  const from=document.getElementById('rec-from').value,to=document.getElementById('rec-to').value;
   setLoading('rec-table');
   try {
-    const toEnd=new Date(to); toEnd.setDate(toEnd.getDate()+1);
-    const snap=await db.collection('logs').where('timestamp','>=',new Date(from).toISOString()).where('timestamp','<',toEnd.toISOString()).limit(1000).get();
+    const snap=await db.collection('logs').get();
     receiptList=snap.docs.map(d=>({id:d.id,...d.data()})).filter(e=>e.notes&&e.notes.includes('Purchased:'));
     renderReceiptsTable();
     document.getElementById('btn-rec-csv').disabled=!receiptList.length;
@@ -2430,7 +2445,7 @@ async function loadReceipts() {
 function renderReceiptsTable() {
   applySort(receiptList,'receipts');
   const tbl=document.getElementById('rec-table');
-  if(!receiptList.length){tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No purchase records in this date range.</p>';return;}
+  if(!receiptList.length){tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No purchase records yet.</p>';return;}
   const sh=col=>`onclick="clickSort('receipts','${col}')" style="cursor:pointer;user-select:none"`;
   tbl.innerHTML=`<table><thead><tr>
     <th ${sh('timestamp')}>Date${sortIcon('receipts','timestamp')}</th>
@@ -2473,7 +2488,12 @@ async function backupAllToDrive() {
     toast('Connecting to Drive…');
     await requireDrive();
     toast('Fetching all data…');
-    const [usersSnap,logsSnap,bouldersSnap]=await Promise.all([db.collection('users').limit(500).get(),db.collection('logs').limit(2000).get(),db.collection('boulders').limit(1000).get()]);
+    // Uncapped, all three. These were limited to 500 members, 2000 log entries
+    // and 1000 boulders, which is the one place a silent cap does real harm: the
+    // result is written to Drive named KBC_Backup_<date> and counted in its own
+    // manifest, so a co-op of 2500 members got a file claiming 500 members and
+    // nothing anywhere saying the other 2000 had been dropped.
+    const [usersSnap,logsSnap,bouldersSnap]=await Promise.all([db.collection('users').get(),db.collection('logs').get(),db.collection('boulders').get()]);
     const users=usersSnap.docs.map(d=>({uid:d.id,...d.data()}));
     const logs=logsSnap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.timestamp||'').localeCompare(a.timestamp||''));
     const boulders=bouldersSnap.docs.map(d=>({id:d.id,...d.data()})).filter(b=>!b.removed);
