@@ -127,54 +127,43 @@ export function normaliseLegalName(name: string | undefined | null): string {
 }
 
 /**
- * The record the gym already holds for the person signing in, matched on either
- * of the two things they and their record can be expected to share.
+ * Every record filed under a legal name.
  *
- * **Email first**, because it is the strong one: it is what the account
- * actually proves, and what `firestore.rules` can re-check independently.
+ * The legal name is the identity the gym keeps its records under, and it is now
+ * the whole of how a returning member is found. Email is not enough and never
+ * was: a member's address changes, the sheet has the one they used in 2019, and
+ * matching on it alone greeted people of years' standing as strangers.
  *
- * **Then legal name**, because email alone was not enough. A record entered
- * under a personal address, or an address the member has since stopped using,
- * is invisible to an email match — and the app's answer to that was to treat a
- * member of years' standing as somebody it had never met, which is how a live
- * membership came to be replaced by a blank one.
- *
- * The names are tried in the order given: the legal name the member typed into
- * the setup form first, if there is one, then whatever Google reports as their
- * account name, which is a real full name often enough to be worth asking.
- *
- * Two rules survive from the narrower version this replaces, and neither is
- * negotiable:
- *
- * - **Ambiguity is not a match.** Two records under one legal name are two
- *   people until somebody says otherwise, and handing over the wrong one gives
- *   a member somebody else's membership.
- * - **A name match never carries isAdmin or isSupervisor.** A legal name is
- *   public knowledge around a gym. `firestore.rules` enforces this
- *   independently — a name-matched write reaches only the self-create branch,
- *   which rejects a document arriving with either flag set — so the caller must
- *   clear them or the write is refused outright.
- *
- * What is deliberately *not* checked any more is whether the record looks
- * untouched. It used to require no waiver, no sign-in and no confirmation by
- * its owner, which sounds prudent and meant that the records most worth finding
- * — real members, with real history — were the exact ones it would not find.
+ * All of them are returned, not the single unambiguous one. Two Jane Smiths are
+ * a real possibility and the previous version answered that by matching neither
+ * — which reads as "we have never heard of you" and quietly created a third
+ * Jane Smith. Who they are is a question with an answer, and the person signing
+ * in is the one who knows it, so the setup form asks rather than guessing.
  */
-export function findExistingRecord<
-  T extends Pick<UserProfile, 'uid' | 'email' | 'legalName'>,
->(profiles: T[], email: string, names: (string | undefined | null)[], excludeUid: string): T | null {
-  const candidates = profiles.filter((p) => p.uid !== excludeUid)
+export function findRecordsByLegalName<
+  T extends Pick<UserProfile, 'uid' | 'legalName'>,
+>(profiles: T[], legalName: string, excludeUid: string): T[] {
+  const target = normaliseLegalName(legalName)
+  if (!target) return []
+  return profiles.filter(
+    (p) => p.uid !== excludeUid && normaliseLegalName(p.legalName) === target,
+  )
+}
 
-  const byEmail = findProfileByEmailIn(candidates, email)
-  if (byEmail) return byEmail
-
-  for (const name of names) {
-    const target = normaliseLegalName(name)
-    if (!target) continue
-    const matches = candidates.filter((p) => normaliseLegalName(p.legalName) === target)
-    if (matches.length === 1) return matches[0]
-  }
-  return null
+/**
+ * An address shown to somebody who has typed a matching legal name, reduced to
+ * what identifies it to its owner and to nobody else.
+ *
+ * The setup form has to show *something* about a matched record, or "is this
+ * you?" cannot be answered. It must not show the address itself: the person
+ * reading it has proved only that they can type a name, and a full address
+ * would make the form a way of looking up any member's email.
+ */
+export function maskEmail(email: string | undefined | null): string {
+  const value = normaliseEmail(email)
+  const at = value.indexOf('@')
+  if (at < 1) return '•••'
+  return `${value[0]}•••@${value.slice(at + 1)}`
 }
 
 /**

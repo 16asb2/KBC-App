@@ -33,9 +33,17 @@ export function WaiverPage() {
   const targetUid = searchParams.get('targetUid')
   const isForOther = !!targetUid
   const saveUid = isForOther ? targetUid : (user?.uid ?? '')
+  // The legal name on the record, and nothing else.
+  //
+  // This used to fall back through the Google display name to the email address
+  // to the literal string 'Unknown', which quietly turned the one rule this
+  // screen enforces into "type whatever the profile happens to be called".
+  // A waiver is signed against a legal name; if the record has not got one
+  // there is nothing to sign against, and the form below says so rather than
+  // accepting a signature that means nothing.
   const memberName = isForOther
-    ? (searchParams.get('targetName') ?? 'Member')
-    : profile?.legalName || user?.displayName || user?.email || 'Unknown'
+    ? (searchParams.get('targetName') ?? '')
+    : (profile?.legalName ?? '')
 
   const [scrolledToEnd, setScrolledToEnd] = useState(false)
   const [isMinor, setIsMinor] = useState(false)
@@ -96,13 +104,15 @@ export function WaiverPage() {
   // and runs of whitespace — rather than compared raw. Only `signedBy` used to
   // be trimmed, so a record carrying "Jane  Smith" or "José" could not be
   // signed for at all: whatever the member typed, the button stayed dead.
-  const nameMatches = normaliseLegalName(signedBy) === normaliseLegalName(memberName)
+  const expected = normaliseLegalName(memberName)
+  const nameMatches = expected !== '' && normaliseLegalName(signedBy) === expected
 
   async function handleSign() {
     setError(null)
     const name = signedBy.trim()
     if (!name) return setError(`Please enter ${isForOther ? "the member's" : 'your'} full legal name.`)
-    if (!nameMatches) return setError(`The name entered must exactly match the member's legal name: "${memberName}".`)
+    if (!expected) return setError('This member has no legal name on file, so there is nothing to sign against. Please ask a supervisor to add it.')
+    if (!nameMatches) return setError(`The name entered must match the legal name on file: "${memberName}".`)
     if (isMinor && !guardianName.trim()) return setError("Please enter the guardian's full legal name.")
     if (!user) return
 

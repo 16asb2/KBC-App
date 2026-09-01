@@ -1,52 +1,109 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { OnboardingHeader } from '@/components/OnboardingHeader'
-import { KBC } from '@/constants/theme'
+import { KBC, tint } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
-import { parseEmergencyContact } from '@/domain/memberProfile'
-import { completeMemberProfile, registerOrClaimProfile } from '@/services/profiles'
-import type { EmergencyContact } from '@/types/member'
+import { maskEmail, parseEmergencyContact } from '@/domain/memberProfile'
+import {
+  completeMemberProfile,
+  findRecordsForLegalName,
+  saveSetupProfile,
+} from '@/services/profiles'
+import type { EmergencyContact, UserProfile } from '@/types/member'
 
-// Ported from mobile@1cdfada/app/new-member-setup.tsx.
+// Ported from mobile@1cdfada/app/new-member-setup.tsx, and since rebuilt around
+// the question that actually matters here: *which member is this?*
 //
-// Three arrivals now, not one:
+// The legal name is the identity the gym keeps its records under. An address is
+// not — members change them, and the sheet has whichever one they used years
+// ago — so a first sign-in asks for the name before anything else, looks for it
+// on file, and shows what it found. Everything downstream depends on that
+// answer, and the only person who knows it is the one typing.
 //
-//   'new'    — no record at all. Fills this in from scratch. Saving may still
-//              find them on the pre-registered list under another address, by
-//              the legal name they type here (registerOrClaimProfile).
-//   'gaps'   — imported from a CSV, or added at the desk, and something the app
-//              insists on is missing.
-//   'review' — the same, but nothing is missing. They see it anyway, once:
-//              whatever the spreadsheet said about their emergency contact has
-//              never been checked by the person it belongs to, and the waiver
-//              on the next screen is signed against it.
+// Three steps, two of which most people see:
 //
-// Both stored cases prefill from what is on file and *update* the record rather
-// than replacing it — writing a fresh document over an imported member would
-// reset the membership and punches the import had set.
+//   'name'    — the legal name alone, then the lookup.
+//   'confirm' — the records filed under that name. "Is one of these you?"
+//               Skipped entirely when nothing matched.
+//   'details' — the rest of the form, prefilled from whichever record they
+//               claimed, or blank if they are genuinely new.
+//
+// A member who already has a profile — an incomplete import matched by email at
+// sign-in — starts at 'details'. Their identity is settled, and asking them to
+// re-type the name their own record carries would be theatre.
+type Step = 'name' | 'confirm' | 'details'
+
 export function NewMemberSetupPage() {
   const { user } = useAuth()
   const { profile, reloadProfile } = useProfile()
   const navigate = useNavigate()
 
   const existingEc = parseEmergencyContact(profile?.emergencyContact)
-  // Whether a record was found decides which service call saves this form, and
-  // nothing else. It used to drive three sets of headings, a list of
-  // missing-field chips and a note about being signed in under the wrong
-  // address — the app explaining its own machinery to somebody who only wants
-  // to fill in a form. A field that arrives already filled says "we have you on
-  // file" without being told to.
   const isTopUp = !!profile
 
-  const [legalName, setLegalName] = useState(profile?.legalName ?? '')
+  const [step, setStep] = useState<Step>(isTopUp ? 'details' : 'name')
+  const [legalName, setLegalName] = useState(profile?.legalName ?? user?.displayName ?? '')
+  const [candidates, setCandidates] = useState<UserProfile[]>([])
+  const [chosen, setChosen] = useState<UserProfile | null>(null)
+  const [looking, setLooking] = useState(false)
+
   const [preferredName, setPreferredName] = useState(profile?.preferredName ?? '')
   const [memberPhone, setMemberPhone] = useState(profile?.phone ?? '')
+  const [contactEmail, setContactEmail] = useState(profile?.preferredEmail ?? user?.email ?? '')
   const [ecName, setEcName] = useState(existingEc?.name ?? '')
   const [ecRelation, setEcRelation] = useState(existingEc?.relationship ?? '')
   const [ecPhone, setEcPhone] = useState(existingEc?.phone ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  /** Step 1 — look the name up, and go wherever the answer points. */
+  async function handleLookup(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    const ln = legalName.trim()
+    if (!ln) return setError('Please enter your full legal name.')
+    if (!user) return
+
+    setLooking(true)
+    try {
+      const found = await findRecordsForLegalName(user.uid, ln)
+      setCandidates(found)
+      setStep(found.length ? 'confirm' : 'details')
+    } catch (err) {
+      // Not fatal, and not silent either. They can still sign up, but they are
+      // told the check did not happen, because carrying on regardless is how a
+      // second record ends up beside the one holding their membership.
+      console.warn('[Setup] Could not search for existing records:', err)
+      setError(
+        'We could not check whether KBC already has you on file. You can continue, but if you are an existing member, please tell staff so your records can be joined up.',
+      )
+      setCandidates([])
+      setStep('details')
+    } finally {
+      setLooking(false)
+    }
+  }
+
+  /** Step 2 — adopt a record, prefilling everything it already knows. */
+  function claim(record: UserProfile) {
+    const ec = parseEmergencyContact(record.emergencyContact)
+    setChosen(record)
+    setLegalName(record.legalName || legalName)
+    setPreferredName(record.preferredName ?? '')
+    setMemberPhone(record.phone ?? '')
+    setContactEmail(record.preferredEmail || record.email || user?.email || '')
+    setEcName(ec?.name ?? '')
+    setEcRelation(ec?.relationship ?? '')
+    setEcPhone(ec?.phone ?? '')
+    setStep('details')
+  }
+
+  function declineAll() {
+    setChosen(null)
+    setContactEmail(user?.email ?? '')
+    setStep('details')
+  }
 
   async function handleSave(e: FormEvent) {
     e.preventDefault()
@@ -69,6 +126,7 @@ export function NewMemberSetupPage() {
       const pn = preferredName.trim() || undefined
       const mp = memberPhone.trim()
       const phone = mp ? (mp.startsWith('+') ? mp : `+${mp}`) : undefined
+      const preferredEmail = contactEmail.trim() || undefined
 
       if (isTopUp) {
         await completeMemberProfile(
@@ -80,25 +138,26 @@ export function NewMemberSetupPage() {
             emergencyContact: ec,
             preferredName: pn,
             phone,
+            preferredEmail,
           },
           user.email ?? 'unknown',
         )
       } else {
-        await registerOrClaimProfile(
+        await saveSetupProfile(
           user.uid,
-          user.displayName ?? user.email ?? '',
-          user.email ?? '',
-          user.photoURL,
-          ln,
-          ec,
-          pn,
-          phone,
+          {
+            name: user.displayName ?? user.email ?? '',
+            email: user.email ?? '',
+            photo: user.photoURL,
+          },
+          { legalName: ln, emergencyContact: ec, preferredName: pn, phone, preferredEmail },
+          chosen,
         )
       }
       await reloadProfile()
       navigate('/waiver/membership', { replace: true })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
       setSaving(false)
     }
@@ -107,93 +166,199 @@ export function NewMemberSetupPage() {
   return (
     <div className="min-h-svh bg-[#f2f2f2]">
       <OnboardingHeader />
-      <form onSubmit={handleSave} className="mx-auto max-w-xl px-6 py-8">
+      <div className="mx-auto max-w-xl px-6 py-8">
         <div className="mb-6 rounded-[20px] p-6" style={{ backgroundColor: KBC.black }}>
           <h1 className="text-2xl font-black text-white">Welcome to KBC!</h1>
           <p className="mt-2 text-sm leading-5 text-neutral-400">
-            Before you get started, please complete your member profile. This information is kept on
-            file for your membership.
+            {step === 'name'
+              ? 'Let’s start with your full legal name, so we can find you if KBC already has you on file.'
+              : 'Before you get started, please complete your member profile. This information is kept on file for your membership.'}
           </p>
         </div>
 
-        <SectionHeader>Member Info</SectionHeader>
+        {step === 'name' && (
+          <form onSubmit={handleLookup}>
+            <Field label="Full Legal Name *">
+              <input
+                className="kbc-input"
+                autoFocus
+                value={legalName}
+                onChange={(e) => setLegalName(e.target.value)}
+                placeholder="e.g. Jane Smith"
+              />
+            </Field>
+            {error && <p className="mt-4 text-sm font-semibold text-red-600">{error}</p>}
+            <Primary disabled={looking}>{looking ? 'Checking…' : 'Continue'}</Primary>
+          </form>
+        )}
 
-        <Field label="Full Legal Name *">
-          <input
-            className="kbc-input"
-            value={legalName}
-            onChange={(e) => setLegalName(e.target.value)}
-            placeholder="e.g. Jane Smith"
-          />
-        </Field>
-
-        <Field label="Preferred Name (shown in app)">
-          <input
-            className="kbc-input"
-            value={preferredName}
-            onChange={(e) => setPreferredName(e.target.value)}
-            placeholder="e.g. Jane"
-          />
-        </Field>
-
-        <Field label="Phone Number">
-          <input
-            className="kbc-input"
-            type="tel"
-            value={memberPhone}
-            onChange={(e) => setMemberPhone(e.target.value)}
-            placeholder="+1 613 555 0123"
-          />
-        </Field>
-
-        <Field label="Email Address">
-          <div className="rounded-[10px] border border-neutral-200 bg-neutral-100 p-3 text-[15px] text-neutral-500">
-            {user?.email ?? ''}
+        {step === 'confirm' && (
+          <div>
+            <p className="text-sm leading-5 text-neutral-700">
+              {candidates.length === 1
+                ? 'We already have a member on file under that name. Is this you?'
+                : `We have ${candidates.length} members on file under that name. Which one is you?`}
+            </p>
+            {/* Masked, never the address itself. Whoever is reading this has
+                proved only that they can type a name — and a name is public
+                knowledge around a gym — so a full address would turn this
+                screen into a way of looking up any member's email. */}
+            <ul className="mt-4 space-y-3">
+              {candidates.map((c) => (
+                <li key={c.uid}>
+                  <button
+                    type="button"
+                    onClick={() => claim(c)}
+                    className="w-full rounded-2xl border-2 border-transparent bg-white p-4 text-left shadow-sm hover:border-neutral-300"
+                  >
+                    <p className="text-[15px] font-bold text-black">{c.legalName}</p>
+                    <p className="mt-0.5 text-[13px] text-neutral-500">{maskEmail(c.email)}</p>
+                    {c.memberSince && (
+                      <p className="mt-1 text-[12px] text-neutral-400">
+                        Member since {new Date(c.memberSince).getFullYear()}
+                      </p>
+                    )}
+                    <span
+                      className="mt-2 inline-block rounded-full px-2.5 py-1 text-[11px] font-bold"
+                      style={{ backgroundColor: tint(KBC.cyan), color: KBC.cyan }}
+                    >
+                      This is me
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={declineAll}
+              className="mt-5 w-full rounded-2xl border-2 border-neutral-300 p-4 text-[15px] font-bold text-neutral-600"
+            >
+              None of these — I’m new here
+            </button>
+            <button
+              type="button"
+              onClick={() => setStep('name')}
+              className="mt-3 w-full p-2 text-[13px] font-semibold text-neutral-500 underline"
+            >
+              Back to the name
+            </button>
           </div>
-        </Field>
+        )}
 
-        <SectionHeader>Emergency Contact</SectionHeader>
+        {step === 'details' && (
+          <form onSubmit={handleSave}>
+            {chosen && (
+              <div
+                className="mb-5 rounded-[14px] p-4 text-[13px] leading-5"
+                style={{ backgroundColor: tint(KBC.cyan), color: '#0b4b57' }}
+              >
+                <strong>Welcome back, {chosen.legalName}.</strong> We’ve filled in what we hold for
+                you — check it over and add anything missing. Your membership, passes and history
+                stay exactly as they are.
+              </div>
+            )}
 
-        <Field label="Full Name *">
-          <input
-            className="kbc-input"
-            value={ecName}
-            onChange={(e) => setEcName(e.target.value)}
-            placeholder="e.g. John Smith"
-          />
-        </Field>
+            <SectionHeader>Member Info</SectionHeader>
 
-        <Field label="Relationship *">
-          <input
-            className="kbc-input"
-            value={ecRelation}
-            onChange={(e) => setEcRelation(e.target.value)}
-            placeholder="e.g. Partner, Parent, Friend"
-          />
-        </Field>
+            <Field label="Full Legal Name *">
+              <input
+                className="kbc-input"
+                value={legalName}
+                onChange={(e) => setLegalName(e.target.value)}
+                placeholder="e.g. Jane Smith"
+              />
+            </Field>
 
-        <Field label="Phone Number *">
-          <input
-            className="kbc-input"
-            type="tel"
-            value={ecPhone}
-            onChange={(e) => setEcPhone(e.target.value)}
-            placeholder="+1 613 555 0123"
-          />
-        </Field>
+            <Field label="Preferred Name (shown in app)">
+              <input
+                className="kbc-input"
+                value={preferredName}
+                onChange={(e) => setPreferredName(e.target.value)}
+                placeholder="e.g. Jane"
+              />
+            </Field>
 
-        {error && <p className="mt-4 text-sm font-semibold text-red-600">{error}</p>}
+            <Field label="Phone Number">
+              <input
+                className="kbc-input"
+                type="tel"
+                value={memberPhone}
+                onChange={(e) => setMemberPhone(e.target.value)}
+                placeholder="+1 613 555 0123"
+              />
+            </Field>
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="mt-7 w-full rounded-2xl p-4 text-base font-extrabold text-black shadow-lg disabled:opacity-60"
-          style={{ backgroundColor: KBC.cyan }}
-        >
-          {saving ? 'Saving…' : 'Continue to Membership Forms'}
-        </button>
-      </form>
+            <Field label="Signed in as">
+              <div className="rounded-[10px] border border-neutral-200 bg-neutral-100 p-3 text-[15px] text-neutral-500">
+                {user?.email ?? ''}
+              </div>
+            </Field>
+
+            {/* The address KBC writes to, which need not be the Google account
+                used to sign in. Members join with whichever account is on the
+                phone in their hand and are reached somewhere else entirely. */}
+            <Field label="Preferred Contact Email">
+              <input
+                className="kbc-input"
+                type="email"
+                value={contactEmail}
+                onChange={(e) => setContactEmail(e.target.value)}
+                placeholder="you@example.com"
+              />
+            </Field>
+
+            <SectionHeader>Emergency Contact</SectionHeader>
+
+            <Field label="Full Name *">
+              <input
+                className="kbc-input"
+                value={ecName}
+                onChange={(e) => setEcName(e.target.value)}
+                placeholder="e.g. John Smith"
+              />
+            </Field>
+
+            <Field label="Relationship *">
+              <input
+                className="kbc-input"
+                value={ecRelation}
+                onChange={(e) => setEcRelation(e.target.value)}
+                placeholder="e.g. Partner, Parent, Friend"
+              />
+            </Field>
+
+            <Field label="Phone Number *">
+              <input
+                className="kbc-input"
+                type="tel"
+                value={ecPhone}
+                onChange={(e) => setEcPhone(e.target.value)}
+                placeholder="+1 613 555 0123"
+              />
+            </Field>
+
+            {error && <p className="mt-4 text-sm font-semibold text-red-600">{error}</p>}
+
+            <Primary disabled={saving}>
+              {saving ? 'Saving…' : 'Continue to Membership Forms'}
+            </Primary>
+          </form>
+        )}
+      </div>
     </div>
+  )
+}
+
+function Primary({ children, disabled }: { children: React.ReactNode; disabled?: boolean }) {
+  return (
+    <button
+      type="submit"
+      disabled={disabled}
+      className="mt-7 w-full rounded-2xl p-4 text-base font-extrabold text-black shadow-lg disabled:opacity-60"
+      style={{ backgroundColor: KBC.cyan }}
+    >
+      {children}
+    </button>
   )
 }
 
