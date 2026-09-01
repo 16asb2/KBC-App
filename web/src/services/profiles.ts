@@ -324,9 +324,21 @@ export async function saveSetupProfile(
   }
 
   // Roles never cross here. The member has proved they can type a legal name,
-  // which is public knowledge around a gym; firestore.rules refuses this write
-  // outright if it arrives carrying either flag, so this is what makes it legal
-  // rather than merely what makes it prudent.
+  // which is public knowledge around a gym, and anyone at all can sign in with
+  // a fresh Google account — so a name-matched role would mean a stranger who
+  // knows an admin's full legal name becomes an admin. firestore.rules refuses
+  // this write outright if it arrives carrying either flag, so dropping them is
+  // what makes it legal rather than merely what makes it careful.
+  //
+  // They are not thrown away either. Carried as a note for an admin to see and
+  // grant, which is one click on the members screen and the only step in this
+  // whole flow that still needs a person.
+  if (chosen.isAdmin || chosen.isSupervisor) {
+    typed.claimedRoles = JSON.stringify({
+      isAdmin: !!chosen.isAdmin,
+      isSupervisor: !!chosen.isSupervisor,
+    })
+  }
   return linkRecordToUid(uid, chosen, google, false, typed)
 }
 

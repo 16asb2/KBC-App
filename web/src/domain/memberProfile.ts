@@ -153,18 +153,21 @@ export function findRecordsByLegalName<
 /**
  * Whether a member may join themselves to this record by typing its legal name.
  *
- * A record carrying isAdmin or isSupervisor may not be, and the reason is not
- * only that a name is weak proof. It cannot work at all: `firestore.rules`
- * refuses a name-matched write that arrives holding either flag, so the copy
- * must drop them — and then refuses the delete of the original, because it
- * still has them. The record would be joined to the member's account and the
- * old one left standing beside it, which is a duplicate every single time.
+ * Everything on a record crosses except the two staff flags, and this reports
+ * whether that exception applies — the record is claimable either way.
  *
- * So it is offered as found and not as claimable. An admin joins it by hand,
- * or the member signs in with the address already on the record, which the
- * rules can verify for themselves and which carries the roles across intact.
+ * The flags cannot cross. `firestore.rules` refuses a name-matched write that
+ * arrives holding one, and the reason is worth keeping in view: a legal name is
+ * public knowledge around a gym, and anyone at all can sign in with a fresh
+ * Google account, so a name-matched role would mean a stranger who knows an
+ * admin's full legal name becomes an admin over every member's record. The
+ * claimed record's flags travel as `claimedRoles` instead, for an admin to see
+ * and grant.
+ *
+ * Signing in with the address already on the record avoids all of this: the
+ * rules can verify an email for themselves, and the roles cross intact.
  */
-export function isSelfClaimable(
+export function carriesRolesAcross(
   record: Pick<UserProfile, 'isAdmin' | 'isSupervisor'>,
 ): boolean {
   return !record.isAdmin && !record.isSupervisor

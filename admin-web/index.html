@@ -1825,6 +1825,24 @@ function lastChangedAt(m) {
 function lastChangedBy(m) {
   return (m.amendedAt||'')>=(m.lastUpdatedAt||'') ? (m.amendedBy||m.lastUpdatedBy||'') : (m.lastUpdatedBy||m.amendedBy||'');
 }
+/**
+ * Staff permissions a member's claimed record carried, which the app could not
+ * grant them.
+ *
+ * A member joining themselves to a record by legal name gets everything on it
+ * except isAdmin/isSupervisor: a name is public knowledge and anyone can sign
+ * in with a fresh Google account, so the rules refuse to let one confer control
+ * over every member's record. The flags travel here instead, and this is where
+ * a real admin sees them and decides.
+ *
+ * It is a claim, not a credential — the member's own write — so it is worded as
+ * one. Grant it by ticking the boxes in the member's record; saving clears it.
+ */
+function claimedRoles(m) {
+  try { const r=JSON.parse(m.claimedRoles||'null'); return r && (r.isAdmin||r.isSupervisor) ? r : null; }
+  catch { return null; }
+}
+
 /** The emergency contact, parsed out of the JSON string it is stored as. */
 function emergency(m) {
   try { return JSON.parse(m.emergencyContact||'{}')||{}; } catch { return {}; }
@@ -1861,6 +1879,7 @@ function renderMembersTable() {
     // ISO strings throughout, so lexical order is chronological order.
     if(col==='lastChanged')return lastChangedAt(m);
     if(col==='activity')return isActiveMember(m)?1:0;
+    if(col==='legalName2')return claimedRoles(m)?1:0;
     return m[col]??'';
   };
   applySort(memberList,'members',getVal);
@@ -1908,7 +1927,7 @@ function renderMembersTable() {
   </tr></thead><tbody>${memberView.map((m,i)=>{
     const ec=emergency(m), w=waiverOf(m), gaps=memberGaps(m), changed=lastChangedAt(m), by=lastChangedBy(m);
     return `<tr class="row-link" onclick="openEditModal(${i})" title="Open ${txt(m.legalName||m.name)}">
-    <td class="col-name"><strong>${txt(m.legalName||m.name)}</strong></td>
+    <td class="col-name"><strong>${txt(m.legalName||m.name)}</strong>${(()=>{const c=claimedRoles(m);return c?` <span class="badge" style="background:#e0860022;color:#e08600" title="When this member joined their account to an existing record, that record was ${[c.isAdmin?'an admin':'',c.isSupervisor?'a supervisor':''].filter(Boolean).join(' and ')}. Permissions are never carried across automatically — check who this is, then tick the boxes below to grant them. Saving clears this flag.">Roles to review</span>`:''})()}</td>
     <td style="font-size:12px" title="${by?'Last changed by '+txt(by):''}">${changed?fmtDate(changed):dash}</td>
     <td style="text-align:center">${m.isAdmin?'<span class="badge badge-red">ADM</span>':'<span style="color:#ddd">—</span>'}</td>
     <td style="text-align:center">${m.isSupervisor?'<span class="badge badge-blue">SUP</span>':'<span style="color:#ddd">—</span>'}</td>
@@ -1971,6 +1990,14 @@ function filterMembers(rows) {
 
 function openEditModal(i) {
   editingMember=memberView[i];
+  // A claimed record's permissions are pre-ticked, not pre-granted: the admin
+  // still has to look at who this is and press Save. Ticking them here is the
+  // difference between "one click" and "go and find out what they used to be".
+  const claimed=claimedRoles(editingMember);
+  if(claimed) setTimeout(()=>{
+    if(claimed.isSupervisor) document.getElementById('edit-sup').checked=true;
+    if(claimed.isAdmin)      document.getElementById('edit-adm').checked=true;
+  },0);
   const m=editingMember;
   document.getElementById('edit-modal-name').textContent=m.legalName||m.name||'Edit Member';
   document.getElementById('edit-legal').value=m.legalName||m.name||'';
@@ -2072,6 +2099,10 @@ async function saveEdit() {
                         document.getElementById('edit-confirmed').value==='yes',
     isSupervisor:document.getElementById('edit-sup').checked,
     isAdmin:document.getElementById('edit-adm').checked,
+    // The "Roles to review" flag is a question, and saving is the answer —
+    // whichever way the boxes were left. Leaving it set would mean an admin who
+    // decided NOT to grant is asked again forever.
+    claimedRoles:null,
     amendedBy:currentUser.email, amendedAt:new Date().toISOString()
   };
   // Cleared rather than left stale when the pass goes, so no expired dates
