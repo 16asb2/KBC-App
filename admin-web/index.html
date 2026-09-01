@@ -38,7 +38,10 @@
     .nav-btn{padding:14px 18px;border:none;background:transparent;font-size:14px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap}
     .nav-btn.active{color:var(--cyan);border-bottom-color:var(--cyan)}
 
-    main{flex:1;padding:24px;max-width:1200px;margin:0 auto;width:100%}
+    /* Full window width. The directory carries a column per profile field
+       and was being squeezed into 1200px on a monitor with far more to
+       give, which turned a readable table into a sideways scroll. */
+    main{flex:1;padding:24px;margin:0 auto;width:100%}
     .section{display:none}.section.active{display:block}
 
     .card{background:var(--card);border-radius:12px;border:1px solid var(--border);padding:20px;margin-bottom:20px}
@@ -490,6 +493,47 @@
           <button class="btn btn-green"   id="btn-mem-drive" onclick="saveMembersToDrive()" disabled>☁ Drive</button>
         </div>
         <div id="mem-stats" class="stats" style="display:none"></div>
+        <!-- Reading controls. All of it filters the list already loaded — the
+             directory reads the collection whole, so none of this is a query
+             and none of it can hide a member the page never fetched. -->
+        <div class="controls">
+          <input type="text" id="mem-search" placeholder="Search name or email…"
+                 oninput="renderMembersTable()" style="min-width:240px">
+          <label>Pass
+            <select id="mem-filter-pass" onchange="renderMembersTable()">
+              <option value="">Any</option>
+              <option value="annual">Annual</option>
+              <option value="8month">8-month</option>
+              <option value="4month">4-month</option>
+              <option value="1month">1-month</option>
+              <option value="punch">Punch pass</option>
+              <option value="dropin">Drop-in</option>
+              <option value="none">No pass</option>
+              <option value="pending">Awaiting confirmation</option>
+            </select>
+          </label>
+          <label>Role
+            <select id="mem-filter-role" onchange="renderMembersTable()">
+              <option value="">Anyone</option>
+              <option value="admin">Admins</option>
+              <option value="supervisor">Supervisors</option>
+              <option value="staff">Admins or supervisors</option>
+              <option value="member">Members only</option>
+            </select>
+          </label>
+          <label>Profile
+            <select id="mem-filter-profile" onchange="renderMembersTable()">
+              <option value="">Any</option>
+              <option value="incomplete">Incomplete</option>
+              <option value="complete">Complete</option>
+            </select>
+          </label>
+          <label style="gap:5px">
+            <input type="checkbox" id="mem-include-inactive" checked onchange="renderMembersTable()">
+            Include inactive members
+          </label>
+          <span id="mem-count" style="font-size:12px;color:var(--muted)"></span>
+        </div>
         <div id="mem-table" class="table-wrap table-scroll"></div>
       </div>
     </div>
@@ -526,6 +570,28 @@
 </div>
 
 <!-- EDIT MEMBER MODAL -->
+<div class="modal-backdrop" id="purchase-modal">
+  <div class="modal-overlay" onclick="closePurchaseModal()"></div>
+  <div class="modal-card">
+    <div class="modal-title">Edit Purchase</div>
+    <div class="modal-field"><label>Date &amp; Time</label><input type="datetime-local" id="pur-edit-when"></div>
+    <div class="modal-field"><label>Member</label><input type="text" id="pur-edit-member" placeholder="Full name"></div>
+    <div class="modal-field"><label>Access Type</label><select id="pur-edit-access"></select></div>
+    <div class="modal-field"><label>Details</label><input type="text" id="pur-edit-notes" placeholder="Purchased: …"></div>
+    <p style="font-size:12px;color:var(--muted);margin:10px 0 0">
+      Editing a purchase changes the sign-in-book entry it is stored as. It does not
+      grant or revoke a pass — a member's current pass is set on the Members tab.
+    </p>
+    <div style="display:flex;gap:8px;margin-top:18px;justify-content:space-between">
+      <button class="btn btn-danger" onclick="deletePurchaseFromModal()">Delete</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline" onclick="closePurchaseModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="savePurchase()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="edit-modal">
   <div class="modal-overlay" onclick="closeEditModal()"></div>
   <div class="modal-card modal-lg">
@@ -801,14 +867,24 @@ const BADGE_COLORS = {
   'Body Tension':'#26a69a','Contortionism':'#ec407a','Small-fit':'#8d6e63',
 };
 
+// accessType names the pass that was bought. Every membership purchase used to
+// record it as "Active Member", which is not an access pass at all — it is a
+// state a member is in — so the Purchases tab answered "what did they buy?"
+// with the same four words for a one-month pass and an annual one. The labels
+// here are ACCESS_PASS_LABELS, so a purchase reads the same as the pass it put
+// on the member's record.
 const ACCESS_OPTIONS = [
-  { id:'dropin',     label:'Drop-In',           accessType:'Drop-In',    notes:'Purchased: Day Pass ($20)' },
-  { id:'punch10',    label:'10× Punch Passes',  accessType:'Punch Pass', notes:'Purchased: 10× Punch Pass ($160)', punches:10 },
-  { id:'mem1m',      label:'1-month pass',       accessType:'Active Member', notes:'Purchased: 1-month Membership ($55)', months:1 },
-  { id:'mem4m',      label:'4-months pass',      accessType:'Active Member', notes:'Purchased: 4-month Membership ($200)', months:4 },
-  { id:'mem8m',      label:'8-months pass',      accessType:'Active Member', notes:'Purchased: 8-month Membership ($350)', months:8 },
-  { id:'mem12m',     label:'Annual Pass',        accessType:'Active Member', notes:'Purchased: Annual Membership ($450)', months:12 },
-  { id:'student12m', label:'Student Annual',     accessType:'Active Member', notes:'Purchased: Student Annual Membership ($350)', months:12 },
+  // Spelled out rather than read from ACCESS_PASS_LABELS, which is declared
+  // further down this file: a const referenced before its declaration throws at
+  // load, and one throw in this script takes the whole panel with it. The two
+  // must stay in step by hand.
+  { id:'dropin',     label:'Drop-In',           accessType:'Drop-in',       notes:'Purchased: Day Pass ($20)' },
+  { id:'punch10',    label:'10× Punch Passes',  accessType:'Punch pass',    notes:'Purchased: 10× Punch Pass ($160)', punches:10 },
+  { id:'mem1m',      label:'1-month pass',       accessType:'1-month pass',  notes:'Purchased: 1-month Membership ($55)', months:1 },
+  { id:'mem4m',      label:'4-months pass',      accessType:'4-month pass',  notes:'Purchased: 4-month Membership ($200)', months:4 },
+  { id:'mem8m',      label:'8-months pass',      accessType:'8-month pass',  notes:'Purchased: 8-month Membership ($350)', months:8 },
+  { id:'mem12m',     label:'Annual Pass',        accessType:'Annual pass',   notes:'Purchased: Annual Membership ($450)', months:12 },
+  { id:'student12m', label:'Student Annual',     accessType:'Annual pass',   notes:'Purchased: Student Annual Membership ($350)', months:12 },
 ];
 
 // The pass a member holds is stored on their profile, in the field
@@ -886,6 +962,11 @@ let driveToken    = null;
 let tokenClient   = null;
 let logEntries    = [];
 let memberList    = [];
+// What the table is actually showing, after the search box and the filters have
+// had their say. Every row callback indexes into THIS, not into memberList —
+// with a filter applied the two no longer line up, and confirming a pass on row
+// three would otherwise confirm it for whoever is third in the unfiltered list.
+let memberView    = [];
 let boulderList   = [];
 let receiptList   = [];
 let seasonList    = [];
@@ -989,9 +1070,47 @@ function kbcHead(title, sub) { return `<h1>Kingston Boulder Cooperative</h1><div
 // ── UTILS ─────────────────────────────────────────────────────────────────────
 function fmt(iso) { if (!iso) return '—'; return new Date(iso).toLocaleString('en-CA',{ year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
 function fmtDate(iso) { if (!iso) return '—'; return new Date(iso).toLocaleDateString('en-CA',{ year:'numeric', month:'short', day:'numeric' }); }
+/** Just the day, as yyyy-mm-dd. en-CA is already that order, so asking for
+ *  2-digit parts is the whole of it — and it reads in LOCAL time, where
+ *  slicing an ISO string would report the UTC day and be off by one all
+ *  evening. */
+function fmtDay(iso) { if (!iso) return '—'; return new Date(iso).toLocaleDateString('en-CA',{ year:'numeric', month:'2-digit', day:'2-digit' }); }
 function today() { return new Date().toISOString().slice(0,10); }
 function daysAgo(n) { const d = new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); }
 function nowLocal() { const d = new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
+/**
+ * How long a member may go unseen before the directory calls them inactive.
+ *
+ * Measured from their last sign-in, which is the gym's own record of a visit —
+ * so this is "have they been climbing lately", not "is their pass in date". A
+ * member who has never signed in has never been seen, and counts as inactive:
+ * that is most of an imported roster until people start using the app, which is
+ * exactly the thing the Include-inactive box is for.
+ */
+const INACTIVE_AFTER_DAYS = 183;
+function isActiveMember(m) {
+  const last = m.lastSignInAt;
+  if (!last) return false;
+  const age = (Date.now() - new Date(last).getTime()) / 86400000;
+  return age >= 0 && age <= INACTIVE_AFTER_DAYS;
+}
+
+/**
+ * Ends a scrolling table at the bottom of the window, wherever it starts.
+ *
+ * The height used to be `100svh - 200px`, a guess at everything above it, and
+ * the guess is wrong whenever an import form is open or the filter row wraps —
+ * the horizontal scrollbar then sits either off the bottom of the screen or
+ * well short of it. Measuring the table's own top settles it exactly.
+ */
+function fitTableToViewport(id) {
+  const el = document.getElementById(id);
+  if (!el || !el.offsetParent) return;
+  const top = el.getBoundingClientRect().top;
+  el.style.maxHeight = Math.max(240, window.innerHeight - top - 24) + 'px';
+}
+window.addEventListener('resize', () => ['mem-table','rec-table'].forEach(fitTableToViewport));
+
 function toast(msg, isErr=false) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.style.background = isErr ? '#c0392b' : '#1a1a1a';
@@ -1045,7 +1164,7 @@ function accessPassCell(m, i) {
 }
 /** Confirms the pass a member recorded — the pass itself is already right. */
 async function confirmPass(i) {
-  const m=memberList[i];
+  const m=memberView[i];
   try {
     await db.collection('users').doc(m.uid).update({
       membershipConfirmed:true, pendingMembership:null, pendingPunches:null,
@@ -1061,7 +1180,7 @@ async function confirmPass(i) {
  * wherever it was made.
  */
 async function denyPass(i) {
-  const m=memberList[i], name=m.legalName||m.name||'this member';
+  const m=memberView[i], name=m.legalName||m.name||'this member';
   if(!confirm(`Deny ${name}'s ${accessPassName(m)}?\n\nThe pass is removed and they are left holding nothing.`)) return;
   try {
     await db.collection('users').doc(m.uid).update({
@@ -1625,6 +1744,10 @@ async function addMember() {
       membershipExpiry: isDatedPass(pass) && accessEnd ? new Date(accessEnd).toISOString() : null,
       isSupervisor: isSup, isAdmin: isAdm,
       memberSince: new Date().toISOString(), createdAt: new Date().toISOString(), createdBy: currentUser.email,
+      // Creating a record IS a change to it. Without these the directory's Last
+      // Changed column sat empty on every member added here, which read as
+      // "nobody has ever touched this" for a record made seconds ago.
+      amendedBy: currentUser.email, amendedAt: new Date().toISOString(),
     });
     toast(`${legal} added!`);
     toggleAddForm();
@@ -1718,11 +1841,21 @@ function renderMembersTable() {
     if(col==='waiverSignedAt')return waiverOf(m).signedAt||'';
     // ISO strings throughout, so lexical order is chronological order.
     if(col==='lastChanged')return lastChangedAt(m);
+    if(col==='activity')return isActiveMember(m)?1:0;
     return m[col]??'';
   };
   applySort(memberList,'members',getVal);
+  memberView=filterMembers(memberList);
   const tbl=document.getElementById('mem-table');
-  if(!memberList.length){tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No members found.</p>';return;}
+  const count=document.getElementById('mem-count');
+  if(count) count.textContent = memberView.length===memberList.length
+    ? `${memberList.length} members`
+    : `${memberView.length} of ${memberList.length} members`;
+  if(!memberView.length){
+    tbl.innerHTML='<p style="padding:16px;color:var(--muted)">'+
+      (memberList.length?'No members match these filters.':'No members found.')+'</p>';
+    return;
+  }
   const th=(col,label,extra='')=>`<th onclick="clickSort('members','${col}')" style="cursor:pointer;user-select:none;${extra}">${label}${sortIcon('members',col)}</th>`;
   const dim='style="font-size:12px;color:var(--muted)"';
   const dash='<span style="color:var(--muted)">—</span>';
@@ -1751,12 +1884,13 @@ function renderMembersTable() {
     ${th('waiverSignedAt','Waiver Signed')}
     ${th('memberSince','Member Since')}
     ${th('lastSignInAt','Last Sign-In')}
+    ${th('activity','Activity')}
     ${th('incomplete','Profile')}
-  </tr></thead><tbody>${memberList.map((m,i)=>{
+  </tr></thead><tbody>${memberView.map((m,i)=>{
     const ec=emergency(m), w=waiverOf(m), gaps=memberGaps(m), changed=lastChangedAt(m), by=lastChangedBy(m);
     return `<tr class="row-link" onclick="openEditModal(${i})" title="Open ${txt(m.legalName||m.name)}">
     <td class="col-name"><strong>${txt(m.legalName||m.name)}</strong></td>
-    <td style="font-size:12px">${changed?fmt(changed)+(by?` <span style="color:var(--muted)">· ${txt(by)}</span>`:''):dash}</td>
+    <td style="font-size:12px" title="${by?'Last changed by '+txt(by):''}">${changed?fmtDay(changed):dash}</td>
     <td style="text-align:center">${m.isAdmin?'<span class="badge badge-red">ADM</span>':'<span style="color:#ddd">—</span>'}</td>
     <td style="text-align:center">${m.isSupervisor?'<span class="badge badge-blue">SUP</span>':'<span style="color:#ddd">—</span>'}</td>
     <td ${dim}>${m.preferredName&&m.preferredName!==(m.legalName||m.name)?txt(m.preferredName):dash}</td>
@@ -1771,13 +1905,53 @@ function renderMembersTable() {
     <td style="font-size:12px">${txt(ec.phone)}</td>
     <td style="font-size:12px">${w.signedAt?fmt(w.signedAt):(m.waiverPdfUrl?'<span class="badge badge-grey">Scan on file</span>':dash)}</td>
     <td style="font-size:12px">${m.memberSince?fmtDate(m.memberSince):dash}</td>
-    <td style="font-size:12px">${m.lastSignInAt?fmtDate(m.lastSignInAt):dash}</td>
+    <td style="font-size:12px">${m.lastSignInAt?fmtDay(m.lastSignInAt):dash}</td>
+    <td>${isActiveMember(m)
+      ? '<span class="badge badge-green">Active</span>'
+      : `<span class="badge badge-grey" title="${m.lastSignInAt?'Last signed in '+fmtDay(m.lastSignInAt):'Has never signed in'}">Inactive</span>`}</td>
     <td>${gaps.length?`<span class="badge" style="background:#e0860022;color:#e08600" title="Missing ${gaps.join(', ')} — the member is asked for these when they next open the app">Incomplete</span>`:'<span class="badge badge-green">Complete</span>'}</td>
   </tr>`;}).join('')}</tbody></table>`;
+  fitTableToViewport('mem-table');
+}
+
+/**
+ * The search box and the four filters, applied to the loaded directory.
+ *
+ * Search covers the email as well as the two names: an admin looking someone up
+ * has whichever of the three they were given, and refusing the address would
+ * only mean pasting it into the browser's own find instead.
+ */
+function filterMembers(rows) {
+  const el=id=>document.getElementById(id);
+  const q=(el('mem-search')?.value||'').trim().toLowerCase();
+  const pass=el('mem-filter-pass')?.value||'';
+  const role=el('mem-filter-role')?.value||'';
+  const prof=el('mem-filter-profile')?.value||'';
+  const includeInactive=el('mem-include-inactive')?.checked!==false;
+
+  return rows.filter(m=>{
+    if(q){
+      const hay=[m.legalName,m.name,m.preferredName,m.email].map(v=>String(v||'').toLowerCase());
+      if(!hay.some(h=>h.includes(q))) return false;
+    }
+    if(pass==='pending'){ if(passOf(m)==='none'||isConfirmed(m)) return false; }
+    else if(pass && passOf(m)!==pass) return false;
+
+    if(role==='admin'      && !m.isAdmin) return false;
+    if(role==='supervisor' && !m.isSupervisor) return false;
+    if(role==='staff'      && !(m.isAdmin||m.isSupervisor)) return false;
+    if(role==='member'     && (m.isAdmin||m.isSupervisor)) return false;
+
+    if(prof==='incomplete' && !memberGaps(m).length) return false;
+    if(prof==='complete'   && memberGaps(m).length) return false;
+
+    if(!includeInactive && !isActiveMember(m)) return false;
+    return true;
+  });
 }
 
 function openEditModal(i) {
-  editingMember=memberList[i];
+  editingMember=memberView[i];
   const m=editingMember;
   document.getElementById('edit-modal-name').textContent=m.legalName||m.name||'Edit Member';
   document.getElementById('edit-legal').value=m.legalName||m.name||'';
@@ -1904,7 +2078,7 @@ async function saveEdit() {
   catch(e) { toast('Error: '+e.message,true); }
 }
 async function deleteMember(i) {
-  const m=memberList[i], name=m.legalName||m.name||'this member';
+  const m=memberView[i], name=m.legalName||m.name||'this member';
   if (!confirm(`Permanently delete "${name}"?\n\nThis cannot be undone.`)) return;
   try { await db.collection('users').doc(m.uid).delete(); toast(`${name} removed`); loadMembers(); }
   catch(e) { toast('Error: '+e.message,true); }
@@ -1944,7 +2118,7 @@ function buildWaiverHTML(m) {
 }
 async function dlWaiverPDF(i) {
   toast('Generating…');
-  try { const m=memberList[i],fn=`KBC_Waiver_${(m.legalName||m.name||'member').replace(/\s+/g,'_')}.pdf`; dlBlob(await htmlToBlob(buildWaiverHTML(m),fn),fn); }
+  try { const m=memberView[i],fn=`KBC_Waiver_${(m.legalName||m.name||'member').replace(/\s+/g,'_')}.pdf`; dlBlob(await htmlToBlob(buildWaiverHTML(m),fn),fn); }
   catch(e) { toast('Error: '+e.message,true); }
 }
 
@@ -2421,12 +2595,6 @@ async function submitPurchase() {
   } catch(e) { toast('Error: '+e.message,true); }
 }
 
-async function deletePurchase(i) {
-  const e=receiptList[i];
-  if (!confirm(`Delete purchase entry for "${e.userName}" on ${fmt(e.timestamp)}?`)) return;
-  try { await db.collection('logs').doc(e.id).delete(); toast('Purchase deleted'); loadReceipts(); }
-  catch(e) { toast('Error: '+e.message,true); }
-}
 
 /**
  * Every purchase on record. A purchase is a sign-in-book entry whose notes
@@ -2459,35 +2627,86 @@ function renderReceiptsTable() {
     <th ${sh('userName')}>Member${sortIcon('receipts','userName')}</th>
     <th ${sh('accessType')}>Access Type${sortIcon('receipts','accessType')}</th>
     <th ${sh('notes')}>Details${sortIcon('receipts','notes')}</th>
-    <th></th>
-  </tr></thead><tbody>${receiptList.map((e,i)=>`<tr>
+  </tr></thead><tbody>${receiptList.map((e,i)=>`<tr class="row-link" onclick="openPurchaseModal(${i})" title="Open this purchase">
     <td style="white-space:nowrap">${fmt(e.timestamp)}</td>
     <td><strong>${e.userName||'—'}</strong></td>
     <td>${e.accessType||'—'}</td>
     <td style="font-size:11px;color:var(--muted)">${e.notes||''}</td>
-    <td style="white-space:nowrap">
-      <button class="btn btn-outline btn-sm" onclick="dlReceiptPDF(${i})">⬇ PDF</button>
-      <button class="btn btn-green   btn-sm" onclick="driveReceiptPDF(${i})">☁ Drive</button>
-      <button class="btn btn-danger  btn-sm" onclick="deletePurchase(${i})">Delete</button>
-    </td>
   </tr>`).join('')}</tbody></table>`;
+  fitTableToViewport('rec-table');
+}
+
+/**
+ * One purchase, opened from its row — the same gesture the member directory
+ * uses, and for the same reason: three buttons per row made every row about its
+ * actions rather than about the sale, and two of the three (a PDF receipt and a
+ * copy of it on Drive) were a filing cabinet nobody was opening. Deleting moves
+ * inside the modal, where it is one deliberate step past opening the record
+ * rather than a button sitting next to every row in the table.
+ */
+let editingPurchase = null;
+function openPurchaseModal(i) {
+  const e = receiptList[i];
+  if (!e) return;
+  editingPurchase = e;
+  const d = new Date(e.timestamp);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  document.getElementById('pur-edit-when').value = d.toISOString().slice(0,16);
+  document.getElementById('pur-edit-member').value = e.userName || '';
+  document.getElementById('pur-edit-notes').value = e.notes || '';
+  const sel = document.getElementById('pur-edit-access');
+  // The stored value may be something no longer offered — "Active Member", from
+  // before purchases named the pass — so it is added as an option rather than
+  // silently re-pointed at whatever happens to be first in the list.
+  const types = [...new Set([...Object.values(ACCESS_PASS_LABELS), e.accessType].filter(Boolean))];
+  sel.innerHTML = types.map(t=>`<option${t===e.accessType?' selected':''}>${t}</option>`).join('');
+  document.getElementById('purchase-modal').style.display='block';
+}
+function closePurchaseModal() { editingPurchase=null; document.getElementById('purchase-modal').style.display='none'; }
+
+async function savePurchase() {
+  if (!editingPurchase) return;
+  const when = document.getElementById('pur-edit-when').value;
+  const name = document.getElementById('pur-edit-member').value.trim();
+  const notes = document.getElementById('pur-edit-notes').value.trim();
+  if (!name) { toast('A purchase needs a member name', true); return; }
+  // The Purchases tab is the sign-in book filtered to entries whose notes carry
+  // "Purchased:" — strip it and the entry vanishes from this tab rather than
+  // being corrected, so it is put back rather than argued with.
+  const kept = notes.includes('Purchased:') ? notes : `Purchased: ${notes||'access pass'}`;
+  try {
+    await db.collection('logs').doc(editingPurchase.id).update({
+      timestamp: when ? new Date(when).toISOString() : editingPurchase.timestamp,
+      userName: name,
+      accessType: document.getElementById('pur-edit-access').value,
+      notes: kept,
+      amendedBy: currentUser.email, amendedAt: new Date().toISOString(),
+    });
+    toast('Purchase updated');
+    closePurchaseModal();
+    loadReceipts();
+  } catch(e) { toast('Error: '+e.message, true); }
+}
+
+async function deletePurchaseFromModal() {
+  if (!editingPurchase) return;
+  const e = editingPurchase;
+  if (!confirm(`Delete this purchase?
+
+${e.userName||'Member'} · ${e.accessType||''}
+${fmt(e.timestamp)}
+
+This cannot be undone.`)) return;
+  try {
+    await db.collection('logs').doc(e.id).delete();
+    toast('Purchase deleted');
+    closePurchaseModal();
+    loadReceipts();
+  } catch(err) { toast('Error: '+err.message, true); }
 }
 
 function exportReceiptsCSV() { dlBlob(new Blob([toCSV([['Date/Time','Member','Access Type','Details'],...receiptList.map(e=>[fmt(e.timestamp),e.userName,e.accessType,e.notes])])],{type:'text/csv'}),`KBC_Purchases_${today()}.csv`); }
 
-function buildReceiptHTML(e) {
-  const no=(e.id||'').slice(-8).toUpperCase();
-  return PDF_CSS+`<style>.receipt{max-width:460px;margin:0 auto;border:1px solid #ddd;padding:24px;border-radius:6px}.line{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:12px}.line:last-of-type{border-bottom:none}</style>
-  <div class="receipt">${kbcHead('Receipt',`#${no} · ${fmt(e.timestamp)}`)}
-    <div class="line"><span>Member</span><strong>${e.userName||'—'}</strong></div>
-    <div class="line"><span>Access Type</span><span>${e.accessType||'—'}</span></div>
-    ${e.notes?`<div class="line"><span>Details</span><span style="text-align:right;max-width:55%">${e.notes}</span></div>`:''}
-    <div class="foot" style="margin-top:14px">Kingston Boulder Cooperative<br>Thank you for climbing with us!</div>
-  </div>`;
-}
-function receiptFilename(e) { return `KBC_Receipt_${(e.userName||'member').replace(/\s+/g,'_')}_${(e.timestamp||'').slice(0,10)}.pdf`; }
-async function dlReceiptPDF(i) { toast('Generating…'); try { const e=receiptList[i]; dlBlob(await htmlToBlob(buildReceiptHTML(e),receiptFilename(e)),receiptFilename(e)); } catch(e) { toast('Error: '+e.message,true); } }
-async function driveReceiptPDF(i) { try { const e=receiptList[i]; toast('Generating…'); const b=await htmlToBlob(buildReceiptHTML(e),receiptFilename(e)); toast('Uploading…'); await uploadToDrive(receiptFilename(e),b,'application/pdf','receipts'); toast('Receipt saved to Drive!'); } catch(e) { toast('Error: '+e.message,true); } }
 
 // ── BACKUP ────────────────────────────────────────────────────────────────────
 async function backupAllToDrive() {

@@ -5,6 +5,7 @@ import { KBC } from '@/constants/theme'
 import { WAIVER_META, type WaiverType } from '@/constants/waivers'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
+import { normaliseLegalName } from '@/domain/memberProfile'
 import { updateProfile } from '@/services/profiles'
 import type { WaiverRecord } from '@/types/member'
 import { formatLongDateWithYear, formatTime } from '@/utils/datetime'
@@ -91,7 +92,11 @@ export function WaiverPage() {
         }
       })()
 
-  const nameMatches = signedBy.trim().toLowerCase() === memberName.toLowerCase()
+  // Folded the same way the record matcher folds a legal name — case, accents
+  // and runs of whitespace — rather than compared raw. Only `signedBy` used to
+  // be trimmed, so a record carrying "Jane  Smith" or "José" could not be
+  // signed for at all: whatever the member typed, the button stayed dead.
+  const nameMatches = normaliseLegalName(signedBy) === normaliseLegalName(memberName)
 
   async function handleSign() {
     setError(null)
@@ -260,7 +265,10 @@ export function WaiverPage() {
                 <button
                   type="button"
                   onClick={() => void handleSign()}
-                  disabled={saving || !nameMatches}
+                  // Enabled as soon as there is a name to check. A disabled
+                  // button was the whole of the feedback on a mismatch: no
+                  // error, no hint at what was expected, nothing to correct.
+                  disabled={saving || !signedBy.trim()}
                   className="mt-2 w-full rounded-2xl p-4 text-base font-extrabold text-white shadow-lg disabled:opacity-40"
                   style={{ backgroundColor: KBC.green }}
                 >
