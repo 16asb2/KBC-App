@@ -415,14 +415,31 @@ test('a record with no legal name cannot be claimed by a member without one', as
   await assertFails(deleteDoc(doc(db, 'users', 'imported_1')))
 })
 
-test('a member cannot delete a privileged record by claiming it', async () => {
-  // A pre-registered supervisor links by email instead, and once linked is
-  // isSupervisorOrAdmin() and covered by the ordinary branch.
+test('a claimed staff record can be removed, or the member is duplicated', async () => {
+  // The inverse of what this asserted before, and the reason is arithmetic
+  // rather than taste. The create branch refuses a name-matched document
+  // holding either flag, so the copy drops them; while this branch also
+  // refused the delete, the original stayed and the member appeared twice —
+  // every time, with no path through the pair that ended with one profile.
   for (const flag of [{ isAdmin: true }, { isSupervisor: true }]) {
     await testEnv.clearFirestore()
     const db = await seedClaim(flag)
-    await assertFails(deleteDoc(doc(db, 'users', 'imported_1')))
+    await assertSucceeds(deleteDoc(doc(db, 'users', 'imported_1')))
   }
+})
+
+test('claiming a staff record still cannot make the claimer staff', async () => {
+  // The line the delete does not move. A record is one member's history;
+  // isAdmin is control over everyone's, and anyone at all can sign in with a
+  // fresh Google account.
+  await seed('imported_9', profile({ email: 'onfile@example.com', isAdmin: true }))
+  const db = asUser('uid-claimer', 'claimer@example.com')
+  await assertFails(
+    setDoc(
+      doc(db, 'users', 'uid-claimer'),
+      profile({ email: 'claimer@example.com', isAdmin: true, linkedFrom: 'imported_9' }),
+    ),
+  )
 })
 
 test('a member cannot delete another member outright', async () => {

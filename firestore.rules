@@ -141,8 +141,19 @@ service cloud.firestore {
     // leaves the old row behind for an admin to remove — the member is already
     // on the record either way.
     //
-    // A pre-registered supervisor or admin is excluded throughout and does not
-    // need this branch: once linked they are isSupervisorOrAdmin() themselves.
+    // A record carrying isAdmin or isSupervisor is NOT excluded. It used to be,
+    // and that made claiming one duplicate the member every time and by
+    // construction: the create branch below refuses a name-matched document
+    // holding either flag, so the copy dropped them — and then this branch
+    // refused to remove the original, because the original still had them. The
+    // member was joined to their record and left standing beside it.
+    //
+    // The flags themselves still do not cross. That is the line, and it is not
+    // the same line: a record is one member's history, where isAdmin is control
+    // over everybody's. Anyone at all can sign in with a fresh Google account,
+    // so a name-matched role would mean a stranger who knows an admin's full
+    // legal name becomes an admin. The claimed record's flags are carried as
+    // claimedRoles for a real admin to look at and grant.
     function claimedByEmail() {
       return request.auth.token.get('email', '') != '' &&
         resource.data.get('email', '').lower() == request.auth.token.email.lower();
@@ -158,8 +169,6 @@ service cloud.firestore {
       return isAuthenticated() &&
         memberDocExists() &&
         memberDoc().data.get('linkedFrom', '') == uid &&
-        resource.data.get('isAdmin', false) == false &&
-        resource.data.get('isSupervisor', false) == false &&
         (claimedByEmail() || claimedByLegalName());
     }
 

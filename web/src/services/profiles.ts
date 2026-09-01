@@ -89,13 +89,26 @@ async function linkRecordToUid(
   }
 
   await setDoc(doc(db, USERS, uid), linked)
-  // The old document is now a duplicate of the one just written. Non-fatal:
-  // the member holds their record either way, and an orphan is an admin
-  // tidying job rather than a failed sign-in.
+
+  // The old document is now a copy of the one just written, and removing it is
+  // part of the join rather than tidying afterwards: leaving it standing is the
+  // duplicate profile this whole flow exists to prevent.
+  //
+  // It used to be swallowed into a console.warn on the reasoning that the
+  // member holds their record either way. They do — and they also end up listed
+  // twice, with no sign anything went wrong, which is exactly how this went
+  // unnoticed. The join has already succeeded by this point, so the error says
+  // so; pressing save again finds the profile in place and carries on.
   try {
     await deleteProfile(oldUid)
   } catch (e) {
-    console.warn('[Profile] Failed to delete superseded profile doc:', oldUid, e)
+    console.error('[Profile] Joined', uid, 'but could not remove the old record', oldUid, e)
+    throw new Error(
+      `Your record was joined to this account, but the old copy of it could not be removed, so you may appear twice in the member list. Please ask KBC staff to merge them. (${
+        e instanceof Error ? e.message : String(e)
+      })`,
+      { cause: e },
+    )
   }
   return { uid, ...linked }
 }
@@ -311,9 +324,21 @@ export async function saveSetupProfile(
   }
 
   // Roles never cross here. The member has proved they can type a legal name,
-  // which is public knowledge around a gym; firestore.rules refuses this write
-  // outright if it arrives carrying either flag, so this is what makes it legal
-  // rather than merely what makes it prudent.
+  // which is public knowledge around a gym, and anyone at all can sign in with
+  // a fresh Google account — so a name-matched role would mean a stranger who
+  // knows an admin's full legal name becomes an admin. firestore.rules refuses
+  // this write outright if it arrives carrying either flag, so dropping them is
+  // what makes it legal rather than merely what makes it careful.
+  //
+  // They are not thrown away either. Carried as a note for an admin to see and
+  // grant, which is one click on the members screen and the only step in this
+  // whole flow that still needs a person.
+  if (chosen.isAdmin || chosen.isSupervisor) {
+    typed.claimedRoles = JSON.stringify({
+      isAdmin: !!chosen.isAdmin,
+      isSupervisor: !!chosen.isSupervisor,
+    })
+  }
   return linkRecordToUid(uid, chosen, google, false, typed)
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   findProfileByEmailIn,
   findRecordsByLegalName,
+  carriesRolesAcross,
   maskEmail,
   isProfileComplete,
   mergeAdditionalEmails,
@@ -272,5 +273,20 @@ describe('findProfileByEmailIn', () => {
   it('normalises the same way on both sides', () => {
     expect(normaliseEmail('  Jane@Example.com ')).toBe('jane@example.com')
     expect(normaliseEmail(undefined)).toBe('')
+  })
+})
+
+describe('carriesRolesAcross', () => {
+  it('carries everything across for an ordinary record', () => {
+    expect(carriesRolesAcross({ isAdmin: false, isSupervisor: false })).toBe(true)
+  })
+
+  it('reports the one exception: staff flags do not cross a name match', () => {
+    // The record is still claimable — membership, punches, history and all.
+    // The flags are what cannot come: firestore.rules rejects a name-matched
+    // write carrying either, because a legal name is public knowledge and
+    // anyone can sign in with a fresh Google account.
+    expect(carriesRolesAcross({ isAdmin: true, isSupervisor: false })).toBe(false)
+    expect(carriesRolesAcross({ isAdmin: false, isSupervisor: true })).toBe(false)
   })
 })

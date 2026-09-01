@@ -52,6 +52,14 @@ export type UserProfile = {
   // supervisor, which is how OnboardingGate knows to show them the form once,
   // prefilled, before they sign a waiver against what it says.
   profileReviewedAt?: string
+  // JSON { isAdmin, isSupervisor } — the staff permissions carried by a record
+  // a member joined to their account by legal name. Not the permissions
+  // themselves: a name is public knowledge and anyone can sign in with a fresh
+  // Google account, so granting on one would hand control of every member's
+  // record to whoever knows an admin's full name. This is the note that says
+  // "this was a supervisor, check and re-grant", for an admin to act on. It is
+  // a claim, not a credential — the member wrote it.
+  claimedRoles?: string | null
   lastUpdatedBy?: string
   lastUpdatedAt?: string
   // Id of the pre-registration profile this doc was copied from on first

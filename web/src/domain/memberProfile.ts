@@ -151,6 +151,29 @@ export function findRecordsByLegalName<
 }
 
 /**
+ * Whether a member may join themselves to this record by typing its legal name.
+ *
+ * Everything on a record crosses except the two staff flags, and this reports
+ * whether that exception applies — the record is claimable either way.
+ *
+ * The flags cannot cross. `firestore.rules` refuses a name-matched write that
+ * arrives holding one, and the reason is worth keeping in view: a legal name is
+ * public knowledge around a gym, and anyone at all can sign in with a fresh
+ * Google account, so a name-matched role would mean a stranger who knows an
+ * admin's full legal name becomes an admin over every member's record. The
+ * claimed record's flags travel as `claimedRoles` instead, for an admin to see
+ * and grant.
+ *
+ * Signing in with the address already on the record avoids all of this: the
+ * rules can verify an email for themselves, and the roles cross intact.
+ */
+export function carriesRolesAcross(
+  record: Pick<UserProfile, 'isAdmin' | 'isSupervisor'>,
+): boolean {
+  return !record.isAdmin && !record.isSupervisor
+}
+
+/**
  * An address shown to somebody who has typed a matching legal name, reduced to
  * what identifies it to its owner and to nobody else.
  *
