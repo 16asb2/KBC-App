@@ -13,8 +13,7 @@ import {
 import { db } from '@/lib/firebase'
 import { nextAccessPass } from '@/domain/membership'
 import {
-  findClaimableByLegalName,
-  findProfileByEmailIn,
+  findExistingRecord,
   mergeAdditionalEmails,
   normaliseEmail,
 } from '@/domain/memberProfile'
@@ -26,45 +25,99 @@ import type { EmergencyContact, UserProfile } from '@/types/member'
 const USERS = 'users'
 
 /**
- * The pre-registered record for an address, if the gym holds one.
+ * The indexed lookup: exact equality on the stored address.
  *
- * Two passes, because the cheap one is not reliable. The equality filter is
- * indexed and answers in a single document read, but it can only match a record
- * whose *stored* address is already lower case — which is a property of
- * whatever wrote it, not something this app can assume. `admin-web/` lowercases
- * on import and on manual add; a list loaded through the Firebase console or a
- * one-off script need not have. A miss there is therefore not an answer, so it
- * falls back to reading the collection and comparing case-insensitively, the
- * way `firestore.rules` has always compared these addresses.
- *
- * The fallback costs a full read of `users`, and only ever on a first sign-in
- * that found nothing — the same read `registerOrClaimProfile` does moments
- * later on that path. Getting this wrong is far more expensive: the member
- * silently registers from scratch, beside the membership they paid for.
+ * Cheap — one document read — and answers most sign-ins. It is only ever a
+ * *fast path*, though, never a verdict: it matches only a record whose stored
+ * address is already lower case, which is a property of whatever wrote it
+ * rather than anything this app can assume. A miss means "ask properly", which
+ * is what `findOrLinkProfile` does next.
  */
-async function findProfileByEmail(email: string): Promise<UserProfile | null> {
+async function queryProfileByEmailExact(email: string): Promise<UserProfile | null> {
   const target = normaliseEmail(email)
   if (!target) return null
-
-  const snap = await getDocs(
-    query(collection(db, USERS), where('email', '==', target), fsLimit(1)),
-  )
-  if (!snap.empty) {
-    const docSnap = snap.docs[0]
-    return { uid: docSnap.id, ...(docSnap.data() as Omit<UserProfile, 'uid'>) }
-  }
-
-  const found = findProfileByEmailIn(await getAllProfiles(), target)
-  if (found) {
-    console.log('[Profile] Matched', target, 'only by case-insensitive scan — stored as', found.email)
-  }
-  return found
+  const snap = await getDocs(query(collection(db, USERS), where('email', '==', target), fsLimit(1)))
+  if (snap.empty) return null
+  const docSnap = snap.docs[0]
+  return { uid: docSnap.id, ...(docSnap.data() as Omit<UserProfile, 'uid'>) }
 }
 
 /**
- * Looks up an existing member profile by Firebase UID, or links an email-matched
- * manually-created profile to the Firebase UID on first Google sign-in.
- * Returns null for brand-new users who have never completed setup.
+ * Moves a record the gym already holds onto the real Firebase uid, keeping
+ * everything on it.
+ *
+ * This is the one write that must never lose anything. What the member brings
+ * from Google is an identity — an address, a display name, a photo — and that
+ * is the whole of what it may overwrite. The pass, the punches, the dates, the
+ * waivers, `memberSince`, the sign-in history: none of it has any business
+ * being touched by somebody signing in, and a blank membership written over a
+ * paid one is not a cosmetic bug.
+ *
+ * `keepRoles` is false for anything matched on a name. The rules will reject
+ * such a write anyway if it arrives carrying a flag, so this is not merely
+ * policy — it is what makes the write legal. An imported supervisor found by
+ * name comes across as an ordinary member and has to be re-granted.
+ *
+ * The address the record was filed under is kept in `additionalEmails` rather
+ * than dropped. It is how the member appears on older receipts and in whatever
+ * sheet the record came from, and it is the evidence for why this link happened
+ * at all.
+ */
+async function linkRecordToUid(
+  uid: string,
+  record: UserProfile,
+  google: { name: string; email: string; photo: string | null },
+  keepRoles: boolean,
+  extra: Partial<Omit<UserProfile, 'uid'>> = {},
+): Promise<UserProfile> {
+  const { uid: oldUid, ...stored } = record
+  const now = new Date().toISOString()
+  const additional = mergeAdditionalEmails(stored.additionalEmails, stored.email, google.email)
+
+  const linked: Omit<UserProfile, 'uid'> = {
+    ...stored,
+    name: google.name,
+    email: google.email,
+    photo: google.photo,
+    ...(keepRoles ? {} : { isAdmin: false, isSupervisor: false }),
+    ...(additional.length > 0 ? { additionalEmails: JSON.stringify(additional) } : {}),
+    ...extra,
+    linkedFrom: oldUid,
+    lastUpdatedBy: google.email,
+    lastUpdatedAt: now,
+  }
+
+  await setDoc(doc(db, USERS, uid), linked)
+  // The old document is now a duplicate of the one just written. Non-fatal:
+  // the member holds their record either way, and an orphan is an admin
+  // tidying job rather than a failed sign-in.
+  try {
+    await deleteProfile(oldUid)
+  } catch (e) {
+    console.warn('[Profile] Failed to delete superseded profile doc:', oldUid, e)
+  }
+  return { uid, ...linked }
+}
+
+/**
+ * The member's profile, joining them to a record the gym already holds if this
+ * is the first time they have signed in with this Google account.
+ *
+ * Three questions, in descending order of how much they prove:
+ *
+ * 1. Is there a document at this Firebase uid? Then it is theirs, full stop.
+ * 2. Does any record carry this email address? Strong: the account proves it,
+ *    and `firestore.rules` re-checks it, which is why a record matched this way
+ *    may keep an isAdmin or isSupervisor an admin had already granted.
+ * 3. Does any record carry this legal name, and only one? Weak, and it is here
+ *    because email alone left real members stranded — a record filed under an
+ *    address they no longer use is invisible to step 2, and the app's answer
+ *    was to greet them as a stranger. Google's account name is a real full name
+ *    often enough to be worth trying; when it is not, the setup form asks for
+ *    the legal name directly and tries again with that.
+ *
+ * Returns null only when all three genuinely find nothing — never because a
+ * lookup failed. See the rethrow below.
  */
 export async function findOrLinkProfile(
   uid: string,
@@ -77,54 +130,50 @@ export async function findOrLinkProfile(
     return { uid, ...(docSnap.data() as Omit<UserProfile, 'uid'>) }
   }
 
-  // Check for an existing profile by email (manually created before first Google sign-in)
-  //
-  // This used to swallow its own failure and carry on with `existing = null`,
-  // on the reasoning that a broken lookup should not stop someone signing up.
-  // But null here does not mean "no record" — it means "did not find one", and
-  // the caller cannot tell those apart: a member the gym has held for years
-  // gets the new-member form, and registers a second time over the top. The
-  // failure is raised instead, so ProfileContext can say so and offer Try
-  // Again. A genuinely new member loses nothing by retrying.
-  const existing = await findProfileByEmail(email).catch((e: unknown) => {
+  // A failed lookup used to be swallowed here and carried on with "no record
+  // found". But null does not mean "no record" — it means "did not find one",
+  // and the caller cannot tell those apart: a member the gym has held for years
+  // gets the new-member form and registers a second time over the top. It is
+  // raised instead, so ProfileContext can say so and offer Try Again. A
+  // genuinely new member loses nothing by retrying.
+  const match = await findRecordFor(uid, email, name).catch((e: unknown) => {
     throw new Error(
       `Could not check whether KBC already holds a record for ${email}: ${
         e instanceof Error ? e.message : String(e)
       }`,
     )
   })
-
-  if (existing) {
-    console.log('[Profile] Linking Firebase UID to existing member profile for', email)
-    const { uid: oldUid, ...existingData } = existing
-    // linkedFrom is what makes this write legal when the pre-registered
-    // profile already carries isAdmin/isSupervisor. The self-create branch in
-    // firestore.rules rejects a doc with either flag set, and the
-    // supervisor/admin branch can't help: it reads users/{auth.uid}, which is
-    // the very document being created. So the rules instead re-check the flags
-    // against the profile named here, which must exist and share this email.
-    const linked: Omit<UserProfile, 'uid'> = {
-      ...existingData,
-      name,
-      email,
-      photo,
-      linkedFrom: oldUid,
-    }
-    await setDoc(doc(db, USERS, uid), linked)
-    // The old doc (synthetic manual_* id from createNewMemberProfile, or any
-    // other prior id) is now a duplicate of the one we just wrote under the
-    // real Firebase uid — remove it so it doesn't linger as an orphan.
-    // Non-fatal: the member is already linked at this point either way.
-    try {
-      await deleteProfile(oldUid)
-    } catch (e) {
-      console.warn('[Profile] Failed to delete superseded profile doc:', oldUid, e)
-    }
-    return { uid, ...linked }
+  if (!match) {
+    // Nobody by this address or this name. The setup form asks for the legal
+    // name directly and tries once more with that, Google's account name being
+    // a nickname often enough to be worth a second attempt.
+    return null
   }
 
-  // Brand-new user — profile is created when they complete the setup form
-  return null
+  const byEmail = normaliseEmail(match.email) === normaliseEmail(email)
+  console.log('[Profile] Linking', uid, 'to record', match.uid, byEmail ? 'by email' : 'by name')
+  // Roles cross only on an email match, which firestore.rules re-checks against
+  // the linkedFrom record for itself. A name proves nothing, so a name match
+  // arrives as an ordinary member whatever the record said.
+  return linkRecordToUid(uid, match, { name, email, photo }, byEmail)
+}
+
+/**
+ * The record the gym holds for this person, by address or by name.
+ *
+ * The indexed query first, because it settles the common case in a single read.
+ * Everything else needs the collection — a stored address that is not lower
+ * case, or a match on the account name — so it is read once and both questions
+ * are asked of it, rather than paying for it twice.
+ */
+async function findRecordFor(
+  uid: string,
+  email: string,
+  googleName: string,
+): Promise<UserProfile | null> {
+  const fast = await queryProfileByEmailExact(email)
+  if (fast) return fast
+  return findExistingRecord(await getAllProfiles(), email, [googleName], uid)
 }
 
 /**
@@ -167,24 +216,20 @@ export async function createSelfRegisteredProfile(
 }
 
 /**
- * Self-registration that first checks whether the gym was already expecting
- * this person under a different email address.
+ * Saving the setup form for someone the app believes has no record.
  *
- * `findOrLinkProfile` matches a pre-registered record by email at sign-in, and
- * that covers the ordinary case. It misses the member who is on the imported
- * list under a personal address and signs in with a work one — nothing matches,
- * and they would end up as a second, empty record beside the one holding the
- * membership they paid for. The legal name they type here is what identifies
- * them instead: the claimed record moves to their Firebase uid carrying its
- * membership, punches and history, and the old document is removed so the
- * directory shows one member rather than two.
+ * It asks once more before believing it. `findOrLinkProfile` has already tried
+ * this member's email and their Google account name; what is new here is the
+ * legal name they have just typed, which is the name the gym's own records are
+ * kept under and frequently not the one Google reports. This is the last point
+ * at which a member of years' standing can still be recognised, and the cost of
+ * missing them is the whole reason this function exists: they register a second
+ * time, and the record holding their pass is left orphaned behind them.
  *
- * A name is not a credential, so the claim is deliberately narrow — see
- * `findClaimableByLegalName` for what it will and will not match. Roles are the
- * one thing never carried across: an imported supervisor has to keep using the
- * email on their record, or be re-granted by an admin. `firestore.rules` agrees
- * independently, since this write goes through the ordinary self-create branch,
- * which rejects a document that arrives holding either flag.
+ * A match keeps everything on the stored record — see `linkRecordToUid`. The
+ * fields the member filled in here are applied on top, because those they have
+ * just affirmed; nothing else is touched. Only when all of it genuinely finds
+ * nobody is a fresh profile created.
  */
 export async function registerOrClaimProfile(
   uid: string,
@@ -212,60 +257,43 @@ export async function registerOrClaimProfile(
     return (await getProfileByUid(uid)) as UserProfile
   }
 
-  let claim: UserProfile | null = null
+  const typed: Partial<Omit<UserProfile, 'uid'>> = {
+    legalName,
+    emergencyContact: JSON.stringify(emergencyContact),
+    profileReviewedAt: new Date().toISOString(),
+    ...(preferredName ? { preferredName } : {}),
+    ...(phone ? { phone } : {}),
+  }
+
+  let match: UserProfile | null = null
   try {
-    claim = findClaimableByLegalName(await getAllProfiles(), legalName, uid)
+    match = findExistingRecord(await getAllProfiles(), email, [legalName, name], uid)
   } catch (e) {
-    // A failed lookup must not block someone signing up. They get a fresh
-    // record, and an admin can merge the duplicate from the members screen.
-    console.warn('[Profile] Legal-name lookup failed:', e)
+    // Unlike the lookup in findOrLinkProfile, this one does not raise. The
+    // member is standing in front of a completed form, and refusing to save it
+    // costs them their sign-up; the worst case here is the duplicate record an
+    // admin can merge, which is what used to happen every time regardless.
+    console.warn('[Profile] Could not check for an existing record before registering:', e)
   }
 
-  if (!claim) {
-    return createSelfRegisteredProfile(
-      uid,
-      name,
-      email,
-      photo,
-      legalName,
-      emergencyContact,
-      preferredName,
-      phone,
-    )
+  if (match) {
+    console.log('[Profile] Registering', uid, 'onto the existing record', match.uid)
+    // Roles are kept only when the match was the email, which the rules can
+    // verify for themselves; a name match must arrive without them.
+    const byEmail = normaliseEmail(match.email) === normaliseEmail(email)
+    return linkRecordToUid(uid, match, { name, email, photo }, byEmail, typed)
   }
 
-  console.log('[Profile] Claiming pre-registered record', claim.uid, 'by legal name')
-  const now = new Date().toISOString()
-  const { uid: oldUid, ...claimed } = claim
-  const additional = mergeAdditionalEmails(claimed.additionalEmails, claimed.email, email)
-  const merged: Omit<UserProfile, 'uid'> = {
-    ...claimed,
+  return createSelfRegisteredProfile(
+    uid,
     name,
     email,
     photo,
     legalName,
-    emergencyContact: JSON.stringify(emergencyContact),
-    isAdmin: false,
-    isSupervisor: false,
-    profileReviewedAt: now,
-    linkedFrom: oldUid,
-    lastUpdatedBy: email,
-    lastUpdatedAt: now,
-    ...(additional.length > 0 ? { additionalEmails: JSON.stringify(additional) } : {}),
-    ...(preferredName ? { preferredName } : {}),
-    ...(phone ? { phone } : {}),
-  }
-  await setDoc(doc(db, USERS, uid), merged)
-  // Non-fatal, exactly as in findOrLinkProfile: the member already holds the
-  // record either way, and an orphan is an admin cleanup rather than a failed
-  // sign-up. firestore.rules lets this through on the strength of the
-  // linkedFrom written above.
-  try {
-    await deleteProfile(oldUid)
-  } catch (e) {
-    console.warn('[Profile] Failed to delete claimed profile doc:', oldUid, e)
-  }
-  return { uid, ...merged }
+    emergencyContact,
+    preferredName,
+    phone,
+  )
 }
 
 /**

@@ -386,19 +386,33 @@ test('a member cannot delete a record they do not name in linkedFrom', async () 
   await assertFails(deleteDoc(doc(db, 'users', 'victim_doc')))
 })
 
-test('a member cannot delete a record whose owner has signed a waiver', async () => {
-  // Someone has used this account. A matching name is nowhere near enough.
+test('a name claim now reaches records with real history', async () => {
+  // This inverts what it used to assert, and it is the widest thing in these
+  // rules. The old bar — no waiver, no sign-in, no confirmation by its owner —
+  // excluded exactly the records a member signing in under a new address needs
+  // found: real members, with a membership and years behind them. A record was
+  // overwritten with a blank one in production because of it.
+  //
+  // What bounds the delete is unchanged: it grants nothing the claim did not.
+  // Anyone who gets here has already had the record moved onto their account,
+  // and the original is an empty duplicate at that point.
   for (const used of [
     { waiverMembership: JSON.stringify({ signedAt: '2026-01-01', signedBy: 'Test Member' }) },
     { waiverLiability: JSON.stringify({ signedAt: '2026-01-01', signedBy: 'Test Member' }) },
     { lastSignInAt: '2026-08-30T18:00:00.000Z' },
-    // Completed the setup form, then wandered off before signing anything.
     { profileReviewedAt: '2026-08-30T18:00:00.000Z' },
   ]) {
     await testEnv.clearFirestore()
     const db = await seedClaim(used)
-    await assertFails(deleteDoc(doc(db, 'users', 'imported_1')))
+    await assertSucceeds(deleteDoc(doc(db, 'users', 'imported_1')))
   }
+})
+
+test('a record with no legal name cannot be claimed by a member without one', async () => {
+  // Empty matching empty would make every nameless record claimable by every
+  // member who has not filled one in.
+  const db = await seedClaim({ legalName: '' }, { legalName: '' })
+  await assertFails(deleteDoc(doc(db, 'users', 'imported_1')))
 })
 
 test('a member cannot delete a privileged record by claiming it', async () => {

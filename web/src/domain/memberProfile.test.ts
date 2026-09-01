@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  findClaimableByLegalName,
+  findExistingRecord,
   findProfileByEmailIn,
   isProfileComplete,
   mergeAdditionalEmails,
@@ -156,61 +156,83 @@ describe('normaliseLegalName', () => {
   })
 })
 
-describe('findClaimableByLegalName', () => {
-  const preRegistered = (over = {}) => ({
+describe('findExistingRecord', () => {
+  const row = (over = {}) => ({
     uid: 'imported_1',
+    email: 'onfile@example.com',
     legalName: 'Jane Smith',
-    isAdmin: false,
-    isSupervisor: false,
     ...over,
   })
 
-  it('matches an imported record on the name the member types', () => {
-    const rows = [preRegistered()]
-    expect(findClaimableByLegalName(rows, ' jane   smith ', 'uid-new')?.uid).toBe('imported_1')
+  it('prefers the email, which is the thing the account actually proves', () => {
+    const rows = [
+      row({ uid: 'by_name', email: 'stale@example.com' }),
+      row({ uid: 'by_email', legalName: 'Someone Else' }),
+    ]
+    expect(findExistingRecord(rows, 'onfile@example.com', ['Jane Smith'], 'uid-new')?.uid).toBe(
+      'by_email',
+    )
   })
 
-  it('finds nothing when no name matches', () => {
-    expect(findClaimableByLegalName([preRegistered()], 'Someone Else', 'uid-new')).toBeNull()
+  it('falls back to the legal name when no record carries the address', () => {
+    // The case that cost a real membership: the gym holds the member under an
+    // address they no longer use, so an email match finds nobody and the app
+    // greeted a member of years' standing as a stranger.
+    expect(findExistingRecord([row()], 'new@gmail.com', ['Jane Smith'], 'uid-new')?.uid).toBe(
+      'imported_1',
+    )
   })
 
-  it('refuses an empty name rather than matching every blank record', () => {
-    expect(findClaimableByLegalName([preRegistered({ legalName: '' })], '  ', 'uid-new')).toBeNull()
+  it('tries the names in the order given', () => {
+    // The typed legal name first, then whatever Google calls the account.
+    const rows = [row({ uid: 'typed' }), row({ uid: 'google', legalName: 'Janey Smith' })]
+    expect(findExistingRecord(rows, 'new@x.com', ['Jane Smith', 'Janey Smith'], 'u')?.uid).toBe(
+      'typed',
+    )
+    expect(findExistingRecord(rows, 'new@x.com', [undefined, 'Janey Smith'], 'u')?.uid).toBe(
+      'google',
+    )
   })
 
-  it('never claims a record someone has already signed into', () => {
-    // A name is not a credential. Anything showing a real person has used the
-    // account puts it out of reach.
-    for (const used of [
-      { waiverMembership: '{"signedAt":"x"}' },
-      { waiverLiability: '{"signedAt":"x"}' },
-      { lastSignInAt: '2026-08-30T18:00:00.000Z' },
-      // Completed the setup form, then wandered off before signing anything.
-      { profileReviewedAt: '2026-08-30T18:00:00.000Z' },
-    ]) {
-      expect(findClaimableByLegalName([preRegistered(used)], 'Jane Smith', 'uid-new')).toBeNull()
-    }
+  it('matches a name whatever its case, accents or spacing', () => {
+    expect(findExistingRecord([row()], 'new@x.com', ['  jane   SMITH '], 'u')?.uid).toBe(
+      'imported_1',
+    )
   })
 
-  it('never claims a privileged record', () => {
-    // Legal names are public knowledge around a gym, so a match here would
-    // hand out supervisor rights to whoever typed one.
-    expect(
-      findClaimableByLegalName([preRegistered({ isSupervisor: true })], 'Jane Smith', 'uid-new'),
-    ).toBeNull()
-    expect(
-      findClaimableByLegalName([preRegistered({ isAdmin: true })], 'Jane Smith', 'uid-new'),
-    ).toBeNull()
+  it('finds records a member has really used, which is the point', () => {
+    // The narrower version this replaced skipped anything bearing a waiver, a
+    // sign-in or a confirmation — so the records most worth finding, belonging
+    // to real members with real history, were the ones it would not find.
+    const used = row({
+      waiverMembership: '{"signedAt":"x"}',
+      lastSignInAt: '2026-08-30T18:00:00.000Z',
+      profileReviewedAt: '2026-08-30T18:00:00.000Z',
+    })
+    expect(findExistingRecord([used], 'new@gmail.com', ['Jane Smith'], 'uid-new')?.uid).toBe(
+      'imported_1',
+    )
   })
 
   it('refuses to guess between two people of the same name', () => {
-    const rows = [preRegistered(), preRegistered({ uid: 'imported_2' })]
-    expect(findClaimableByLegalName(rows, 'Jane Smith', 'uid-new')).toBeNull()
+    const rows = [row(), row({ uid: 'imported_2' })]
+    expect(findExistingRecord(rows, 'new@x.com', ['Jane Smith'], 'uid-new')).toBeNull()
   })
 
-  it('does not match the caller against their own record', () => {
-    expect(findClaimableByLegalName([preRegistered({ uid: 'uid-new' })], 'Jane Smith', 'uid-new'))
-      .toBeNull()
+  it('still matches by email when the name is ambiguous', () => {
+    const rows = [row({ email: 'a@x.com' }), row({ uid: 'imported_2', email: 'b@x.com' })]
+    expect(findExistingRecord(rows, 'b@x.com', ['Jane Smith'], 'uid-new')?.uid).toBe('imported_2')
+  })
+
+  it('never matches the caller against their own record', () => {
+    expect(
+      findExistingRecord([row({ uid: 'uid-new' })], 'onfile@example.com', ['Jane Smith'], 'uid-new'),
+    ).toBeNull()
+  })
+
+  it('ignores empty names rather than matching every record without one', () => {
+    const rows = [row({ legalName: '' }), row({ uid: 'imported_2', legalName: undefined })]
+    expect(findExistingRecord(rows, 'new@x.com', ['', '   ', undefined], 'uid-new')).toBeNull()
   })
 })
 

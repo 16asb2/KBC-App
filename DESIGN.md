@@ -179,15 +179,37 @@ have to happen on that first Google sign-in, and each is a separate rule:
    real Firebase uid and the original deleted. `linkedFrom` names the original,
    which is what lets `firestore.rules` verify that any `isAdmin`/`isSupervisor`
    being carried over was already granted, and now also what permits the delete.
-2. **Matched by legal name** (`registerOrClaimProfile`), for the member whose
-   Google address is not the one on the sheet. They arrive at the setup form as
-   a stranger and the name they type identifies them. Deliberately narrower than
-   the email path, because *a name is not a credential*: it only ever matches a
-   record nobody has used (no waiver, no sign-in, not confirmed by its owner), a
-   name matching two such records matches neither, and roles are never carried
-   across — an imported supervisor has to sign in with the address on their
-   record, or be re-granted.
-3. **Shown to its owner once** (`needsProfileReview`). A record can be complete
+2. **Matched by legal name**, for the member whose Google address is not the
+   one the gym has on file. Tried twice, because there are two names available
+   at two different moments: at sign-in, against whatever Google reports as the
+   account name, so the setup form can open already filled in; and again when
+   that form is saved, against the legal name the member typed, which is the
+   name the gym's own records are kept under and often not the one Google has.
+
+   Two limits, and they are the only ones: a name matching two records matches
+   neither, and roles never cross a name match — `firestore.rules` enforces the
+   second independently, since a name-matched write reaches only the self-create
+   branch, which refuses a document carrying either flag. An imported supervisor
+   must therefore sign in with the address on their record, or be re-granted.
+
+   **This is the widest rule in the system, and it is deliberate.** A legal name
+   is not a credential; it is public knowledge around a gym. An earlier version
+   matched only records nobody had ever used — no waiver, no sign-in, not
+   confirmed by its owner — which sounds prudent and excluded precisely the
+   records worth finding: real members with real history. In production that
+   version greeted a member of years' standing as a stranger and let a blank
+   membership be written where a paid one had been. Given a choice between
+   losing a member's membership and letting someone who knows a member's full
+   legal name reach their record, this app now takes the second. Revisit if the
+   co-op grows past the point where members are known to each other.
+3. **Never lossy.** Whichever way a record is matched, the sign-in overwrites
+   exactly three things on it — email, display name, photo — plus whatever the
+   member typed into the setup form. Pass, punches, dates, waivers,
+   `memberSince` and sign-in history are carried across untouched
+   (`linkRecordToUid`). The one path that writes a whole fresh document checks
+   first that the uid really is empty.
+
+4. **Shown to its owner once** (`needsProfileReview`). A record can be complete
    and still wrong: nobody has checked what the spreadsheet said, and the waiver
    on the next screen is signed against it. The setup form appears prefilled,
    and `profileReviewedAt` records that they confirmed it. Members who onboarded

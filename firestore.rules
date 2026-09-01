@@ -122,12 +122,19 @@ service cloud.firestore {
     // lastSignInAt, and their duplicate should still go.
     //
     // Claimed by legal name: no proof at all, since a name is public knowledge
-    // around a gym. Only a record nobody has ever used qualifies — no waiver,
-    // no sign-in, no confirmation of it by its owner, neither role flag —
-    // which is the same bar
-    // domain/memberProfile.ts#isClaimablePreRegistration sets client-side.
-    // Anyone able to satisfy that could have claimed the record instead, which
-    // moves it just as surely, so the delete grants nothing new.
+    // around a gym. The bound is not that the delete is safe in isolation — it
+    // is that it grants nothing the claim did not. Anyone who can satisfy this
+    // has already had the record itself moved onto their account by
+    // domain/memberProfile.ts#findExistingRecord, membership and history and
+    // all; leaving the emptied original behind would only show the member
+    // twice in the directory.
+    //
+    // This used to also require a record nobody had ever used — no waiver, no
+    // sign-in, no confirmation by its owner. That was dropped deliberately,
+    // and it is the widest thing in this file: the records it excluded were
+    // real members with real history, which are precisely the ones a member
+    // signing in under a new address needs found. A match on legal name will
+    // now reach them. See the note in DESIGN.md.
     //
     // The name test here is only case- and padding-insensitive, where the
     // client also folds accents. A pair that matches there and not here simply
@@ -142,10 +149,7 @@ service cloud.firestore {
     }
 
     function claimedByLegalName() {
-      return resource.data.get('waiverMembership', '') == '' &&
-        resource.data.get('waiverLiability', '') == '' &&
-        resource.data.get('lastSignInAt', '') == '' &&
-        resource.data.get('profileReviewedAt', '') == '' &&
+      return resource.data.get('legalName', '').trim().lower() != '' &&
         resource.data.get('legalName', '').trim().lower() ==
           memberDoc().data.get('legalName', '').trim().lower();
     }
