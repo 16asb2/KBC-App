@@ -6,15 +6,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { getAllProfiles, updateProfile } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
-
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((w) => w[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
-}
+import { initials } from '@/utils/name'
 
 // Ported from mobile@1cdfada/app/admin-management.tsx.
 export function AdminManagementPage() {

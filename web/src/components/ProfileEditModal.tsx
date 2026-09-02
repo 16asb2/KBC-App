@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
-import type { EmergencyContact, UserProfile } from '@/types/member'
+import { parseAdditionalEmails, parseEmergencyContact } from '@/domain/memberProfile'
+import type { UserProfile } from '@/types/member'
 
 // Ported from mobile@1cdfada/components/profile-edit-modal.tsx.
 //
@@ -9,24 +10,6 @@ import type { EmergencyContact, UserProfile } from '@/types/member'
 // as JSON *strings*, not native Firestore maps — admin-web/ parses them that way
 // and every existing production document is already in that shape. See the
 // data-format constraint in web/CLAUDE.md before changing it.
-
-function parseEmergencyContact(raw: string | undefined): EmergencyContact {
-  try {
-    const ec = JSON.parse(raw || '{}') as Partial<EmergencyContact>
-    return { name: ec.name ?? '', relationship: ec.relationship ?? '', phone: ec.phone ?? '' }
-  } catch {
-    return { name: '', relationship: '', phone: '' }
-  }
-}
-
-function parseAdditionalEmails(raw: string | undefined): string[] {
-  try {
-    const list = JSON.parse(raw || '[]')
-    return Array.isArray(list) ? list.filter((e): e is string => typeof e === 'string') : []
-  } catch {
-    return []
-  }
-}
 
 export function ProfileEditModal({
   profile,
@@ -45,7 +28,11 @@ export function ProfileEditModal({
   const [phone, setPhone] = useState(profile.phone ?? '')
   const [comments, setComments] = useState(profile.additionalComments ?? '')
 
-  const initialEc = parseEmergencyContact(profile.emergencyContact)
+  const initialEc = parseEmergencyContact(profile.emergencyContact) ?? {
+    name: '',
+    relationship: '',
+    phone: '',
+  }
   const [ecName, setEcName] = useState(initialEc.name)
   const [ecRelation, setEcRelation] = useState(initialEc.relationship)
   const [ecPhone, setEcPhone] = useState(initialEc.phone)

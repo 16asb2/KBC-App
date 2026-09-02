@@ -34,6 +34,9 @@ const CalendarPage = lazy(() =>
 const MembersPage = lazy(() =>
   import('@/pages/MembersPage').then((m) => ({ default: m.MembersPage })),
 )
+const ProfilePage = lazy(() =>
+  import('@/pages/ProfilePage').then((m) => ({ default: m.ProfilePage })),
+)
 const AdminManagementPage = lazy(() =>
   import('@/pages/AdminManagementPage').then((m) => ({ default: m.AdminManagementPage })),
 )
@@ -81,6 +84,10 @@ function App() {
                 >
                   <Route index element={<Navigate to="/home" replace />} />
                   <Route path="/home" element={<HomePage />} />
+                  {/* Every member's own record — deliberately outside the
+                      RequireRole gate below, which is what used to put a
+                      member's own profile behind supervisor permissions. */}
+                  <Route path="/profile" element={<ProfilePage />} />
                   <Route path="/logbook" element={<LogbookPage />} />
                   <Route path="/schedule" element={<SchedulePage />} />
                   <Route path="/calendar" element={<CalendarPage />} />
