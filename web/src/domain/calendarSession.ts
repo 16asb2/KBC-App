@@ -1,3 +1,4 @@
+import { isSupervisorEvent, stripRoleMarkers } from '@/domain/calendarEvent'
 import type { CalendarEvent, CalendarParticipant } from '@/services/calendar'
 
 // Pure logic behind calendar sessions, ported from the helpers embedded in
@@ -35,15 +36,21 @@ export function buildTitle(participants: CalendarParticipant[]): string {
  * and the KBC calendar still holds them. Their uids are synthetic and prefixed
  * `legacy_`, so a member can't be matched against one by uid — joining such an
  * event appends rather than deduplicates, which is the safe direction.
+ *
+ * The marker is read the same loose way `isSupervisorEvent` reads it, and for
+ * the same reason: a session typed into Google Calendar by hand says "Artur
+ * super" or "Super - Artur" as often as "Artur (super)". Insisting on the
+ * bracketed suffix here would classify such an event as a session and then put
+ * an unsupervised roster on it, with "Artur super" as somebody's name.
  */
 export function reconstructParticipantsFromTitle(summary: string): CalendarParticipant[] {
   return summary.split(' + ').map((part, i) => {
     const trimmed = part.trim()
-    const isSup = /\(sup(er)?\)$/i.test(trimmed)
+    const isSup = isSupervisorEvent(trimmed)
     // "(requested)" comes off too — it is a status marker on the title, not
     // part of anyone's name, and leaving it on shows "Garry (requested)" as the
     // person in the roster.
-    const name = trimmed.replace(/\s*\((?:sup(?:er)?|requested)\)$/i, '').trim()
+    const name = stripRoleMarkers(trimmed)
     return {
       uid: `legacy_${i}_${name.toLowerCase().replace(/\s+/g, '_')}`,
       name,

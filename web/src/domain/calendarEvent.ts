@@ -10,24 +10,64 @@ import { isSameDay } from '@/utils/datetime'
 //   Climb session — a supervised slot. Its title IS its roster, built by
 //     domain/calendarSession.ts#buildTitle: "Artur (super)", or
 //     "Artur (super) + Garry + Andy" once people join, or
-//     "Artur (super) + Bea (super)" with two supervisors on. So a session is
-//     recognised by *any* " + "-separated segment ending in "(super)".
+//     "Artur (super) + Bea (super)" with two supervisors on.
 //   Special event — Ladies Night, a comp, a closure. Anything else on the
 //     calendar, including events put there directly in Google Calendar.
 //
-// The suffix has to be anchored to the end of a segment, not merely present
-// somewhere in the title: "Ladies Night (super fun)" is a special event.
+// The word "super" anywhere in a title makes it a session. That is deliberately
+// loose, and it is loose for the transition: sessions are still being written
+// straight into Google Calendar by hand, where nobody types the app's roster
+// format. "Artur super", "Super - Artur", "supervised by Bea" and "Artur (sup)"
+// are all the same thing to the person writing them, and the app used to read
+// every one of those but the last as a special event — blue on the calendar,
+// not joinable, and not counted by the gym-open banner, which is the part that
+// actually misleads somebody deciding whether to come climb.
+//
+// What it costs: a title using "super" as an adjective — "Ladies Night (super
+// fun)" — now reads as a session. That case used to be excluded by anchoring
+// the marker to the end of a name, which is the same anchor that threw out
+// every hand-typed session above. An event the app itself created carries
+// `type: 'specialEvent'` and is unaffected however it is named, so the way to
+// keep a "super"-titled event blue is to create it in the app.
+//
+// Whole words only, and only this family of them: "sup", "super", "supervised",
+// "supervisor", "supervising". Not "soup", not "supper", and not "superb" or
+// "supermarket" — a bare \w* after "super" would swallow those, and "Superb Owl
+// night" is a special event by anybody's reading.
+const SUPER_WORD = /\bsup(?:er|ervis\w*)?\b/i
+/** The same match, for stripping every occurrence out of a name. */
+const SUPER_WORD_GLOBAL = new RegExp(SUPER_WORD.source, 'gi')
 
-const SUPER_SUFFIX = /\((?:sup|super)\)\s*$/i
+// The one thing a loose match must not do is read a title that says the gym is
+// *unsupervised* as a session — that turns the Home banner into "OPEN NOW, come
+// climb". A negated marker is struck out before the test, so "No supervisor
+// tonight", "Non-super event" and "Unsupervised open gym" stay special, while a
+// title carrying an un-negated marker anywhere else in it still counts.
+const NEGATED_SUPER = /\b(?:no|non|not|un|without)[\s-]*sup(?:er|ervis\w*)?\b/gi
 const REQUESTED_SUFFIX = /\(requested\)\s*$/i
 
 function titleSegments(summary: string | undefined): string[] {
   return (summary ?? '').split('+').map((s) => s.trim())
 }
 
-/** Matches both the current "(super)" and legacy "(sup)" roster suffixes. */
+/** The supervisor marker in any of its shapes — "(super)", "(sup)", or bare. */
 export function isSupervisorEvent(summary: string | undefined): boolean {
-  return titleSegments(summary).some((part) => SUPER_SUFFIX.test(part))
+  return SUPER_WORD.test((summary ?? '').replace(NEGATED_SUPER, ' '))
+}
+
+/**
+ * A name with the role markers taken off it, however they were written:
+ * "Artur (super)" → "Artur", "Super - Artur" → "Artur", "Bea (requested)" →
+ * "Bea". Leftover separators go too, or stripping a leading marker would leave
+ * the punctuation that joined it to the name.
+ */
+export function stripRoleMarkers(name: string): string {
+  return name
+    .replace(/\(\s*(?:sup(?:er|ervis\w*)?|requested)\s*\)/gi, '')
+    .replace(SUPER_WORD_GLOBAL, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[\s\-–—:,]+|[\s\-–—:,]+$/g, '')
+    .trim()
 }
 
 export function isRequestedEvent(summary: string | undefined): boolean {
@@ -288,7 +328,11 @@ export function getGymStatusFromEvents(events: CalendarEvent[], now: Date = new 
       const end = new Date(e.end.dateTime)
       return s <= now && end > latest ? end : latest
     }, new Date(current.end.dateTime!))
-    const supervisorName = current.summary?.split(/[(+]/)[0]?.trim() || undefined
+    // The first name on the title, with whatever marked it as the supervisor's
+    // taken off. Splitting on "(" would do for "Artur (super)" and nothing else
+    // — a hand-typed "Artur super" has no bracket to split on, and reported the
+    // supervisor as "Artur super".
+    const supervisorName = stripRoleMarkers(current.summary?.split('+')[0] ?? '') || undefined
     return { open: true, until: openEnd, supervisorName }
   }
   const upcoming = supers

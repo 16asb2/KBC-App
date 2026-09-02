@@ -37,9 +37,43 @@ describe('isSupervisorEvent', () => {
     expect(isSupervisorEvent(undefined)).toBe(false)
   })
 
-  it('requires the suffix to end a name, not merely appear in the title', () => {
-    expect(isSupervisorEvent('Ladies Night (super fun)')).toBe(false)
-    expect(isSupervisorEvent('(super) secret comp')).toBe(false)
+  // The transition: sessions are still typed straight into Google Calendar,
+  // where nobody writes the app's roster format.
+  it('matches the word wherever it appears, however it is written', () => {
+    expect(isSupervisorEvent('Artur super')).toBe(true)
+    expect(isSupervisorEvent('Super - Artur')).toBe(true)
+    expect(isSupervisorEvent('SUPER Artur 6-9')).toBe(true)
+    expect(isSupervisorEvent('supervised by Bea')).toBe(true)
+    expect(isSupervisorEvent('Artur supervisor')).toBe(true)
+    expect(isSupervisorEvent('Bea supervising')).toBe(true)
+  })
+
+  it('matches the word and not merely the letters', () => {
+    expect(isSupervisorEvent('Soup night')).toBe(false)
+    expect(isSupervisorEvent('Last supper')).toBe(false)
+    expect(isSupervisorEvent('Superb Owl party')).toBe(false)
+    expect(isSupervisorEvent('Supermarket run')).toBe(false)
+  })
+
+  // The banner on Home reads "OPEN NOW" off these, so a title saying the gym is
+  // unsupervised must not be read as a session.
+  it('does not count a negated marker', () => {
+    expect(isSupervisorEvent('No supervisor tonight')).toBe(false)
+    expect(isSupervisorEvent('Non-super event')).toBe(false)
+    expect(isSupervisorEvent('Unsupervised open gym')).toBe(false)
+    expect(isSupervisorEvent('Not supervised')).toBe(false)
+  })
+
+  it('still counts a real marker elsewhere in a title that negates one', () => {
+    expect(isSupervisorEvent('Artur (super) — no supervisor after 8')).toBe(true)
+  })
+
+  // The cost of the rule above, stated where it will be noticed if it starts to
+  // bite: "super" as an adjective now reads as a session. An event the app
+  // created carries type: 'specialEvent' and stays special whatever its title
+  // says, which is the way out.
+  it('does read an adjective as a session', () => {
+    expect(isSupervisorEvent('Ladies Night (super fun)')).toBe(true)
   })
 })
 
@@ -101,6 +135,16 @@ describe('getGymStatusFromEvents', () => {
       expect(status.supervisorName).toBe('Artur')
       expect(status.until.toISOString()).toBe('2026-06-15T20:00:00.000Z')
     }
+  })
+
+  it('is open during a session someone typed straight into Google Calendar', () => {
+    const events = [
+      timedEvent('Artur super', '2026-06-15T17:00:00.000Z', '2026-06-15T20:00:00.000Z'),
+    ]
+    const status = getGymStatusFromEvents(events, now)
+    expect(status.open).toBe(true)
+    // The marker comes off the name — this used to read "Artur super".
+    if (status.open) expect(status.supervisorName).toBe('Artur')
   })
 
   it('is closed with the next supervisor slot when none is current', () => {
