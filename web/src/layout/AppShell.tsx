@@ -5,7 +5,43 @@ import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { isPrivileged } from '@/domain/roles'
 import { KBC } from '@/constants/theme'
+import { initials } from '@/utils/name'
 import { NAV_ITEMS } from './nav'
+
+/**
+ * The way to your own profile, from anywhere in the app.
+ *
+ * In the header rather than the nav: the bottom bar is already six items wide
+ * on a phone, and a seventh would squeeze the tabs a member actually navigates
+ * with. An avatar in the corner is where people look for their own account
+ * anyway, and it is on screen at every size.
+ */
+function ProfileLink() {
+  const { user } = useAuth()
+  const { profile } = useProfile()
+  const name = profile?.preferredName || profile?.name || user?.displayName || ''
+  const photo = profile?.photo ?? user?.photoURL ?? null
+
+  return (
+    <NavLink
+      to="/profile"
+      title="My profile"
+      aria-label="My profile"
+      className={({ isActive }) =>
+        `flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-extrabold text-white ${
+          isActive ? 'ring-2 ring-white' : ''
+        }`
+      }
+      style={{ backgroundColor: KBC.pink }}
+    >
+      {photo ? (
+        <img src={photo} alt="" className="size-full object-cover" referrerPolicy="no-referrer" />
+      ) : (
+        initials(name) || '👤'
+      )}
+    </NavLink>
+  )
+}
 
 function Header() {
   const { user, signOut } = useAuth()
@@ -22,15 +58,18 @@ function Header() {
           <p className="truncate text-[11px] text-neutral-400">Kingston Boulder Cooperative</p>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() => void signOut()}
-        className="shrink-0 rounded-lg border px-3 py-1.5 text-[13px] font-semibold"
-        style={{ borderColor: KBC.pink, color: KBC.pink }}
-        title={user?.email ?? undefined}
-      >
-        Sign Out
-      </button>
+      <div className="flex shrink-0 items-center gap-2.5">
+        <ProfileLink />
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className="shrink-0 rounded-lg border px-3 py-1.5 text-[13px] font-semibold"
+          style={{ borderColor: KBC.pink, color: KBC.pink }}
+          title={user?.email ?? undefined}
+        >
+          Sign Out
+        </button>
+      </div>
     </header>
   )
 }

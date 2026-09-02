@@ -190,6 +190,23 @@ export function maskEmail(email: string | undefined | null): string {
 }
 
 /**
+ * The other addresses on a record.
+ *
+ * Stored as a JSON *string* holding an array, not a native list — see the
+ * data-format constraint in web/CLAUDE.md. Anything that isn't one reads as no
+ * addresses at all, since the alternative is a screen that fails to render over
+ * a field nobody can see.
+ */
+export function parseAdditionalEmails(stored: string | undefined | null): string[] {
+  try {
+    const parsed = JSON.parse(stored || '[]')
+    return Array.isArray(parsed) ? parsed.filter((e): e is string => typeof e === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/**
  * The claimed record's address kept alongside the new one rather than dropped.
  *
  * Claiming replaces `email` with the Google account actually signing in, and
@@ -201,13 +218,7 @@ export function mergeAdditionalEmails(
   oldEmail: string | undefined,
   newEmail: string,
 ): string[] {
-  let list: string[] = []
-  try {
-    const parsed = JSON.parse(stored || '[]')
-    if (Array.isArray(parsed)) list = parsed.filter((e): e is string => typeof e === 'string')
-  } catch {
-    list = []
-  }
+  const list = parseAdditionalEmails(stored)
   const old = (oldEmail ?? '').toLowerCase().trim()
   const known = new Set([newEmail.toLowerCase().trim(), ...list.map((e) => e.toLowerCase().trim())])
   if (old && !known.has(old)) list.push(old)

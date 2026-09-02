@@ -1,29 +1,20 @@
 import { useEffect, useState } from 'react'
 import { MemberDetailModal } from '@/components/MemberDetailModal'
 import { MemberHistoryModal, type HistoryKind } from '@/components/MemberHistoryModal'
+import { PassBadge } from '@/components/PassBadge'
 import { ProfileEditModal } from '@/components/ProfileEditModal'
 import { KBC } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { isAdmin } from '@/domain/roles'
-import { accessPassLabel, isDatedPass } from '@/domain/membershipPass'
+import { isDatedPass } from '@/domain/membershipPass'
 import { checkAndClearLapsedPass, getAllProfiles, updateProfile } from '@/services/profiles'
-import type { AccessPassId, UserProfile } from '@/types/member'
+import type { UserProfile } from '@/types/member'
 import { formatShortDate } from '@/utils/datetime'
-
-// The badge names the pass. Colour carries the confirmation state instead, so
-// the two things the old membershipStatus conflated stay visibly separate.
-const PASS_COLORS: Record<AccessPassId, string> = {
-  annual: KBC.green, '8month': KBC.green, '4month': KBC.green, '1month': KBC.green,
-  punch: KBC.cyan, dropin: KBC.cyan, none: '#aaa',
-}
+import { initials } from '@/utils/name'
 
 function formatDate(iso: string | null | undefined): string {
   return iso ? formatShortDate(iso) : '—'
-}
-
-function initials(name: string) {
-  return name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
 }
 
 // Ported from mobile@1cdfada/app/(tabs)/members.tsx. MemberDetailModal covers
@@ -43,13 +34,13 @@ export function MembersPage() {
   const [history, setHistory] = useState<{ member: UserProfile; kind: HistoryKind } | null>(null)
 
   const viewerIsAdmin = isAdmin(user?.email, profile?.isAdmin)
-  const viewerIsSupervisor = profile?.isSupervisor ?? false
-  const canSeeAllMembers = viewerIsAdmin || viewerIsSupervisor
 
+  // No role check here: App.tsx only renders this route behind
+  // RequireRole check={isPrivileged}, and firestore.rules is the real bound on
+  // who may read the collection either way.
   useEffect(() => {
-    if (!canSeeAllMembers) return
     loadMembers()
-  }, [canSeeAllMembers])
+  }, [])
 
   async function loadMembers(): Promise<UserProfile[]> {
     setLoading(true)
@@ -75,102 +66,60 @@ export function MembersPage() {
     if (freshMember) setEditing(freshMember)
   }
 
+  // Both fields default to '' rather than being read straight off the record:
+  // a document written by hand can be missing either, and one of them would
+  // otherwise take out the whole directory (same reason getAllProfiles guards
+  // its sort).
+  const term = search.toLowerCase()
   const filtered = allMembers.filter(
-    (m) => m.name.toLowerCase().includes(search.toLowerCase()) || m.email.toLowerCase().includes(search.toLowerCase()),
+    (m) => (m.name ?? '').toLowerCase().includes(term) || (m.email ?? '').toLowerCase().includes(term),
   )
 
   if (!profile) return null
 
   return (
     <div className="mx-auto max-w-2xl space-y-5 p-6 pb-16">
-      {/* Own profile card */}
-      <div className="rounded-2xl bg-white p-5 shadow-sm">
-        <div className="flex items-start gap-4">
-          <div
-            className="flex size-16 shrink-0 items-center justify-center rounded-full text-lg font-extrabold text-white"
-            style={{ backgroundColor: KBC.pink }}
-          >
-            {initials(profile.preferredName || profile.name)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="font-bold text-black">{profile.preferredName || profile.name}</p>
-            {profile.isSupervisor && <p className="-mt-0.5 text-xs font-bold" style={{ color: KBC.pink }}>Supervisor</p>}
-            {profile.preferredName && <p className="text-xs text-neutral-500">{profile.name}</p>}
-            <p className="mt-1 text-sm text-neutral-500">{profile.preferredEmail || profile.email}</p>
-            {profile.phone && <p className="text-sm text-neutral-500">📞 {profile.phone}</p>}
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              <PassBadge pass={profile.membershipAccessPass} confirmed={profile.membershipConfirmed} />
-              {viewerIsAdmin && <Tag color={KBC.purple}>ADMIN</Tag>}
-              {profile.isSupervisor && !viewerIsAdmin && <Tag color={KBC.pink}>SUPER</Tag>}
-            </div>
-            {isDatedPass(profile.membershipAccessPass) && profile.membershipStart && (
-              <p className="mt-2 text-xs text-neutral-500">
-                {accessPassLabel(profile.membershipAccessPass)} · {formatDate(profile.membershipStart)} →{' '}
-                {formatDate(profile.membershipExpiry)}
-              </p>
-            )}
-            {profile.punchPassRemaining > 0 && (
-              <p className="mt-1 text-xs text-neutral-500">
-                🎟 {profile.punchPassRemaining} punch{profile.punchPassRemaining !== 1 ? 'es' : ''} remaining
-              </p>
-            )}
-            <p className="mt-1 text-xs text-neutral-400">Member since {formatDate(profile.memberSince)}</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => setEditingProfile(profile)}
-          className="mt-4 w-full rounded-xl border p-2.5 text-sm font-bold"
-          style={{ borderColor: KBC.cyan, color: KBC.cyan }}
-        >
-          Edit My Profile
-        </button>
-      </div>
-
-      {/* Members list */}
-      {canSeeAllMembers ? (
-        <>
-          <h2 className="text-xs font-bold tracking-wide text-neutral-400 uppercase">All Members</h2>
-          <input
-            className="kbc-input"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or email…"
-          />
-          {loading ? (
-            <p className="pt-6 text-center text-sm text-neutral-500">Loading…</p>
-          ) : (
-            <div className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-white shadow-sm">
-              {filtered.map((m) => (
-                <button
-                  key={m.uid}
-                  type="button"
-                  onClick={() => setEditing(m)}
-                  className="flex w-full items-center gap-3 p-3.5 text-left"
-                >
-                  <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-sm font-extrabold text-neutral-600">
-                    {initials(m.name)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[15px] font-semibold text-neutral-900">
-                      {m.preferredName || m.name}
-                      {m.isSupervisor && <span className="ml-1.5 text-xs font-bold" style={{ color: KBC.pink }}>(Super)</span>}
-                    </p>
-                    <p className="truncate text-xs text-neutral-500">
-                      {isDatedPass(m.membershipAccessPass) && m.membershipExpiry
-                        ? `Until ${formatDate(m.membershipExpiry)}`
-                        : m.email}
-                    </p>
-                  </div>
-                  <PassBadge pass={m.membershipAccessPass} confirmed={m.membershipConfirmed} />
-                </button>
-              ))}
-              {filtered.length === 0 && <p className="p-4 text-center text-sm text-neutral-400">No members found.</p>}
-            </div>
-          )}
-        </>
+      {/* The directory, and only the directory. A member's own record used to
+          sit in a card above this list, which meant it was reachable only by
+          the people this route lets in — everybody else could not see their own
+          profile at all. It lives on /profile now, for everyone. */}
+      <h2 className="text-xs font-bold tracking-wide text-neutral-400 uppercase">All Members</h2>
+      <input
+        className="kbc-input"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search by name or email…"
+      />
+      {loading ? (
+        <p className="pt-6 text-center text-sm text-neutral-500">Loading…</p>
       ) : (
-        <p className="text-sm text-neutral-500">Only supervisors and admins can view the full member list.</p>
+        <div className="divide-y divide-neutral-100 overflow-hidden rounded-2xl bg-white shadow-sm">
+          {filtered.map((m) => (
+            <button
+              key={m.uid}
+              type="button"
+              onClick={() => setEditing(m)}
+              className="flex w-full items-center gap-3 p-3.5 text-left"
+            >
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-sm font-extrabold text-neutral-600">
+                {initials(m.name)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[15px] font-semibold text-neutral-900">
+                  {m.preferredName || m.name}
+                  {m.isSupervisor && <span className="ml-1.5 text-xs font-bold" style={{ color: KBC.pink }}>(Super)</span>}
+                </p>
+                <p className="truncate text-xs text-neutral-500">
+                  {isDatedPass(m.membershipAccessPass) && m.membershipExpiry
+                    ? `Until ${formatDate(m.membershipExpiry)}`
+                    : m.email}
+                </p>
+              </div>
+              <PassBadge pass={m.membershipAccessPass} confirmed={m.membershipConfirmed} />
+            </button>
+          ))}
+          {filtered.length === 0 && <p className="p-4 text-center text-sm text-neutral-400">No members found.</p>}
+        </div>
       )}
 
       {editing && (
@@ -206,28 +155,5 @@ export function MembersPage() {
         />
       )}
     </div>
-  )
-}
-
-function PassBadge({ pass, confirmed }: { pass: AccessPassId; confirmed: boolean }) {
-  // An unconfirmed pass is shown as what was bought, marked pending — not as a
-  // pass they hold, and not as the bare word "pending" either.
-  const color = pass === 'none' || confirmed ? PASS_COLORS[pass] : KBC.orange
-  return (
-    <span
-      className="shrink-0 rounded-full px-2 py-1 text-[10px] font-extrabold tracking-wide text-white"
-      style={{ backgroundColor: color }}
-    >
-      {accessPassLabel(pass).toUpperCase()}
-      {pass !== 'none' && !confirmed && ' · PENDING'}
-    </span>
-  )
-}
-
-function Tag({ color, children }: { color: string; children: React.ReactNode }) {
-  return (
-    <span className="rounded-full px-1.5 py-0.5 text-[10px] font-extrabold tracking-wide text-white" style={{ backgroundColor: color }}>
-      {children}
-    </span>
   )
 }

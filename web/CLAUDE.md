@@ -50,7 +50,8 @@ See git log for exact scope per commit.
 ```
 src/
   App.tsx        — route tree: /login, then RequireAuth → OnboardingGate →
-                   (/setup, /waiver/:type) or AppShell → the six tab routes
+                   (/setup, /waiver/:type) or AppShell → the six tab routes,
+                   plus /profile (every member's own record, no role gate)
   lib/firebase.ts — initializeApp()/getAuth()/getFirestore()/googleProvider
 
   types/member.ts — UserProfile, AccessPassId, WaiverRecord, EmergencyContact
@@ -60,6 +61,8 @@ src/
     memberProfile.ts    — what a finished member record is, whether its owner
                           has confirmed it, and which pre-registered record a
                           member may claim by legal name
+    memberAccess.ts     — reading a member's own access off their record: pass
+                          state, days left, pending purchases, signed waivers
     membershipPass.ts   — PASS_OPTIONS, accessPassLabel(), isDatedPass(),
                           membershipGrantsEntry(), passFromDates()
     roles.ts            — isAdminFor()/isAdmin()/isPrivileged()
@@ -97,7 +100,10 @@ src/
   pages/         — one per route: Login, NewMemberSetup, Waiver, Home, Schedule,
                    Calendar, Members, AdminManagement, Boulders, ClimbLog,
                    Logbook (the gym sign-in book — distinct from ClimbLog, which
-                   is the "Log Book" tab and holds a member's own climbs)
+                   is the "Log Book" tab and holds a member's own climbs),
+                   Profile (a member's own record — passes, personal details,
+                   waivers; reached from the avatar in the header. Members is
+                   the directory and nothing else)
   components/    — shared UI + the modals each page opens (Modal, BadgeIcon,
                    GradeBar, EffortBar, StarRating, DropdownPicker, InstallPrompt,
                    GymMap (the floor-plan wall picker), and the
