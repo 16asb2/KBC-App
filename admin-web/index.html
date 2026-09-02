@@ -24,7 +24,13 @@
 
     #denied-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center}
 
-    #app-screen{display:flex;flex-direction:column;min-height:100vh}
+    /* The shell is exactly one viewport tall and never scrolls itself: the
+       header and the nav stay put, and whatever is below them gets a known
+       height to divide up. Without that, a section that wants to fill the
+       screen has nothing to fill — height:100% against an auto-height parent
+       is ignored, which is why the directory's scrollbar used to end up
+       wherever the page's own overflow happened to put it. */
+    #app-screen{display:flex;flex-direction:column;height:100svh;min-height:100svh;overflow:hidden}
     header{background:#0d1b2a;color:#fff;display:flex;align-items:center;gap:10px;padding:0 20px;height:54px;flex-shrink:0}
     .header-title{font-weight:800;font-size:17px;flex:1}.header-user{font-size:13px;color:#8ab}
     #drive-btn{font-size:12px;padding:4px 12px;border-radius:12px;cursor:pointer;border:none;font-weight:600}
@@ -41,8 +47,20 @@
     /* Full window width. The directory carries a column per profile field
        and was being squeezed into 1200px on a monitor with far more to
        give, which turned a readable table into a sideways scroll. */
-    main{flex:1;padding:24px;margin:0 auto;width:100%}
+    main{flex:1;min-height:0;padding:24px;margin:0 auto;width:100%;overflow:auto;display:flex;flex-direction:column}
     .section{display:none}.section.active{display:block}
+    /* A section that IS its table: it takes the whole area under the nav and
+       hands what is left after its controls to the table box, so the table's
+       horizontal scrollbar sits on the bottom edge of the window and stays
+       there. Full-bleed, because a card around a table this wide only buys a
+       second inset for the same content — and the page's padding was the
+       reason there were two horizontal scrollbars, the page's and the
+       table's, neither of them where you wanted one. */
+    body.fullbleed main{padding:0}
+    .section.active.section-fill{display:flex;flex-direction:column;flex:1;min-height:0}
+    .section-fill .page-head{padding:16px 20px 0;flex-shrink:0}
+    .section-fill .page-head .controls:last-child{margin-bottom:12px}
+    .section-fill>.table-scroll{flex:1;min-height:200px;max-height:none;border-top:1px solid var(--border)}
 
     .card{background:var(--card);border-radius:12px;border:1px solid var(--border);padding:20px;margin-bottom:20px}
     .card-title{font-size:17px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
@@ -91,10 +109,15 @@
     table.wide{width:auto;min-width:100%}
     table.wide th,table.wide td{white-space:nowrap}
     th.col-name,td.col-name{position:sticky;left:0;box-shadow:6px 0 6px -6px rgba(0,0,0,.18)}
-    td.col-name{background:var(--card);z-index:1}
-    /* The corner cell is stuck on both axes, so it has to outrank each of them. */
-    th.col-name{background:var(--bg);z-index:3}
-    tr:hover td.col-name{background:#f8fafc}
+    /* Tinted down its whole length, header included, so the pinned column reads
+       as the edge of the table rather than as a row that failed to scroll. */
+    td.col-name{background:#eaf6fb;z-index:1}
+    /* The corner cell is stuck on both axes, so it has to outrank each of them —
+       including the other header cells, which are sticky at the same z-index and
+       come later in the DOM, and so used to slide over the name header and take
+       it off the screen the moment the table scrolled sideways. */
+    .table-scroll thead th.col-name{background:#d6ecf7;z-index:4}
+    tr:hover td.col-name{background:#dcf0f9}
     tr.row-link{cursor:pointer}
     table{width:100%;border-collapse:collapse;font-size:13px}
     th{text-align:left;padding:7px 10px;background:var(--bg);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border)}
@@ -385,8 +408,8 @@
     </div>
 
     <!-- MEMBERS -->
-    <div class="section" id="section-members">
-      <div class="card">
+    <div class="section section-fill" id="section-members">
+      <div class="page-head">
         <div class="card-title">
           <span>Member Directory</span>
           <div style="display:flex;gap:8px">
@@ -481,7 +504,7 @@
                 <option value="no">No — awaiting confirmation</option>
               </select>
             </div>
-            <div class="form-field"><label>Access Pass Start</label><input type="date" id="new-access-start"></div>
+            <div class="form-field"><label>Access Pass Start</label><input type="date" id="new-access-start" onchange="onNewStartChange()"></div>
             <div class="form-field"><label>Access Pass End</label><input type="date" id="new-access-end"></div>
           </div>
           <div class="form-row">
@@ -545,8 +568,8 @@
           </label>
           <span id="mem-count" style="font-size:12px;color:var(--muted)"></span>
         </div>
-        <div id="mem-table" class="table-wrap table-scroll"></div>
       </div>
+      <div id="mem-table" class="table-wrap table-scroll"></div>
     </div>
 
     <!-- KBC CLIMBS -->
@@ -640,7 +663,7 @@
         </div>
       </div>
       <div class="modal-row">
-        <div class="modal-field"><label>Access Pass Start</label><input type="date" id="edit-access-start"></div>
+        <div class="modal-field"><label>Access Pass Start</label><input type="date" id="edit-access-start" onchange="onEditStartChange()"></div>
         <div class="modal-field"><label>Access Pass End Date</label><input type="date" id="edit-expiry"></div>
         <div class="modal-field"><label>Punch Passes Remaining</label><input type="number" id="edit-punches" min="0"></div>
       </div>
@@ -994,7 +1017,12 @@ const db      = firebase.firestore();
 // ── SORT ──────────────────────────────────────────────────────────────────────
 const SORT = {
   log:      { col:'timestamp',    dir:-1 },
-  members:  { col:'legalName',    dir:1  },
+  // The directory opens on what changed last, newest first: the question an
+  // admin has when they land on it is "what has happened since I last looked",
+  // not "who comes first alphabetically" — and the alphabet is one click away.
+  // Records that have never been touched carry an empty string here, so they
+  // sort to the bottom on the way down, which is where they belong.
+  members:  { col:'lastChanged',  dir:-1 },
   boulders: { col:'name',         dir:1  },
   receipts: { col:'timestamp',    dir:-1 },
 };
@@ -1180,6 +1208,11 @@ function isActiveMember(m) {
  * the guess is wrong whenever an import form is open or the filter row wraps —
  * the horizontal scrollbar then sits either off the bottom of the screen or
  * well short of it. Measuring the table's own top settles it exactly.
+ *
+ * Only the purchases table still needs this. The member directory is laid out
+ * instead: its section is a flex column filling the viewport and the table box
+ * takes what is left, which is the same answer without measuring anything, and
+ * unlike a measurement it keeps up with a filter row that wraps as you type.
  */
 function fitTableToViewport(id) {
   const el = document.getElementById(id);
@@ -1187,7 +1220,7 @@ function fitTableToViewport(id) {
   const top = el.getBoundingClientRect().top;
   el.style.maxHeight = Math.max(240, window.innerHeight - top - 24) + 'px';
 }
-window.addEventListener('resize', () => ['mem-table','rec-table'].forEach(fitTableToViewport));
+window.addEventListener('resize', () => ['rec-table'].forEach(fitTableToViewport));
 
 function toast(msg, isErr=false) {
   const el = document.getElementById('toast');
@@ -1203,6 +1236,9 @@ function showSection(name, btn) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('section-'+name).classList.add('active');
+  // The directory runs edge to edge; every other section keeps the page's
+  // padding. Carried on the body because it is main's padding that has to go.
+  document.body.classList.toggle('fullbleed', name==='members');
   if (btn) btn.classList.add('active');
   if (name === 'climbs') { if (!seasonList.length) loadSeasons(); loadBoulders(); }
   else if (name === 'members') loadMembers();
@@ -1953,7 +1989,11 @@ function renderMembersTable() {
       (memberList.length?'No members match these filters.':'No members found.')+'</p>';
     return;
   }
-  const th=(col,label,extra='')=>`<th onclick="clickSort('members','${col}')" style="cursor:pointer;user-select:none;${extra}">${label}${sortIcon('members',col)}</th>`;
+  // The name column's header carries col-name too. It used not to — only the
+  // body cells did — so the column pinned itself to the left edge and its
+  // header scrolled off with the rest of the row, leaving the pinned names
+  // labelled by whatever header happened to be passing.
+  const th=(col,label,extra='',cls='')=>`<th class="${cls}" onclick="clickSort('members','${col}')" style="cursor:pointer;user-select:none;${extra}">${label}${sortIcon('members',col)}</th>`;
   const dim='style="font-size:12px;color:var(--muted)"';
   const dash='<span style="color:var(--muted)">—</span>';
   const txt=v=>v?String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])):'—';
@@ -1964,7 +2004,7 @@ function renderMembersTable() {
   // name, so the whole answer to "who are the supervisors and has anyone
   // touched them lately" is on screen without scrolling at all.
   tbl.innerHTML=`<table class="wide"><thead><tr>
-    ${th('legalName','Legal Name')}
+    ${th('legalName','Legal Name','','col-name')}
     ${th('lastChanged','Last Changed')}
     ${th('isAdmin','ADM','text-align:center')}
     ${th('isSupervisor','SUP','text-align:center')}
@@ -2008,7 +2048,6 @@ function renderMembersTable() {
       : `<span class="badge badge-grey" title="${m.lastSignInAt?'Last signed in '+fmtDate(m.lastSignInAt):'Has never signed in'}">Inactive</span>`}</td>
     <td>${gaps.length?`<span class="badge" style="background:#e0860022;color:#e08600" title="Missing ${gaps.join(', ')} — the member is asked for these when they next open the app">Incomplete</span>`:'<span class="badge badge-green">Complete</span>'}</td>
   </tr>`;}).join('')}</tbody></table>`;
-  fitTableToViewport('mem-table');
 }
 
 /**
@@ -2113,7 +2152,20 @@ function togglePaymentConfirmed(passSelectId, fieldId) {
   document.getElementById(fieldId).style.display=hasPass?'':'none';
   return hasPass;
 }
-function onNewPassChange() { togglePaymentConfirmed('new-pass','new-confirmed-field'); }
+function onNewPassChange() {
+  togglePaymentConfirmed('new-pass','new-confirmed-field');
+  onNewStartChange();
+}
+/** The add form's end date, worked out the same way the edit modal's is. */
+function onNewStartChange() {
+  const opt=PASS_OPTIONS.find(p=>p.id===document.getElementById('new-pass').value);
+  const startEl=document.getElementById('new-access-start');
+  const endEl=document.getElementById('new-access-end');
+  startEl.disabled=endEl.disabled=!opt;
+  if(!opt){ startEl.value=''; endEl.value=''; return; }
+  if(!startEl.value) startEl.value=today();
+  endEl.value=addMonths(startEl.value+'T00:00:00',opt.months).slice(0,10);
+}
 function closeEditModal() { editingMember=null; document.getElementById('edit-modal').style.display='none'; }
 /**
  * Choosing a pass fills the end date in from the start. The dates stay the
@@ -2136,6 +2188,19 @@ function onEditPassChange(opening=false) {
   if(opening) return;
   if(!startEl.value) startEl.value=today();
   endEl.value=addMonths(startEl.value+'T00:00:00',opt.months).slice(0,10);
+}
+/**
+ * Editing the start date moves the end date with it, by the length of the pass
+ * that is selected. Renewing someone is then one field: pick the day they paid
+ * from, and the period that pass buys follows. The end date stays editable —
+ * a pass extended by hand for a month the co-op gave away is still a thing an
+ * admin does, and typing in it afterwards overrides this.
+ */
+function onEditStartChange() {
+  const opt=PASS_OPTIONS.find(p=>p.id===document.getElementById('edit-pass').value);
+  const start=document.getElementById('edit-access-start').value;
+  if(!opt||!start) return;
+  document.getElementById('edit-expiry').value=addMonths(start+'T00:00:00',opt.months).slice(0,10);
 }
 async function saveEdit() {
   if (!editingMember) return;
