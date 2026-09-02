@@ -64,7 +64,16 @@ if ever needed — everything is in the commits, nothing was force-purged.
   lint+test+build, `worker/` typecheck+test, and the `firestore.rules`
   tests. The worker job pins Node 24 — its tests import a `.ts` file and
   rely on type stripping, which Node 20 doesn't have.
-- Two deploy workflows, one per hosting site, because the two share nothing
+- Three deploy workflows. `deploy-rules.yml` ships `firestore.rules` on merges
+  to `main`, after running the emulator tests against them. It exists because
+  nothing used to: `firebase.json` names the rules file, but both hosting
+  workflows use `action-hosting-deploy`, which ships Hosting and only Hosting —
+  so rules changes merged green while production went on enforcing whatever was
+  last pushed by hand. It runs on `main` alone, since a preview channel is its
+  own site but there is one Firestore for the whole project. The service account
+  may need the **Firebase Rules Admin** role; the one `firebase init` creates
+  carries Hosting permissions only.
+- The other two are one per hosting site, because those two share nothing
   but the Firebase project: `deploy-web.yml` builds and ships `web/` to the
   `web` target, `deploy-admin.yml` ships the static `admin-web/` to the
   `admin` target. Each is path-filtered to its own directory. Before the

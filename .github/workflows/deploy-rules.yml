@@ -1,0 +1,84 @@
+name: Deploy Firestore Rules
+
+# firestore.rules is the app's entire access-control layer, and until this
+# workflow existed nothing deployed it. `firebase.json` names the file, but both
+# hosting workflows use action-hosting-deploy, which ships Hosting and only
+# Hosting — so the rules in this repository and the rules actually enforcing
+# anything had no connection at all. Rules changes merged green and production
+# went on running whatever was last pushed by hand, which is the worst shape for
+# this to take: the file reads as the source of truth and is not.
+#
+# On main only, deliberately. A hosting preview channel is its own site, but
+# there is one Firestore and one set of rules for the whole project — deploying
+# these from a pull request would change what production enforces on the
+# strength of an unreviewed branch.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firestore.rules'
+      - 'firebase.json'
+      - '.firebaserc'
+      - 'rules-tests/**'
+      - '.github/workflows/deploy-rules.yml'
+  # Deployable by hand as well, for the first run and for recovering a
+  # production that has drifted from this file.
+  workflow_dispatch:
+
+jobs:
+  deploy-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: 'npm'
+          cache-dependency-path: rules-tests/package-lock.json
+
+      # The emulator is a JVM application — see rules-tests/'s own notes.
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install
+        working-directory: rules-tests
+        run: npm ci
+
+      # The tests run again here rather than trusting the `rules-test` job on
+      # ci.yml. They gate a deploy, not a merge: rules that lock every member
+      # out, or let every member read everything, are not something to discover
+      # from the live app.
+      - name: Test the rules against the emulator
+        working-directory: rules-tests
+        run: npm run test:emulated
+
+      - name: Check deploy secret is configured
+        id: check-secret
+        run: echo "has_secret=${{ secrets.FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B != '' }}" >> "$GITHUB_OUTPUT"
+
+      # The same service account the hosting workflows use. It may need the
+      # Firebase Rules Admin role granted to it — the account firebase init
+      # creates carries Hosting permissions only, and a rules deploy will fail
+      # with PERMISSION_DENIED until that is added.
+      - name: Deploy rules
+        if: steps.check-secret.outputs.has_secret == 'true'
+        working-directory: rules-tests
+        env:
+          FIREBASE_SERVICE_ACCOUNT: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B }}'
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx firebase-tools deploy --only firestore:rules --project kbc-app-3307b --non-interactive
+          rm -f "$RUNNER_TEMP/sa.json"
+
+      - name: Deploy skipped — missing secret
+        if: steps.check-secret.outputs.has_secret != 'true'
+        run: |
+          echo "::warning::FIREBASE_SERVICE_ACCOUNT_KBC_APP_3307B is not set — firestore.rules was NOT deployed."
+          echo "The rules in this repository are not the rules being enforced until it is."
