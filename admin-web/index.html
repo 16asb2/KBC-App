@@ -8,7 +8,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <script src="https://accounts.google.com/gsi/client" async></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <style>
     :root {
       --cyan:#00b4d8; --green:#2ecc71; --orange:#f77f00; --red:#e74c3c;
@@ -47,20 +46,31 @@
     /* Full window width. The directory carries a column per profile field
        and was being squeezed into 1200px on a monitor with far more to
        give, which turned a readable table into a sideways scroll. */
-    main{flex:1;min-height:0;padding:24px;margin:0 auto;width:100%;overflow:auto;display:flex;flex-direction:column}
+    main{flex:1;min-height:0;padding:24px;margin:0 auto;width:100%;overflow:auto}
     .section{display:none}.section.active{display:block}
-    /* A section that IS its table: it takes the whole area under the nav and
-       hands what is left after its controls to the table box, so the table's
-       horizontal scrollbar sits on the bottom edge of the window and stays
-       there. Full-bleed, because a card around a table this wide only buys a
-       second inset for the same content — and the page's padding was the
-       reason there were two horizontal scrollbars, the page's and the
-       table's, neither of them where you wanted one. */
-    body.fullbleed main{padding:0}
-    .section.active.section-fill{display:flex;flex-direction:column;flex:1;min-height:0}
-    .section-fill .page-head{padding:16px 20px 0;flex-shrink:0}
-    .section-fill .page-head .controls:last-child{margin-bottom:12px}
-    .section-fill>.table-scroll{flex:1;min-height:200px;max-height:none;border-top:1px solid var(--border)}
+    /* A section that IS its table.
+       <main> is the scrollport, on both axes and for everything in the section
+       — so there is exactly one vertical scrollbar (the page's: scrolling down
+       takes the heading and the filters with it and leaves the table the whole
+       window) and exactly one horizontal one, which belongs to a box of fixed
+       height and therefore sits on the bottom edge of the screen and stays
+       there. Nothing here is a nested scroller, which is what lets the header
+       row stick to the top of the *page* rather than to the top of a box.
+       There is no card: a border and two insets around a table wider than the
+       monitor bought nothing. The clearance from the window edges is on the
+       content rather than on <main>: side padding here would leave a strip
+       between the edge and the pinned name column that the rest of the row
+       slides through in plain sight, since a sticky column stops at the
+       scrollport's content edge and not at the window's. */
+    body.fullbleed main{padding:0 0 14px}
+    /* The heading and the filters scroll up out of the way, but never sideways:
+       they are pinned to the left of the scrollport, above the table, because a
+       search box that slides off the screen when you go looking at the right-
+       hand columns is a search box you have to scroll back to reach. Width is
+       not set — a block box inside a scrollport is the width of the scrollport,
+       not of the table overflowing it, so it is already right. */
+    .section-fill .page-head{position:sticky;left:0;z-index:5;background:var(--bg);padding:16px 14px 0}
+    .section-fill #mem-table{margin:0 14px}
 
     .card{background:var(--card);border-radius:12px;border:1px solid var(--border);padding:20px;margin-bottom:20px}
     .card-title{font-size:17px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
@@ -98,7 +108,7 @@
        screen — and the header row can stick, which is what keeps the sort
        controls reachable and the columns identifiable that far down. */
     .table-scroll{overflow:auto;max-height:calc(100svh - 200px);min-height:320px}
-    .table-scroll thead th{position:sticky;top:0;z-index:2}
+    .table-scroll thead th,.section-fill thead th{position:sticky;top:0;z-index:2}
     /* The member directory carries a column per profile field, so it is far
        wider than the page and scrolls sideways rather than wrapping: every row
        stays one line tall, which is what makes a column readable down the page.
@@ -116,7 +126,7 @@
        including the other header cells, which are sticky at the same z-index and
        come later in the DOM, and so used to slide over the name header and take
        it off the screen the moment the table scrolled sideways. */
-    .table-scroll thead th.col-name{background:#d6ecf7;z-index:4}
+    .table-scroll thead th.col-name,.section-fill thead th.col-name{background:#d6ecf7;z-index:4}
     tr:hover td.col-name{background:#dcf0f9}
     tr.row-link{cursor:pointer}
     table{width:100%;border-collapse:collapse;font-size:13px}
@@ -209,7 +219,6 @@
 
     #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--black);color:#fff;padding:11px 22px;border-radius:10px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .25s;z-index:9999;max-width:90vw;text-align:center}
     #toast.show{opacity:1}
-    #pdf-tpl{position:absolute;left:-9999px;top:0;width:760px;background:#fff}
   </style>
 </head>
 <body>
@@ -302,8 +311,6 @@
           <label>From <input type="date" id="log-from" onchange="loadLogbook()"></label>
           <label>To   <input type="date" id="log-to" onchange="loadLogbook()"></label>
           <button class="btn btn-outline" id="btn-log-csv"   onclick="exportLogCSV()"   disabled>⬇ CSV</button>
-          <button class="btn btn-outline" id="btn-log-pdf"   onclick="exportLogPDF()"   disabled>⬇ PDF</button>
-          <button class="btn btn-green"   id="btn-log-drive" onclick="saveLogToDrive()" disabled>☁ Drive</button>
         </div>
         <div id="log-stats" class="stats" style="display:none"></div>
         <div id="log-table" class="table-wrap"></div>
@@ -522,10 +529,6 @@
           </div>
         </div>
 
-        <div class="controls">
-          <button class="btn btn-outline" id="btn-mem-pdf"   onclick="exportMembersPDF()"   disabled>⬇ PDF</button>
-          <button class="btn btn-green"   id="btn-mem-drive" onclick="saveMembersToDrive()" disabled>☁ Drive</button>
-        </div>
         <div id="mem-stats" class="stats" style="display:none"></div>
         <!-- Reading controls. All of it filters the list already loaded — the
              directory reads the collection whole, so none of this is a query
@@ -569,7 +572,7 @@
           <span id="mem-count" style="font-size:12px;color:var(--muted)"></span>
         </div>
       </div>
-      <div id="mem-table" class="table-wrap table-scroll"></div>
+      <div id="mem-table"></div>
     </div>
 
     <!-- KBC CLIMBS -->
@@ -592,7 +595,6 @@
             <option value="4">Black</option>
           </select>
           <button class="btn btn-outline" id="btn-climbs-csv"   onclick="exportBouldersCSV()"   disabled>⬇ CSV</button>
-          <button class="btn btn-green"   id="btn-climbs-drive" onclick="saveClimbsToDrive()" disabled>☁ Drive</button>
         </div>
         <div id="climbs-stats" class="stats" style="display:none"></div>
         <div id="climbs-table" class="table-wrap"></div>
@@ -696,7 +698,6 @@
       </div>
       <div id="edit-waiver-note" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button class="btn btn-outline btn-sm" id="edit-waiver-pdf-btn" style="display:none">⬇ Download PDF</button>
         <a id="edit-waiver-pdf-link" href="#" target="_blank" class="btn btn-outline btn-sm" style="display:none">👁 View scanned PDF</a>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:8px">Leaving the date empty removes the waiver from the record — the member is then asked to sign again the next time they open the app.</div>
@@ -812,7 +813,6 @@
   </div>
 </div>
 
-<div id="pdf-tpl"></div>
 <div id="toast"></div>
 
 <script>
@@ -1142,18 +1142,6 @@ async function uploadToDrive(filename, blob, mimeType, subfolderKey) {
   return res.json();
 }
 
-// ── PDF ───────────────────────────────────────────────────────────────────────
-const PDF_OPTS = { margin:[12,12,12,12], image:{ type:'jpeg', quality:.95 }, html2canvas:{ scale:2, useCORS:true, logging:false }, jsPDF:{ unit:'mm', format:'letter', orientation:'portrait' } };
-async function htmlToBlob(html, filename) {
-  const tpl = document.getElementById('pdf-tpl');
-  tpl.innerHTML = html;
-  const blob = await html2pdf().from(tpl).set({ ...PDF_OPTS, filename }).outputPdf('blob');
-  tpl.innerHTML = '';
-  return blob;
-}
-const PDF_CSS = `<style>body{font-family:Arial,sans-serif;font-size:12px;color:#1a1a1a}h1{font-size:20px;color:#00b4d8;margin-bottom:2px}.sub{font-size:13px;color:#555;margin-bottom:4px}.meta{font-size:11px;color:#999;margin-bottom:18px}table{width:100%;border-collapse:collapse}th{background:#f0f4f8;padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:#666}td{padding:6px 8px;border-bottom:1px solid #eee;font-size:11px}.foot{margin-top:18px;font-size:10px;color:#bbb;text-align:center}</style>`;
-function kbcHead(title, sub) { return `<h1>Kingston Boulder Cooperative</h1><div class="sub">${title}</div><div class="meta">${sub}</div>`; }
-
 // ── UTILS ─────────────────────────────────────────────────────────────────────
 /**
  * Every date the panel prints, in one shape: yyyy-mm-dd, and yyyy-mm-dd hh:mm
@@ -1306,7 +1294,7 @@ async function denyPass(i) {
     loadMembers();
   } catch(e) { toast('Error: '+e.message,true); }
 }
-/** The same name as plain text, for the PDF export. */
+/** The same name as plain text, for the CSV the Drive backup writes. */
 function accessPassText(m) {
   return accessPassName(m)+(passOf(m)!=='none' && !isConfirmed(m) ? ' (pending)' : '');
 }
@@ -1370,7 +1358,7 @@ async function loadLogbook() {
     const uniq = new Set(logEntries.map(e=>e.userId).filter(Boolean)).size;
     const st = document.getElementById('log-stats'); st.style.display='flex';
     st.innerHTML=`<div class="stat-card"><div class="stat-num">${logEntries.length}</div><div class="stat-label">Entries</div></div><div class="stat-card"><div class="stat-num">${uniq}</div><div class="stat-label">Unique Members</div></div>`;
-    ['btn-log-csv','btn-log-pdf','btn-log-drive'].forEach(id=>document.getElementById(id).disabled=false);
+    document.getElementById('btn-log-csv').disabled=false;
   } catch(e) { document.getElementById('log-table').innerHTML=`<p style="color:red;padding:16px">Error: ${e.message}</p>`; }
 }
 function renderLogTable() {
@@ -1396,14 +1384,6 @@ function renderLogTable() {
 function exportLogCSV() {
   dlBlob(new Blob([toCSV([['Date/Time','Member','Access Type','Notes','Amended By','Amended At'],...logEntries.map(e=>[fmt(e.timestamp),e.userName,e.accessType,e.notes,e.amendedBy,e.amendedAt?fmtDate(e.amendedAt):''])])],{type:'text/csv'}),`KBC_SignInBook_${today()}.csv`);
 }
-async function buildLogPDF() {
-  const from=document.getElementById('log-from').value, to=document.getElementById('log-to').value;
-  return htmlToBlob(PDF_CSS+kbcHead('Sign-In Book',`${fmtDate(from)} – ${fmtDate(to)} · ${logEntries.length} entries · Generated ${fmt(new Date().toISOString())}`)+
-    `<table><thead><tr><th>Date/Time</th><th>Member</th><th>Access Type</th><th>Notes</th></tr></thead><tbody>${logEntries.map(e=>`<tr><td style="white-space:nowrap">${fmt(e.timestamp)}</td><td>${e.userName||'—'}</td><td>${e.accessType||'—'}</td><td style="font-size:10px">${e.notes||''}</td></tr>`).join('')}</tbody></table><div class="foot">Kingston Boulder Cooperative · KBC Admin</div>`,
-    `KBC_SignInBook_${today()}.pdf`);
-}
-async function exportLogPDF() { toast('Generating PDF…'); try { dlBlob(await buildLogPDF(),`KBC_SignInBook_${today()}.pdf`); } catch(e) { toast('Error: '+e.message,true); } }
-async function saveLogToDrive() { try { toast('Generating PDF…'); const b=await buildLogPDF(); toast('Uploading…'); await uploadToDrive(`KBC_SignInBook_${today()}.pdf`,b,'application/pdf','logbook'); toast('Saved to Drive!'); } catch(e) { toast('Error: '+e.message,true); } }
 
 // ── MEMBERS ───────────────────────────────────────────────────────────────────
 // ─── CSV member import ───────────────────────────────────────────────────────
@@ -1874,7 +1854,7 @@ async function loadMembers() {
   try {
     // Every member, uncapped. This used to stop at 2000, which is a silent
     // wrong answer rather than a slow one: members past it were missing from
-    // the directory, missing from the PDF, and — worse — invisible to the CSV
+    // the directory, missing from the backup, and — worse — invisible to the CSV
     // import's duplicate check, so re-importing the roster would have created
     // a second record for each of them.
     const snap=await db.collection('users').get();
@@ -1892,7 +1872,6 @@ async function loadMembers() {
     });
     const st=document.getElementById('mem-stats'); st.style.display='flex';
     st.innerHTML=`<div class="stat-card"><div class="stat-num">${memberList.length}</div><div class="stat-label">Total</div></div><div class="stat-card"><div class="stat-num" style="color:var(--green)">${counts.member}</div><div class="stat-label">On a membership</div></div><div class="stat-card"><div class="stat-num" style="color:var(--orange)">${counts.pending}</div><div class="stat-label">Awaiting confirmation</div></div><div class="stat-card"><div class="stat-num" style="color:var(--cyan)">${counts.punch}</div><div class="stat-label">Punch pass</div></div><div class="stat-card"><div class="stat-num" style="color:var(--muted)">${counts.none}</div><div class="stat-label">No pass</div></div><div class="stat-card"><div class="stat-num" style="color:var(--cyan)">${memberList.filter(m=>!!(m.waiverLiability||m.waiverPdfUrl)).length}</div><div class="stat-label">Waivers</div></div><div class="stat-card"><div class="stat-num" style="color:var(--orange)">${memberList.filter(m=>memberGaps(m).length>0).length}</div><div class="stat-label">Incomplete</div></div>`;
-    ['btn-mem-pdf','btn-mem-drive'].forEach(id=>document.getElementById(id).disabled=false);
   } catch(e) { document.getElementById('mem-table').innerHTML=`<p style="color:red;padding:16px">Error: ${e.message}</p>`; }
 }
 /**
@@ -2125,9 +2104,6 @@ function openEditModal(i) {
   if(w.docUrl) note.push(`<a href="${w.docUrl}" target="_blank">Signed copy in Google Docs</a>`);
   if(!w.signedAt && !m.waiverPdfUrl) note.push('No waiver on file.');
   document.getElementById('edit-waiver-note').innerHTML=note.join(' · ');
-  const pdfBtn=document.getElementById('edit-waiver-pdf-btn');
-  pdfBtn.onclick=()=>dlWaiverPDF(i);
-  pdfBtn.style.display=w.signedAt?'inline-flex':'none';
   const pdfLink=document.getElementById('edit-waiver-pdf-link');
   pdfLink.href=m.waiverPdfUrl||'#';
   pdfLink.style.display=m.waiverPdfUrl?'inline-flex':'none';
@@ -2267,33 +2243,6 @@ async function deleteMemberFromModal() {
     closeEditModal();
     loadMembers();
   } catch(e) { toast('Error: '+e.message,true); }
-}
-
-async function buildMembersPDF() {
-  const rows=memberList.map(m=>`<tr><td>${m.legalName||m.name||'—'}</td><td>${m.preferredName||'—'}</td><td>${m.email||'—'}</td><td>${m.phone||'—'}</td><td>${accessPassText(m)}</td><td>${fmtDate(m.membershipStart)}</td><td>${fmtDate(m.membershipExpiry)}</td><td>${(m.punchPassRemaining||0)>0?m.punchPassRemaining:'—'}</td><td>${m.waiverLiability?'Digital':m.waiverPdfUrl?'PDF':''}</td><td>${fmtDate(m.memberSince)}</td></tr>`).join('');
-  return htmlToBlob(PDF_CSS+kbcHead('Member Directory',`${memberList.length} members · ${fmt(new Date().toISOString())}`)+`<table><thead><tr><th>Legal Name</th><th>Preferred</th><th>Email</th><th>Phone</th><th>Access Pass</th><th>Start</th><th>Expiry</th><th>Punches</th><th>Waiver</th><th>Member Since</th></tr></thead><tbody>${rows}</tbody></table><div class="foot">KBC Admin · Confidential</div>`,`KBC_Members_${today()}.pdf`);
-}
-async function exportMembersPDF() { toast('Generating PDF…'); try { dlBlob(await buildMembersPDF(),`KBC_Members_${today()}.pdf`); } catch(e) { toast('Error: '+e.message,true); } }
-async function saveMembersToDrive() { try { toast('Generating PDF…'); const b=await buildMembersPDF(); toast('Uploading…'); await uploadToDrive(`KBC_Members_${today()}.pdf`,b,'application/pdf','members'); toast('Saved to Drive!'); } catch(e) { toast('Error: '+e.message,true); } }
-
-// ── WAIVERS ───────────────────────────────────────────────────────────────────
-function buildWaiverHTML(m) {
-  let w={}; try { w=JSON.parse(m.waiverLiability||'{}'); } catch {}
-  let ec={}; try { ec=JSON.parse(m.emergencyContact||'{}'); } catch {}
-  return PDF_CSS+`<style>.sec{margin-bottom:16px}.sec-title{font-size:11px;font-weight:bold;text-transform:uppercase;color:#777;border-bottom:1px solid #eee;padding-bottom:3px;margin-bottom:8px}.row{display:flex;gap:20px;margin-bottom:6px}.fld .lbl{font-size:9px;color:#aaa;text-transform:uppercase}.fld .val{font-size:12px;font-weight:600}.wtext{font-size:10px;color:#555;line-height:1.5;background:#f9f9f9;padding:10px;border-radius:4px}.sigblock{border-top:1px solid #ccc;margin-top:14px;padding-top:10px}</style>
-  ${kbcHead('Liability Waiver','Signed '+fmt(w.signedAt))}
-  <div class="sec"><div class="sec-title">Member Information</div>
-    <div class="row"><div class="fld"><div class="lbl">Legal Name</div><div class="val">${m.legalName||m.name||'—'}</div></div><div class="fld"><div class="lbl">Email</div><div class="val">${m.email||'—'}</div></div></div>
-    <div class="row"><div class="fld"><div class="lbl">Member Since</div><div class="val">${fmtDate(m.memberSince)}</div></div>${ec.name?`<div class="fld"><div class="lbl">Emergency Contact</div><div class="val">${ec.name} (${ec.relationship||''}) · ${ec.phone||''}</div></div>`:''}</div>
-  </div>
-  <div class="sec"><div class="sec-title">Waiver &amp; Release of Liability</div><div class="wtext">I, the undersigned, in consideration of being permitted to participate in climbing and bouldering activities at Kingston Boulder Cooperative (KBC), hereby acknowledge the inherent risks of such activities including falls, equipment failure, and contact with other participants. I voluntarily assume all such risks and agree to release, indemnify, and hold harmless KBC, its supervisors, members, and agents from any and all liability, claims, or damages arising from my participation. I confirm I am in good physical condition and will follow all gym rules and safety guidelines at all times. This waiver is binding on my heirs, executors, and legal representatives.</div></div>
-  <div class="sigblock"><div class="row"><div class="fld"><div class="lbl">Signed By</div><div class="val">${w.signedBy||'—'}</div></div><div class="fld"><div class="lbl">Date</div><div class="val">${fmt(w.signedAt)}</div></div>${w.guardian?`<div class="fld"><div class="lbl">Guardian</div><div class="val">${w.guardian}</div></div>`:''}</div></div>
-  <div class="foot">KBC Liability Waiver · Confidential · Generated ${fmt(new Date().toISOString())}</div>`;
-}
-async function dlWaiverPDF(i) {
-  toast('Generating…');
-  try { const m=memberView[i],fn=`KBC_Waiver_${(m.legalName||m.name||'member').replace(/\s+/g,'_')}.pdf`; dlBlob(await htmlToBlob(buildWaiverHTML(m),fn),fn); }
-  catch(e) { toast('Error: '+e.message,true); }
 }
 
 // ── KBC CLIMBS ────────────────────────────────────────────────────────────────
@@ -2474,7 +2423,7 @@ async function loadBoulders() {
     renderBouldersTable();
     const st=document.getElementById('climbs-stats'); st.style.display='flex';
     st.innerHTML=`<div class="stat-card"><div class="stat-num">${list.length}</div><div class="stat-label">Problems</div></div><div class="stat-card"><div class="stat-num">${list.reduce((s,b)=>s+(b.ascentCount||0),0)}</div><div class="stat-label">Total Ascents</div></div>`;
-    ['btn-climbs-csv','btn-climbs-drive'].forEach(id=>document.getElementById(id).disabled=false);
+    document.getElementById('btn-climbs-csv').disabled=false;
   } catch(e) { document.getElementById('climbs-table').innerHTML=`<p style="color:red;padding:16px">Error: ${e.message}</p>`; }
 }
 function renderBouldersTable() {
@@ -2523,7 +2472,6 @@ function buildBouldersCSVBlob(list) {
   return new Blob([toCSV([['ID','Name','Setter','Avg Grade','Tape Color','Locations','Ascents','Avg Quality'],...list.map(b=>{const grade=avgGrade(b.gradeVotes),quality=avgQuality(b.qualityVotes);return[b.number||b.internalId,b.name,b.setter,grade!=null?KBC_GRADES[grade]:'',b.tapeColor,(b.locations||[]).join('; ')||b.area,b.ascentCount||0,quality||''];})])],{type:'text/csv'});
 }
 function exportBouldersCSV() { dlBlob(buildBouldersCSVBlob(),`KBC_Climbs_${today()}.csv`); }
-async function saveClimbsToDrive() { try { toast('Uploading…'); await uploadToDrive(`KBC_Climbs_${today()}.csv`,buildBouldersCSVBlob(),'text/csv','climbs'); toast('KBC Climbs saved to Drive!'); } catch(e) { toast('Error: '+e.message,true); } }
 
 // ── PURCHASES ─────────────────────────────────────────────────────────────────
 // ─── Purchase import ─────────────────────────────────────────────────────────
