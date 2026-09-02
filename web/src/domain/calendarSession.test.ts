@@ -79,6 +79,25 @@ describe('reconstructParticipantsFromTitle', () => {
     expect(reconstructParticipantsFromTitle('Chad (sup)')[0].role).toBe('supervisor')
   })
 
+  // A session typed into Google Calendar by hand rarely uses the app's format.
+  // The classifier reads those as sessions, so the roster has to read them the
+  // same way — otherwise the event is joinable but nobody on it is supervising,
+  // and the supervisor's name is "Artur super".
+  it('reads a hand-typed marker, bracketed or not', () => {
+    expect(reconstructParticipantsFromTitle('Artur super')).toEqual([
+      { uid: 'legacy_0_artur', name: 'Artur', role: 'supervisor' },
+    ])
+    expect(reconstructParticipantsFromTitle('Super - Bea')[0]).toEqual({
+      uid: 'legacy_0_bea',
+      name: 'Bea',
+      role: 'supervisor',
+    })
+    expect(reconstructParticipantsFromTitle('Artur super + Garry').map((p) => [p.name, p.role])).toEqual([
+      ['Artur', 'supervisor'],
+      ['Garry', 'member'],
+    ])
+  })
+
   it('marks reconstructed uids as legacy so they cannot collide with real ones', () => {
     const got = reconstructParticipantsFromTitle('Artur (super) + Garry')
     expect(got.every((p) => p.uid.startsWith('legacy_'))).toBe(true)
