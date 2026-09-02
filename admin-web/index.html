@@ -250,10 +250,17 @@
             <div class="form-field"><label>Date &amp; Time *</label><input type="datetime-local" id="log-timestamp"></div>
             <div class="form-field">
               <label>Access Type *</label>
+              <!-- The passes, spelled the way ACCESS_PASS_LABELS spells them —
+                   keep the two in step by hand. "Active Member" used to head
+                   this list, which is how the Purchases tab filled up with a
+                   value that names no pass; the four dated passes replace it. -->
               <select id="log-access">
-                <option>Active Member</option>
-                <option>Drop-In</option>
-                <option>Punch Pass</option>
+                <option>Annual pass</option>
+                <option>8-month pass</option>
+                <option>4-month pass</option>
+                <option>1-month pass</option>
+                <option>Drop-in</option>
+                <option>Punch pass</option>
                 <option>Supervisor</option>
                 <option>Voucher</option>
                 <option>Guest</option>
@@ -367,6 +374,10 @@
              showed nothing at all. -->
         <div class="controls">
           <button class="btn btn-outline" id="btn-rec-csv" onclick="exportReceiptsCSV()" disabled>⬇ CSV</button>
+          <!-- Only appears while there is something to repair: purchases that
+               recorded "Active Member" instead of the pass that was bought.
+               See repairLegacyAccessTypes(). -->
+          <button class="btn btn-outline" id="btn-rec-repair" onclick="repairLegacyAccessTypes()" style="display:none"></button>
         </div>
         <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Every access pass purchase on record. Voucher redemptions are recorded in the Sign-In Book.</p>
         <div id="rec-table" class="table-wrap table-scroll"></div>
@@ -907,6 +918,54 @@ const ACCESS_PASS_LABELS = {
   '1month':'1-month pass', punch:'Punch pass', dropin:'Drop-in', none:'No pass',
 };
 function accessPassLabel(pass) { return ACCESS_PASS_LABELS[pass] || 'Access pass'; }
+
+// ── Legacy access types ───────────────────────────────────────────────────────
+//
+// Before the pass was named, every membership purchase recorded its accessType
+// as "Active Member" — a state a member is in, not a pass anyone can buy, and
+// the same four words for a one-month pass and an annual one. Those rows are
+// still in the `logs` collection and still read that way on the Purchases tab.
+//
+// The pass was never actually lost: the notes line says what was bought. Both
+// writers that produced these rows put the purchase first and everything else
+// after an em dash —
+//
+//   web:   "Purchased: Annual Pass $450 ($38/m) — expires Mar 14, 2027"
+//   admin: "Purchased: 1-month Membership ($55)"
+//
+// — so the pass is recovered from the head of that line and written back by
+// repairLegacyAccessTypes(). Scoped to values that name no pass at all: the
+// casing drift between "Annual Pass" here and "Annual pass" in
+// ACCESS_PASS_LABELS is untidy but still answers the question, and rewriting
+// history to tidy it is not this function's business.
+const LEGACY_ACCESS_TYPES = ['active member'];
+
+function isLegacyAccessType(t) {
+  return LEGACY_ACCESS_TYPES.includes(String(t||'').trim().toLowerCase());
+}
+
+/**
+ * The pass id a purchase's notes describe, or null if they name none.
+ *
+ * Only the text between "Purchased:" and the first em dash is read. The tail
+ * carries an expiry date or a free-text note from a CSV import, and a note
+ * reading "renewed early, 4 months late" would otherwise be mined for a pass
+ * it never mentioned.
+ */
+function passFromPurchaseNotes(notes) {
+  const m = String(notes||'').match(/Purchased:\s*([^—]*)/);
+  if (!m) return null;
+  const head = m[1].toLowerCase();
+  // Punch and drop-in first: "10× Punch Pass" and "Day Pass" carry no month
+  // count, but nothing below should get the chance to guess at one.
+  if (/punch/.test(head)) return 'punch';
+  if (/drop[\s-]?in|day pass/.test(head)) return 'dropin';
+  if (/annual|12[\s-]?month/.test(head)) return 'annual';   // incl. "Student Annual"
+  if (/8[\s-]?month/.test(head)) return '8month';
+  if (/4[\s-]?month/.test(head)) return '4month';
+  if (/1[\s-]?month/.test(head)) return '1month';
+  return null;
+}
 /** True for the passes that run for a period; punch and drop-in do not. */
 function isDatedPass(pass) { return PASS_OPTIONS.some(p=>p.id===pass); }
 function addMonths(iso, months) { const d=new Date(iso); d.setMonth(d.getMonth()+months); return d.toISOString(); }
@@ -2670,7 +2729,7 @@ async function loadReceipts() {
 function renderReceiptsTable() {
   applySort(receiptList,'receipts');
   const tbl=document.getElementById('rec-table');
-  if(!receiptList.length){tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No purchase records yet.</p>';return;}
+  if(!receiptList.length){tbl.innerHTML='<p style="padding:16px;color:var(--muted)">No purchase records yet.</p>';updateRepairButton();return;}
   const sh=col=>`onclick="clickSort('receipts','${col}')" style="cursor:pointer;user-select:none"`;
   tbl.innerHTML=`<table><thead><tr>
     <th ${sh('timestamp')}>Date${sortIcon('receipts','timestamp')}</th>
@@ -2680,10 +2739,74 @@ function renderReceiptsTable() {
   </tr></thead><tbody>${receiptList.map((e,i)=>`<tr class="row-link" onclick="openPurchaseModal(${i})" title="Open this purchase">
     <td style="white-space:nowrap">${fmt(e.timestamp)}</td>
     <td><strong>${e.userName||'—'}</strong></td>
-    <td>${e.accessType||'—'}</td>
+    <td>${isLegacyAccessType(e.accessType)
+      ? `<span title="Not a pass — this purchase predates naming the pass. Use the Fix button above.">${e.accessType} <span style="color:#c0392b">⚠</span></span>`
+      : (e.accessType||'—')}</td>
     <td style="font-size:11px;color:var(--muted)">${e.notes||''}</td>
   </tr>`).join('')}</tbody></table>`;
   fitTableToViewport('rec-table');
+  updateRepairButton();
+}
+
+/** The purchases whose accessType names no pass, and the pass each one hides. */
+function legacyPurchases() {
+  return receiptList
+    .filter(e=>isLegacyAccessType(e.accessType))
+    .map(e=>({ entry:e, pass:passFromPurchaseNotes(e.notes) }));
+}
+
+function updateRepairButton() {
+  const btn=document.getElementById('btn-rec-repair');
+  const n=legacyPurchases().filter(r=>r.pass).length;
+  btn.style.display = n ? '' : 'none';
+  btn.disabled = false;
+  btn.textContent = '🛠 Fix '+n+' legacy access type'+(n===1?'':'s');
+}
+
+/**
+ * Write the pass back onto purchases that recorded "Active Member".
+ *
+ * Only the accessType is touched. The notes are the evidence the pass was read
+ * from, and a repair that rewrote them would destroy the one record of what the
+ * row said before — including the price, which no pass label carries.
+ *
+ * A row whose notes name no pass is left exactly as it is and reported. There
+ * is nothing to recover it from, and guessing would put a specific, wrong pass
+ * where an obviously-wrong one at least reads as needing attention.
+ */
+async function repairLegacyAccessTypes() {
+  const rows=legacyPurchases();
+  const fixable=rows.filter(r=>r.pass);
+  const stuck=rows.length-fixable.length;
+  if(!fixable.length){ toast('Nothing to repair',true); return; }
+
+  const tally={};
+  fixable.forEach(r=>{ const l=accessPassLabel(r.pass); tally[l]=(tally[l]||0)+1; });
+  const summary=Object.entries(tally).map(([l,n])=>`  ${n} → ${l}`).join('\n');
+  const tail=stuck ? `\n\n${stuck} row${stuck===1?'':'s'} name no pass in the notes and will be left alone.` : '';
+  if(!confirm(`Repair ${fixable.length} purchase${fixable.length===1?'':'s'} recorded as "Active Member"?\n\n${summary}\n\nThe pass is read from each row's own notes, which are left untouched.${tail}`)) return;
+
+  const btn=document.getElementById('btn-rec-repair');
+  btn.disabled=true; btn.textContent='Repairing…';
+  const now=new Date().toISOString();
+  try {
+    for(let i=0;i<fixable.length;i+=400){
+      const batch=db.batch();
+      fixable.slice(i,i+400).forEach(r=>{
+        batch.update(db.collection('logs').doc(r.entry.id), {
+          accessType: accessPassLabel(r.pass),
+          amendedBy: currentUser.email, amendedAt: now,
+        });
+      });
+      await batch.commit();
+    }
+    toast('Repaired '+fixable.length+' purchase'+(fixable.length===1?'':'s')
+      + (stuck?' — '+stuck+' left, no pass in the notes':''));
+    loadReceipts();
+  } catch(e) {
+    toast('Repair failed: '+e.message,true);
+    btn.disabled=false; updateRepairButton();
+  }
 }
 
 /**
