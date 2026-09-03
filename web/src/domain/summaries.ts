@@ -37,6 +37,35 @@ export function communityGradeIndex(b: Boulder, gradeCount: number): number | nu
   return Math.round(Math.min(Math.max(avg, 0), gradeCount - 1))
 }
 
+/**
+ * The column for boulders on no wall this app knows about.
+ *
+ * It exists because the alternative was silence. A boulder whose `locations` is
+ * empty — the add form asks for a wall and does not insist on one — or whose
+ * wall is spelled some way `LOCATIONS` does not list was dropped from every
+ * column while still counting in its grade row and in the Boulders tile. The
+ * table then showed a grade with boulders in it and not one cell to put them
+ * in, which reads as "the count is broken" rather than "nobody said where this
+ * one is", and there was nothing on the screen to tell the two apart.
+ */
+export const UNASSIGNED_WALL = 'No wall'
+
+/**
+ * The wall a stored value names, or null if it names none of them.
+ *
+ * Compared case- and padding-insensitively. The two clients both write the
+ * exact strings in `LOCATIONS`, so this is not for them — it is for everything
+ * else that has ever touched the collection: a document edited by hand in the
+ * Firebase console, an old import, a wall renamed with rows left behind. Those
+ * are the rows that used to vanish, and folding the comparison is cheaper than
+ * losing them.
+ */
+export function canonicalWall(locations: readonly string[], raw: string): string | null {
+  const target = raw.trim().toLowerCase()
+  if (!target) return null
+  return locations.find((l) => l.trim().toLowerCase() === target) ?? null
+}
+
 export type GradeLocationMatrix = {
   /** counts[grade][location] */
   counts: Record<GradeRow, Record<string, number>>
@@ -46,6 +75,16 @@ export type GradeLocationMatrix = {
   total: number
   /** Largest single cell, so a fill ramp has something to scale against. */
   busiestCell: number
+  /**
+   * The columns to draw, in order: the walls, plus `UNASSIGNED_WALL` at the end
+   * when something needs it. Only ever grows by that one, so a clean season
+   * looks exactly as it did.
+   */
+  columns: string[]
+  /** Boulders on no recognised wall — the size of the extra column. */
+  unassigned: number
+  /** The stored wall names that matched nothing, for the screen to name them. */
+  unrecognisedWalls: string[]
 }
 
 /**
@@ -54,6 +93,10 @@ export type GradeLocationMatrix = {
  * A boulder set across two walls is counted once per wall, so the cells add up
  * to more than the boulder count. `total` is the honest number of boulders and
  * the row totals match it; only the columns double-count. The screen says so.
+ *
+ * Every boulder lands in exactly one row and at least one column — see
+ * `UNASSIGNED_WALL`. Walls are de-duplicated per boulder as well, so a record
+ * listing the same wall twice is one boulder on that wall and not two.
  */
 export function gradeLocationMatrix(
   boulders: Boulder[],
@@ -64,29 +107,52 @@ export function gradeLocationMatrix(
   const counts = {} as Record<GradeRow, Record<string, number>>
   const rowTotals = {} as Record<GradeRow, number>
   const colTotals: Record<string, number> = {}
+  const unrecognised = new Set<string>()
+  let unassigned = 0
 
   for (const g of rows) {
     counts[g] = {}
     rowTotals[g] = 0
   }
   for (const loc of locations) colTotals[loc] = 0
+  colTotals[UNASSIGNED_WALL] = 0
 
   for (const b of boulders) {
     const gi = communityGradeIndex(b, grades.length)
     const row: GradeRow = gi === null ? UNGRADED : grades[gi]
     rowTotals[row]++
-    for (const loc of b.locations) {
-      if (colTotals[loc] === undefined) continue // a wall that no longer exists
-      counts[row][loc] = (counts[row][loc] ?? 0) + 1
-      colTotals[loc]++
+
+    const walls = new Set<string>()
+    for (const raw of b.locations) {
+      const wall = canonicalWall(locations, raw)
+      if (wall) walls.add(wall)
+      else if (raw.trim()) unrecognised.add(raw.trim())
+    }
+    if (walls.size === 0) {
+      walls.add(UNASSIGNED_WALL)
+      unassigned++
+    }
+    for (const wall of walls) {
+      counts[row][wall] = (counts[row][wall] ?? 0) + 1
+      colTotals[wall]++
     }
   }
 
+  const columns = unassigned > 0 ? [...locations, UNASSIGNED_WALL] : [...locations]
   const busiestCell = Math.max(
     0,
-    ...rows.flatMap((g) => locations.map((loc) => counts[g][loc] ?? 0)),
+    ...rows.flatMap((g) => columns.map((col) => counts[g][col] ?? 0)),
   )
-  return { counts, rowTotals, colTotals, total: boulders.length, busiestCell }
+  return {
+    counts,
+    rowTotals,
+    colTotals,
+    total: boulders.length,
+    busiestCell,
+    columns,
+    unassigned,
+    unrecognisedWalls: [...unrecognised].sort(),
+  }
 }
 
 export type QualityBuckets = {

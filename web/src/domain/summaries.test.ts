@@ -7,6 +7,7 @@ import {
   gradeLocationMatrix,
   qualityBuckets,
   setterTallies,
+  UNASSIGNED_WALL,
   UNGRADED,
 } from './summaries'
 import type { Boulder } from '@/services/boulders'
@@ -126,10 +127,54 @@ describe('gradeLocationMatrix', () => {
     expect(m.rowTotals[UNGRADED]).toBe(1)
   })
 
-  it('ignores a wall that is no longer part of the gym', () => {
+  // These four are one bug: a boulder could be counted in its grade row and in
+  // the Boulders tile while appearing in no column at all, which read on screen
+  // as a count that had simply stopped working.
+  it('gives a boulder with no wall on record a column of its own', () => {
+    const m = MATRIX([boulder({ gradeVotes: { a: 4 }, locations: [] })])
+    expect(m.counts.Black[UNASSIGNED_WALL]).toBe(1)
+    expect(m.colTotals[UNASSIGNED_WALL]).toBe(1)
+    expect(m.columns).toContain(UNASSIGNED_WALL)
+    expect(m.unassigned).toBe(1)
+  })
+
+  it('names a wall it does not recognise instead of dropping the boulder', () => {
     const m = MATRIX([boulder({ locations: ['Demolished Wall'] })])
     expect(m.total).toBe(1)
-    expect(Object.values(m.colTotals).every((v) => v === 0)).toBe(true)
+    expect(m.counts[UNGRADED][UNASSIGNED_WALL]).toBe(1)
+    expect(m.unrecognisedWalls).toEqual(['Demolished Wall'])
+  })
+
+  it('matches a wall whatever case or padding it was stored with', () => {
+    const m = MATRIX([boulder({ gradeVotes: { a: 4 }, locations: [' yellow wall '] })])
+    expect(m.counts.Black['Yellow Wall']).toBe(1)
+    expect(m.unassigned).toBe(0)
+    expect(m.unrecognisedWalls).toEqual([])
+  })
+
+  it('leaves a clean season looking exactly as it did', () => {
+    const m = MATRIX([boulder({ gradeVotes: { a: 1 }, locations: ['Cave Right'] })])
+    expect(m.columns).toEqual([...LOCATIONS])
+    expect(m.unassigned).toBe(0)
+  })
+
+  it('counts a wall listed twice on one boulder once', () => {
+    const m = MATRIX([boulder({ gradeVotes: { a: 4 }, locations: ['Yellow Wall', 'Yellow Wall'] })])
+    expect(m.counts.Black['Yellow Wall']).toBe(1)
+    expect(m.colTotals['Yellow Wall']).toBe(1)
+  })
+
+  it('counts every boulder in some column', () => {
+    const bs = [
+      boulder({ gradeVotes: { a: 4 }, locations: ['Yellow Wall'] }),
+      boulder({ gradeVotes: { a: 4 }, locations: [] }),
+      boulder({ locations: ['Nowhere'] }),
+    ]
+    const m = MATRIX(bs)
+    const inColumns = m.columns.reduce((s, c) => s + m.colTotals[c], 0)
+    // Equal because none of these three is on two walls; the invariant that
+    // holds in general is that nothing is left out.
+    expect(inColumns).toBe(m.total)
   })
 
   it('reports the busiest cell for a fill scale to work against', () => {

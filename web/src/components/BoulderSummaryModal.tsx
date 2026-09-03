@@ -3,7 +3,13 @@ import { Modal } from '@/components/Modal'
 import { Card, SetterBars, StatTile } from '@/components/SummaryParts'
 import { cellFill } from '@/constants/chart'
 import { KBC } from '@/constants/theme'
-import { gradeLocationMatrix, gradeRows, qualityBuckets, setterTallies } from '@/domain/summaries'
+import {
+  UNASSIGNED_WALL,
+  gradeLocationMatrix,
+  gradeRows,
+  qualityBuckets,
+  setterTallies,
+} from '@/domain/summaries'
 import {
   GRADE_COLORS,
   GRADE_TEXT,
@@ -122,7 +128,16 @@ export function BoulderSummaryModal({
 
           <Card
             title="Boulders by grade and wall"
-            note="A boulder set across two walls counts once per wall, so the column totals add up to more than the boulder count."
+            note={
+              'A boulder set across two walls counts once per wall, so the column totals add up to more than the boulder count.' +
+              (matrix.unassigned > 0
+                ? ` ${matrix.unassigned} boulder${matrix.unassigned === 1 ? ' has' : 's have'} no wall on record${
+                    matrix.unrecognisedWalls.length > 0
+                      ? ` or name one this app does not know (${matrix.unrecognisedWalls.join(', ')})`
+                      : ''
+                  } — ${matrix.unassigned === 1 ? 'it is' : 'they are'} under “${UNASSIGNED_WALL}”. Open the boulder and pick its wall to move ${matrix.unassigned === 1 ? 'it' : 'them'} across.`
+                : '')
+            }
           >
             {/* Darker cell = more boulders. One hue, so the shading reads as
                 "how many" rather than as six unrelated categories. */}
@@ -133,7 +148,7 @@ export function BoulderSummaryModal({
                     <th className="sticky left-0 z-10 bg-white pb-1.5 text-left text-[10px] font-bold text-neutral-500">
                       Grade
                     </th>
-                    {LOCATIONS.map((loc) => (
+                    {matrix.columns.map((loc) => (
                       <th key={loc} className="pb-1.5 text-[10px] font-bold text-neutral-500">
                         {SHORT_WALL[loc] ?? loc}
                       </th>
@@ -152,7 +167,7 @@ export function BoulderSummaryModal({
                           {row}
                         </span>
                       </th>
-                      {LOCATIONS.map((loc) => {
+                      {matrix.columns.map((loc) => {
                         const n = matrix.counts[row][loc] ?? 0
                         return (
                           <td key={loc} className="p-0.5">
@@ -179,7 +194,7 @@ export function BoulderSummaryModal({
                         Total
                       </span>
                     </th>
-                    {LOCATIONS.map((loc) => (
+                    {matrix.columns.map((loc) => (
                       <td key={loc} className="p-0.5">
                         <span className="block rounded bg-neutral-100 py-1.5 text-[13px] font-bold text-neutral-700 tabular-nums">
                           {matrix.colTotals[loc] || '·'}
