@@ -7,7 +7,7 @@ import { KBC } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { isAdmin } from '@/domain/roles'
-import { MEMBER_SORTS, type MemberSortId, sortMembers } from '@/domain/memberSort'
+import { MEMBER_SORTS, type MemberSortId, isActiveMember, sortMembers } from '@/domain/memberSort'
 import { isDatedPass } from '@/domain/membershipPass'
 import { checkAndClearLapsedPass, getAllProfiles, updateProfile } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
@@ -31,6 +31,10 @@ export function MembersPage() {
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<MemberSortId>('smart')
+  // Off by default, matching the directory in admin-web/: what this screen is
+  // for is the people currently climbing at KBC, and an imported roster can
+  // easily be mostly names nobody has seen in years.
+  const [includeInactive, setIncludeInactive] = useState(false)
   const [editing, setEditing] = useState<UserProfile | null>(null)
   const [editingProfile, setEditingProfile] = useState<UserProfile | null>(null)
   const [history, setHistory] = useState<{ member: UserProfile; kind: HistoryKind } | null>(null)
@@ -73,6 +77,27 @@ export function MembersPage() {
   // otherwise take out the whole directory (same reason getAllProfiles guards
   // its sort).
   const term = search.toLowerCase()
+  const matchingSearch = useMemo(
+    () =>
+      allMembers.filter(
+        (m) =>
+          (m.name ?? '').toLowerCase().includes(term) ||
+          (m.email ?? '').toLowerCase().includes(term),
+      ),
+    [allMembers, term],
+  )
+
+  // Counted against the search, not against the whole directory, so the number
+  // beside the box is about what you are looking at. This is what stops the
+  // filter hiding people silently: search a name, find nothing, and the screen
+  // still says how many matches it is holding back and how to see them —
+  // otherwise "no members found" reads as "not a member", which of a lapsed
+  // member standing at the desk is the wrong answer.
+  const hiddenInactive = useMemo(
+    () => matchingSearch.filter((m) => !isActiveMember(m)).length,
+    [matchingSearch],
+  )
+
   // Smart Sort by default — the search results included, since the point of it
   // is that the person you are after is near the top before you have finished
   // typing. `getAllProfiles` hands this list back alphabetically; that order is
@@ -80,14 +105,10 @@ export function MembersPage() {
   const filtered = useMemo(
     () =>
       sortMembers(
-        allMembers.filter(
-          (m) =>
-            (m.name ?? '').toLowerCase().includes(term) ||
-            (m.email ?? '').toLowerCase().includes(term),
-        ),
+        includeInactive ? matchingSearch : matchingSearch.filter((m) => isActiveMember(m)),
         sort,
       ),
-    [allMembers, term, sort],
+    [matchingSearch, includeInactive, sort],
   )
 
   if (!profile) return null
@@ -109,7 +130,7 @@ export function MembersPage() {
           here because it is a guess, however good — "who was in last" and plain
           alphabetical are both real questions, and a guessed order you cannot
           turn off is worse than no guess at all. */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <span className="text-xs font-semibold text-neutral-400">Sort</span>
         <div className="flex gap-1 rounded-full bg-neutral-100 p-1">
           {MEMBER_SORTS.map((option) => {
@@ -132,6 +153,22 @@ export function MembersPage() {
             )
           })}
         </div>
+        {/* A member counts as active if they have been in within the last six
+            months OR hold a pass or punches — a pass bought this morning is
+            evidence of a live member even before their first visit. */}
+        <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-neutral-500">
+          <input
+            type="checkbox"
+            checked={includeInactive}
+            onChange={(e) => setIncludeInactive(e.target.checked)}
+            className="size-4"
+            style={{ accentColor: KBC.pink }}
+          />
+          Include inactive
+          {!includeInactive && hiddenInactive > 0 && (
+            <span className="font-normal text-neutral-400">({hiddenInactive} hidden)</span>
+          )}
+        </label>
       </div>
       {loading ? (
         <p className="pt-6 text-center text-sm text-neutral-500">Loading…</p>
@@ -161,7 +198,18 @@ export function MembersPage() {
               <PassBadge pass={m.membershipAccessPass} confirmed={m.membershipConfirmed} />
             </button>
           ))}
-          {filtered.length === 0 && <p className="p-4 text-center text-sm text-neutral-400">No members found.</p>}
+          {filtered.length === 0 && (
+            <p className="p-4 text-center text-sm text-neutral-400">
+              {/* Only reachable with the box unticked: ticked, `filtered` is
+                  the search result itself, so an empty one means nothing
+                  matched and there is nothing being held back either. */}
+              {hiddenInactive > 0
+                ? `No active members match. ${hiddenInactive} inactive ${
+                    hiddenInactive === 1 ? 'member is' : 'members are'
+                  } hidden — tick Include inactive to see them.`
+                : 'No members found.'}
+            </p>
+          )}
         </div>
       )}
 
