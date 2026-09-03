@@ -65,6 +65,11 @@ src/
                           state, days left, pending purchases, signed waivers
     membershipPass.ts   — PASS_OPTIONS, accessPassLabel(), isDatedPass(),
                           membershipGrantsEntry(), passFromDates()
+    memberSort.ts       — Smart Sort: the default order for every member list
+                          (recency bucket, then pass/punches), the other sort
+                          methods beside it, and isActiveMember(). Mirrored by
+                          hand in admin-web/ and held to it by
+                          memberSort.adminMirror.test.ts
     roles.ts            — isAdminFor()/isAdmin()/isPrivileged()
     signIn.ts           — hasSignedInToday(), passLabel()
     calendarEvent.ts    — event classification, timeline layout, gym-status-from-events

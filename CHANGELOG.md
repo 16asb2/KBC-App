@@ -6,7 +6,30 @@ All notable changes to KBC Scheduler are documented here.
 
 ## [Unreleased] — 2026-08-25
 
+### Added
+- **Smart Sort — member lists now open on whoever you are most likely to be looking for.** Three screens ask the same question and answered it three different ways: the picker behind **Sign In Another Climber**, the **Members** tab in the app, and the member directory in `admin-web/`. Alphabetical is the order that takes no thought and helps least — the person standing at the desk is almost never near the top of the alphabet, so finding them meant typing their name every single time, in all three places.
+
+  Two things say who they probably are, and the gym already records both: **when they were last in**, and **whether anything on their record admits them** — a confirmed pass, or a punch in hand. Recency decides first, access second.
+
+  **Recency is compared as a bucket, not as an instant, and that is the whole design.** Taken literally, "last sign-in first, then the pass" would mean the pass never once broke a tie: a last sign-in is a millisecond timestamp, so no two members ever tie on it. So members are grouped by how recently they were in — this week, this month, this quarter, this half-year, longer ago, never — and within a group, where they are equally recent as far as anybody at a desk is concerned, the pass decides. The exact timestamp is still there one step below to order what is left, and the name below that so the order is *total*: without it, the hundreds of imported records that have never signed in and hold nothing all compare equal, and the list would quietly reshuffle itself on every keystroke.
+
+  It applies to **search results too**, which is the point — the member you want is near the top before you have finished typing their name.
+
+- **`admin-web/`: a Smart column, first in the members table.** It carries each member's place in Smart Sort order — `#1`, `#2`, `#17` — and its tooltip says why they rank there: *"Smart Sort #4 — Last in 3 days ago; annual pass in date."* The rank is worked out over the **whole** directory, so under a filter the numbers come out gappy on purpose: `#204` means the two-hundred-and-fourth likeliest member in the gym, not the fourth of whatever you are looking at. Clicking the header sorts by it, which is also what the table now opens on.
+
+  It opened on **Last Changed** before, newest first, which answered "what has happened since I last looked" — a real question, and the wrong one to make everybody pay for: that is the question you have once a day, and finding a member is the one you have all day. Every column still sorts, Last Changed included, and it is one click away.
+
+  The column is pinned to the left edge alongside the name, so the rank stays readable while you scroll out to the far right of a table this wide.
+
+- **The Members tab in the app has a sort control.** **Smart** (the default), **Name**, and **Last in**. The other two are there because Smart Sort is a guess, however good — "who was in last" and plain alphabetical are both real questions, and a guessed order you cannot turn off is worse than no guess at all. **Last in** is deliberately the raw timestamp with no bucketing and no pass: answering "who was in last" with something that quietly reorders people by what they bought would be the wrong answer.
+
+  The **Sign In Another Climber** picker has no such control and always uses Smart Sort. It is a sheet for picking one person out quickly, not a directory to read, and it has a search box for everything else.
+
 ### Fixed
+- **`admin-web/`: a member who bought a pass this morning is no longer listed as inactive.** The Activity column read one thing and one thing only — their last sign-in — so somebody who paid for an annual pass and had not been in yet looked, on the only evidence being consulted, exactly like a name on a roster nobody had touched in years. A pass or a punch in hand is the gym's other record of a live member, and it counts now: **Active** means they have been in within the last six months **or** they hold something that admits them. The **Include inactive members** filter follows the same rule, so unticking it no longer hides paid-up members who have not visited yet.
+
+  A member with neither is still inactive — that is most of an imported roster until people start using the app, which is exactly what that filter is for. A sign-in dated in the *future* still does not count either: sorting has to put such a record somewhere and "recent" is the least wrong place, but a badge asserting somebody is active on the strength of a visit that has not happened is simply false.
+
 - **`admin-web/`: a member ticked ADM in the directory can now actually sign in.** The gate read `users/{uid}` and nothing else — but a member added from this panel gets a document under a *generated* id (both **Add member** and the CSV import write with `users.add()`), and nothing exists at their Firebase uid until they sign in somewhere. So ticking **ADM** on somebody granted them nothing they could use: the panel that granted it met them with *Access Denied*, unless they happened to have opened the member app first and been linked there.
 
   Signing in now finds the record by email, wherever in the directory it sits, and **joins it to the Google account** — the same join the member app performs on first sign-in, down the same `linksOwnExistingProfile()` branch of `firestore.rules`. That the record actually *moves* is the point, not a detail: letting somebody past the gate on the email match alone would have been worse than the denial, because the rules ask exactly the question the gate asked — `isSupervisorOrAdmin()` reads `users/{request.auth.uid}` — so the panel would have loaded and then refused every write they made. The superseded copy is removed along with it, so nobody is listed twice, and the address the record was filed under is kept in `additionalEmails` rather than dropped.

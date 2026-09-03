@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Modal } from '@/components/Modal'
 import { KBC, tint } from '@/constants/theme'
+import { smartSortMembers } from '@/domain/memberSort'
 import { accessPassLabel, isDatedPass, membershipGrantsEntry } from '@/domain/membershipPass'
 import { getAllProfiles } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
@@ -65,18 +66,25 @@ export function MemberPickerModal({
     }
   }, [])
 
+  // Smart Sort, and no way to change it: this is a sheet for picking one person
+  // out quickly, not a directory to read. Search narrows it, and whatever is
+  // left comes back in the order that puts the likeliest climber at the top —
+  // which is the whole reason the sort exists, since the alternative is typing
+  // a name every time even when the person was here yesterday.
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return members
-      .filter((m) => m.uid !== excludeUid)
-      .filter((m) => !filter || filter(m))
-      .filter(
-        (m) =>
-          !q ||
-          (m.preferredName ?? m.name).toLowerCase().includes(q) ||
-          m.name.toLowerCase().includes(q) ||
-          m.email.toLowerCase().includes(q),
-      )
+    return smartSortMembers(
+      members
+        .filter((m) => m.uid !== excludeUid)
+        .filter((m) => !filter || filter(m))
+        .filter(
+          (m) =>
+            !q ||
+            (m.preferredName ?? m.name).toLowerCase().includes(q) ||
+            m.name.toLowerCase().includes(q) ||
+            m.email.toLowerCase().includes(q),
+        ),
+    )
   }, [members, search, excludeUid, filter])
 
   return (
