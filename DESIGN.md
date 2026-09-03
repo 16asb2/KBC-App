@@ -304,3 +304,24 @@ services/calendarService.ts
 - Refresh token is bound to the Desktop OAuth client that issued it (`EXPO_PUBLIC_GOOGLE_ADMIN_CLIENT_ID/SECRET` in `.env`)
 - If that client is ever deleted in Google Cloud Console, run `scripts/get-admin-token.js` with a new Desktop client to re-obtain the refresh token and update `.env`
 - Env vars require a full Metro restart to pick up after changes
+
+---
+
+## Smart Sort (v0.6)
+
+The default order for every member list: the picker behind **Sign In Another Climber**, the **Members** tab, and `admin-web/`'s member directory. Written and tested in `web/src/domain/memberSort.ts`; mirrored by hand into `admin-web/index.html`, which has no bundler.
+
+**The ranking, in order:**
+
+1. **Recency bucket** — days since `lastSignInAt`, grouped at 7 / 30 / 90 / 183, then "longer ago", then "never signed in".
+2. **Access rank** — `0` holds something that admits them now (a confirmed dated pass, or `punchPassRemaining > 0`), `1` holds something that does not (unconfirmed pass, drop-in), `2` nothing.
+3. **Exact `lastSignInAt`**, most recent first.
+4. **Display name**, so the order is total.
+
+**Why recency is bucketed.** The gym's stated rule is "last sign-in first, then whether they hold a pass". Applied to the raw timestamp, the second criterion is unreachable — millisecond timestamps never tie — so it would be a rule that reads well and never runs. Bucketing is what makes it mean something: inside a bucket the two members are equally recent as far as anyone at a desk is concerned, and the pass is the tie-break it was meant to be. The bucket edges are a judgement call, not a measurement; 183 matches `INACTIVE_AFTER_DAYS` so Smart Sort and the Activity badge do not disagree about the same member.
+
+**Why the name is on the end.** Most of an imported roster has never signed in and holds nothing, so everything above ties. `Array.prototype.sort` is stable, but the *input* order is not — `getAllProfiles` and the panel's `memberList` come back in whatever order Firestore hands them — so without a final key the list reshuffles between loads.
+
+**Keeping the copy honest.** `admin-web/` is one static HTML file: no bundler, no test run, so the rule is duplicated there rather than imported. `web/src/domain/memberSort.adminMirror.test.ts` lifts the panel's block out of the file, evaluates it, and asserts it ranks a fixture directory identically and agrees record-by-record on `isActiveMember`. That test reads `admin-web/` from `web/`'s suite — a boundary this repo otherwise keeps — and earns it by being the only thing that fails when the two drift.
+
+**Active members.** `isActiveMember` is *not* purely a recency question: a confirmed pass or a punch in hand counts as evidence of a live member on its own. It previously read `lastSignInAt` alone, which listed a member who had just bought an annual pass as inactive. A sign-in dated in the future is excluded here but sorts as recent in `recencyBucket` — the one deliberate disagreement between the two, since a sort has to place every record somewhere while a badge should not assert a visit that has not happened.

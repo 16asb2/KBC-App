@@ -118,16 +118,23 @@
        are all on the row. */
     table.wide{width:auto;min-width:100%}
     table.wide th,table.wide td{white-space:nowrap}
-    th.col-name,td.col-name{position:sticky;left:0;box-shadow:6px 0 6px -6px rgba(0,0,0,.18)}
-    /* Tinted down its whole length, header included, so the pinned column reads
-       as the edge of the table rather than as a row that failed to scroll. */
-    td.col-name{background:#eaf6fb;z-index:1}
-    /* The corner cell is stuck on both axes, so it has to outrank each of them —
-       including the other header cells, which are sticky at the same z-index and
-       come later in the DOM, and so used to slide over the name header and take
-       it off the screen the moment the table scrolled sideways. */
+    /* Two pinned columns now: the Smart Sort rank and the name beside it. The
+       rank's width is fixed in px and the name's `left` is that same number,
+       because a sticky offset has to be a length — against an `auto` width
+       there is nothing to offset by and the two columns sit on top of each
+       other. Change one of these numbers and change the other. */
+    th.col-smart,td.col-smart{position:sticky;left:0;width:92px;min-width:92px;text-align:center}
+    th.col-name,td.col-name{position:sticky;left:92px;box-shadow:6px 0 6px -6px rgba(0,0,0,.18)}
+    /* Tinted down their whole length, headers included, so the pinned pair reads
+       as the edge of the table rather than as rows that failed to scroll. */
+    td.col-smart,td.col-name{background:#eaf6fb;z-index:1}
+    /* The corner cells are stuck on both axes, so they have to outrank each of
+       them — including the other header cells, which are sticky at the same
+       z-index and come later in the DOM, and so used to slide over the name
+       header and take it off the screen the moment the table scrolled sideways. */
+    .table-scroll thead th.col-smart,.section-fill thead th.col-smart,
     .table-scroll thead th.col-name,.section-fill thead th.col-name{background:#d6ecf7;z-index:4}
-    tr:hover td.col-name{background:#dcf0f9}
+    tr:hover td.col-smart,tr:hover td.col-name{background:#dcf0f9}
     tr.row-link{cursor:pointer}
     table{width:100%;border-collapse:collapse;font-size:13px}
     th{text-align:left;padding:7px 10px;background:var(--bg);font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border)}
@@ -1020,12 +1027,15 @@ const db      = firebase.firestore();
 // ── SORT ──────────────────────────────────────────────────────────────────────
 const SORT = {
   log:      { col:'timestamp',    dir:-1 },
-  // The directory opens on what changed last, newest first: the question an
-  // admin has when they land on it is "what has happened since I last looked",
-  // not "who comes first alphabetically" — and the alphabet is one click away.
-  // Records that have never been touched carry an empty string here, so they
-  // sort to the bottom on the way down, which is where they belong.
-  members:  { col:'lastChanged',  dir:-1 },
+  // The directory opens on Smart Sort: most likely to be the member you are
+  // looking for, first. See the Smart Sort block below for what that means.
+  //
+  // It opened on what changed last before this, which answered "what has
+  // happened since I last looked" — a real question, and the wrong one to make
+  // everybody pay for, since it is the question you have once a day and finding
+  // a member is the one you have all day. Both are still one click away in the
+  // header row, Last Changed included.
+  members:  { col:'smart',        dir:1  },
   boulders: { col:'name',         dir:1  },
   receipts: { col:'timestamp',    dir:-1 },
 };
@@ -1287,21 +1297,161 @@ function fmt(iso) {
 function today() { return new Date().toISOString().slice(0,10); }
 function daysAgo(n) { const d = new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); }
 function nowLocal() { const d = new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
+// ── SMART SORT ────────────────────────────────────────────────────────────────
+//
+// Mirrors web/src/domain/memberSort.ts, which is where this rule is written down
+// and tested — nothing in this file is under test, so the copy is the one that
+// has to be kept honest. Change one, change the other.
+//
+// Three screens ask the same question and used to answer it three different
+// ways: this directory, the Members tab in the app, and the picker behind Sign
+// In Another Climber. Alphabetical is the order that needs no thought and helps
+// least — the person standing at the desk is almost never near the top of the
+// alphabet. Two things say who they probably are, and the gym records both:
+//
+//   1. When they were last in.
+//   2. Whether anything on the record admits them — a confirmed pass, or a punch.
+//
+// Recency first, access second. Stated literally the second criterion would
+// never once run: a last sign-in is a millisecond timestamp, so no two members
+// ever tie on it and the pass would never get to break anything. So recency is
+// compared as a BUCKET rather than as an instant — within a bucket two members
+// are about as recent as each other and the pass decides, with the exact
+// timestamp still there one step below to order what is left.
+
+/** Bucket edges in days: this week, this month, this quarter, this half-year. */
+const RECENCY_BUCKET_EDGES = [7, 30, 90, 183];
+const NEVER_SEEN_BUCKET = RECENCY_BUCKET_EDGES.length + 1;
+
+/**
+ * Whole days since the member last signed in, or null if the record has never
+ * seen them or carries something that is not a date. Null rather than NaN: one
+ * hand-written document must not be able to take out the directory's sort.
+ */
+function daysSinceLastSignIn(m, now) {
+  if (!m.lastSignInAt) return null;
+  const last = new Date(m.lastSignInAt).getTime();
+  if (Number.isNaN(last)) return null;
+  return ((now || Date.now()) - last) / 86400000;
+}
+
+/**
+ * Lower is more recent. A future timestamp is a clock or an import fault rather
+ * than a visit that has not happened yet, and it still describes the most recent
+ * thing on the record, so it sorts as recent — the Activity badge takes the
+ * opposite view of the same fault, on purpose. See isActiveMember().
+ */
+function recencyBucket(m, now) {
+  const days = daysSinceLastSignIn(m, now);
+  if (days === null) return NEVER_SEEN_BUCKET;
+  const i = RECENCY_BUCKET_EDGES.findIndex(limit => days <= limit);
+  return i === -1 ? RECENCY_BUCKET_EDGES.length : i;
+}
+
+/** Something on this record admits them through the door right now. */
+function holdsUsableAccess(m) {
+  return (isDatedPass(passOf(m)) && isConfirmed(m)) || (m.punchPassRemaining || 0) > 0;
+}
+
+/** 0 = can walk in, 1 = holds something unconfirmed, 2 = nothing on the record. */
+function accessRank(m) {
+  if (holdsUsableAccess(m)) return 0;
+  return passOf(m) !== 'none' ? 1 : 2;
+}
+
+function smartName(m) { return m.preferredName || m.legalName || m.name || ''; }
+
+/**
+ * Smart Sort: recency bucket, then access, then the exact last sign-in, then
+ * the name.
+ *
+ * The name is on the end so the order is TOTAL. Without it two members who have
+ * never signed in and hold nothing — most of a freshly imported roster —
+ * compare equal, and equal rows land wherever the engine's sort happens to put
+ * them: the directory would quietly reshuffle itself on every keystroke typed
+ * into the search box.
+ */
+function compareSmart(a, b, now) {
+  const at = now || Date.now();
+  const bucket = recencyBucket(a, at) - recencyBucket(b, at);
+  if (bucket) return bucket;
+  const access = accessRank(a) - accessRank(b);
+  if (access) return access;
+  const seenA = daysSinceLastSignIn(a, at), seenB = daysSinceLastSignIn(b, at);
+  if (seenA !== seenB) {
+    if (seenA === null) return 1;
+    if (seenB === null) return -1;
+    return seenA - seenB;
+  }
+  return smartName(a).toLowerCase().localeCompare(smartName(b).toLowerCase());
+}
+
+/**
+ * Every member's place in Smart Sort order, by uid, computed over the whole
+ * directory rather than over whatever the filters left behind.
+ *
+ * Global on purpose. Under a filter the numbers come out gappy — #3, #17, #204
+ * — and that is the useful reading: "third likeliest in the gym", not "third of
+ * whatever you happen to be looking at". It also lets the column sort through
+ * the same clickSort() machinery as every other one, because by then each row
+ * carries a plain number.
+ */
+let smartRanks = new Map();
+function recomputeSmartRanks() {
+  const now = Date.now();
+  smartRanks = new Map(
+    [...memberList].sort((a, b) => compareSmart(a, b, now)).map((m, i) => [m.uid, i + 1])
+  );
+}
+function smartRankOf(m) { return smartRanks.get(m.uid) || Number.MAX_SAFE_INTEGER; }
+
+/** Why this member ranks where they do, for the Smart column's tooltip. */
+function smartReason(m) {
+  const days = daysSinceLastSignIn(m, Date.now());
+  const rounded = days === null ? 0 : Math.round(days);
+  const seen = days === null ? 'Never signed in'
+    : days < 0 ? 'Last sign-in is dated in the future'
+    : days < 1 ? 'Signed in today'
+    : 'Last in ' + rounded + ' day' + (rounded === 1 ? '' : 's') + ' ago';
+  const punches = m.punchPassRemaining || 0;
+  const access = holdsUsableAccess(m)
+    ? (punches > 0 && !isDatedPass(passOf(m))
+        ? punches + ' punch' + (punches === 1 ? '' : 'es') + ' in hand'
+        : accessPassName(m) + ' in date')
+    : passOf(m) !== 'none'
+      ? accessPassName(m) + ', awaiting confirmation'
+      : 'nothing on the record admits them';
+  return 'Smart Sort #' + smartRankOf(m) + ' — ' + seen + '; ' + access + '.\n\n'
+    + 'Smart Sort ranks members by how recently they were in, then by whether '
+    + 'they hold a pass or punches. Click any other header to sort by that '
+    + 'column instead.';
+}
+
 /**
  * How long a member may go unseen before the directory calls them inactive.
  *
- * Measured from their last sign-in, which is the gym's own record of a visit —
- * so this is "have they been climbing lately", not "is their pass in date". A
- * member who has never signed in has never been seen, and counts as inactive:
- * that is most of an imported roster until people start using the app, which is
- * exactly the thing the Include-inactive box is for.
+ * Two things count as evidence of a live member, not one. The visit is the
+ * first: their last sign-in, which is the gym's own record of them being here.
+ * The second is a pass or a punch in hand — which this used to ignore
+ * completely, so a member who bought an annual pass this morning and had not
+ * been in yet was listed as INACTIVE, looking on the only evidence being read
+ * exactly like a name on a roster nobody had touched in years.
+ *
+ * A member with neither is still inactive, and that is most of an imported
+ * roster until people start using the app — which is exactly what the
+ * Include-inactive box is for.
+ *
+ * A sign-in dated in the future still does not count, which is the one place
+ * this disagrees with recencyBucket() deliberately: sorting has to put such a
+ * record somewhere and recent is the least wrong place, whereas a badge
+ * asserting the member is active on the strength of a visit that has not
+ * happened yet is simply false.
  */
 const INACTIVE_AFTER_DAYS = 183;
 function isActiveMember(m) {
-  const last = m.lastSignInAt;
-  if (!last) return false;
-  const age = (Date.now() - new Date(last).getTime()) / 86400000;
-  return age >= 0 && age <= INACTIVE_AFTER_DAYS;
+  if (holdsUsableAccess(m)) return true;
+  const age = daysSinceLastSignIn(m, Date.now());
+  return age !== null && age >= 0 && age <= INACTIVE_AFTER_DAYS;
 }
 
 /**
@@ -1974,6 +2124,9 @@ async function loadMembers() {
     // a second record for each of them.
     const snap=await db.collection('users').get();
     memberList=snap.docs.map(d=>({uid:d.id,...d.data()}));
+    // Once per load, not once per render: the ranks depend only on the records,
+    // and renderMembersTable() runs on every keystroke in the search box.
+    recomputeSmartRanks();
     renderMembersTable();
     // Counted by what the pass is, not by a status word: how many hold a
     // membership, how many are waiting on an admin, how many hold nothing.
@@ -2052,7 +2205,14 @@ function waiverOf(m) {
  * is a sort, not a search.
  */
 function renderMembersTable() {
+  // Cheap insurance: the ranks are built in loadMembers(), and this runs on
+  // every keystroke in the search box, so it only rebuilds them if the
+  // directory has arrived since (or grown) rather than on every render.
+  if(smartRanks.size!==memberList.length) recomputeSmartRanks();
   const getVal=(m,col)=>{
+    // Smart Sort is precomputed over the whole directory, so by the time the
+    // sort reaches this it is an ordinary number like every other column.
+    if(col==='smart')return smartRankOf(m);
     if(col==='legalName')return m.legalName||m.name||'';
     if(col==='membershipAccessPass')return accessPassName(m);
     // Flags and counts sort as numbers, so the ones that are set group together
@@ -2098,6 +2258,7 @@ function renderMembersTable() {
   // name, so the whole answer to "who are the supervisors and has anyone
   // touched them lately" is on screen without scrolling at all.
   tbl.innerHTML=`<table class="wide"><thead><tr>
+    ${th('smart','Smart','','col-smart')}
     ${th('legalName','Legal Name','','col-name')}
     ${th('lastChanged','Last Changed')}
     ${th('isAdmin','ADM','text-align:center')}
@@ -2120,6 +2281,7 @@ function renderMembersTable() {
   </tr></thead><tbody>${memberView.map((m,i)=>{
     const ec=emergency(m), w=waiverOf(m), gaps=memberGaps(m), changed=lastChangedAt(m), by=lastChangedBy(m);
     return `<tr class="row-link" onclick="openEditModal(${i})" title="Open ${txt(m.legalName||m.name)}">
+    <td class="col-smart" title="${txt(smartReason(m))}"><span style="font-size:12px;color:var(--muted)">#${smartRankOf(m)}</span></td>
     <td class="col-name"><strong>${txt(m.legalName||m.name)}</strong>${(()=>{const c=claimedRoles(m);return c?` <span class="badge" style="background:#e0860022;color:#e08600" title="When this member joined their account to an existing record, that record was ${[c.isAdmin?'an admin':'',c.isSupervisor?'a supervisor':''].filter(Boolean).join(' and ')}. Permissions are never carried across automatically — check who this is, then tick the boxes below to grant them. Saving clears this flag.">Roles to review</span>`:''})()}</td>
     <td style="font-size:12px" title="${by?'Last changed by '+txt(by):''}">${changed?fmtDate(changed):dash}</td>
     <td style="text-align:center">${m.isAdmin?'<span class="badge badge-red">ADM</span>':'<span style="color:#ddd">—</span>'}</td>
@@ -2138,8 +2300,8 @@ function renderMembersTable() {
     <td style="font-size:12px">${m.memberSince?fmtDate(m.memberSince):dash}</td>
     <td style="font-size:12px">${m.lastSignInAt?fmtDate(m.lastSignInAt):dash}</td>
     <td>${isActiveMember(m)
-      ? '<span class="badge badge-green">Active</span>'
-      : `<span class="badge badge-grey" title="${m.lastSignInAt?'Last signed in '+fmtDate(m.lastSignInAt):'Has never signed in'}">Inactive</span>`}</td>
+      ? `<span class="badge badge-green" title="${holdsUsableAccess(m)?'Holds '+txt(accessPassName(m)).toLowerCase()+((m.punchPassRemaining||0)>0?' and '+m.punchPassRemaining+' punch'+(m.punchPassRemaining===1?'':'es'):''):'Last signed in '+fmtDate(m.lastSignInAt)}">Active</span>`
+      : `<span class="badge badge-grey" title="${m.lastSignInAt?'Last signed in '+fmtDate(m.lastSignInAt):'Has never signed in'} — and holds no pass or punches">Inactive</span>`}</td>
     <td>${gaps.length?`<span class="badge" style="background:#e0860022;color:#e08600" title="Missing ${gaps.join(', ')} — the member is asked for these when they next open the app">Incomplete</span>`:'<span class="badge badge-green">Complete</span>'}</td>
   </tr>`;}).join('')}</tbody></table>`;
 }
