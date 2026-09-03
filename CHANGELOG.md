@@ -7,6 +7,10 @@ All notable changes to KBC Scheduler are documented here.
 ## [Unreleased] — 2026-08-25
 
 ### Added
+- **The app's Members tab has an Include inactive box, unticked by default.** It matches the directory in `admin-web/`, and it is there for the same reason: what the screen is *for* is the people currently climbing at KBC, and an imported roster can be mostly names nobody has seen in years. A member counts as active if they have been in within the last six months **or** hold a pass or punches — so somebody who bought a pass this morning is in the list before their first visit.
+
+  **It says what it is hiding.** The count beside the box is measured against the search rather than against the whole directory, so it is about what you are actually looking at: search a name, find nothing, and the screen still reports how many matches it is holding back and how to see them. Without that, "No members found" reads as "not a member" — which, of a lapsed member standing at the desk, is the wrong answer.
+
 - **Smart Sort — member lists now open on whoever you are most likely to be looking for.** Three screens ask the same question and answered it three different ways: the picker behind **Sign In Another Climber**, the **Members** tab in the app, and the member directory in `admin-web/`. Alphabetical is the order that takes no thought and helps least — the person standing at the desk is almost never near the top of the alphabet, so finding them meant typing their name every single time, in all three places.
 
   Two things say who they probably are, and the gym already records both: **when they were last in**, and **whether anything on their record admits them** — a confirmed pass, or a punch in hand. Recency decides first, access second.
