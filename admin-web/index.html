@@ -243,8 +243,11 @@
 <div id="denied-screen" style="display:none">
   <div style="font-size:48px">🚫</div>
   <h2>Access Denied</h2>
-  <p style="color:var(--muted);margin-top:6px">Your account does not have admin or supervisor privileges.</p>
-  <button class="btn btn-outline" style="margin-top:16px" onclick="signOut()">Sign out</button>
+  <p id="denied-detail" style="color:var(--muted);margin-top:6px;max-width:460px"></p>
+  <div style="display:flex;gap:10px;margin-top:16px">
+    <button class="btn btn-outline" onclick="location.reload()">Try again</button>
+    <button class="btn btn-outline" onclick="signOut()">Sign out</button>
+  </div>
 </div>
 
 <!-- APP -->
@@ -1068,12 +1071,124 @@ async function signIn() {
 }
 async function signOut() { await auth.signOut(); driveToken = null; show('login-screen'); }
 
+function normEmail(e) { return String(e||'').trim().toLowerCase(); }
+
+/**
+ * The record filed under an address, wherever in the directory it sits.
+ *
+ * The indexed query first, because it answers in a single read. A miss from it
+ * is not an answer, though — it matches only a record whose STORED address is
+ * already lower case, which is a property of whatever wrote the row rather than
+ * anything this panel can assume — so the collection is read and compared
+ * properly before concluding there is nothing. Mirrors
+ * web/src/domain/memberProfile.ts#findProfileByEmailIn, which exists for the
+ * same reason.
+ */
+async function findRecordByEmail(email) {
+  const target = normEmail(email);
+  if (!target) return null;
+  const fast = await db.collection('users').where('email','==',target).limit(1).get();
+  if (!fast.empty) return Object.assign({ uid: fast.docs[0].id }, fast.docs[0].data());
+  const all = await db.collection('users').get();
+  const hit = all.docs.find(d => normEmail(d.data().email) === target);
+  return hit ? Object.assign({ uid: hit.id }, hit.data()) : null;
+}
+
+/**
+ * Joins a staff record the gym already holds onto the Google account signing in.
+ *
+ * An admin added from this panel gets a document under a generated id — both
+ * addMember() and runImport() write with users.add() — and no document exists
+ * at their Firebase uid until they sign in somewhere. The gate below used to
+ * read users/{uid} and nothing else, so somebody ticked ADM in the directory
+ * was told Access Denied by the very panel that granted it, unless they
+ * happened to have opened the member app first and been linked there.
+ *
+ * Letting them in on the email match alone would be worse than the denial:
+ * firestore.rules asks the same narrow question the gate did —
+ * isSupervisorOrAdmin() reads users/{request.auth.uid} — so the panel would
+ * load and then refuse every write. The record has to actually move onto the
+ * uid, which is the join web/src/services/profiles.ts#findOrLinkProfile
+ * performs on first sign-in, down the same linksOwnExistingProfile() branch of
+ * the rules: the flags are re-checked against the record named in linkedFrom,
+ * whose stored address must match the token's, so this can carry privileges
+ * across but never mint them.
+ *
+ * Only a record already carrying a staff flag is joined. A member who wanders
+ * onto the admin URL is turned away without their profile being touched —
+ * onboarding is the member app's job, not this panel's.
+ */
+async function claimStaffRecord(user) {
+  const record = await findRecordByEmail(user.email);
+  if (!record || (!record.isAdmin && !record.isSupervisor)) return null;
+
+  const oldUid = record.uid;
+  const stored = Object.assign({}, record); delete stored.uid;
+  const now = new Date().toISOString();
+
+  // The address the record was filed under is kept alongside the new one rather
+  // than dropped: it is how this person appears on older receipts and in
+  // whatever sheet the record came from, and it is the evidence for why the
+  // join happened at all.
+  let others = [];
+  try { const p = JSON.parse(stored.additionalEmails || '[]'); if (Array.isArray(p)) others = p.filter(e => typeof e === 'string'); } catch {}
+  const known = new Set([normEmail(user.email), ...others.map(normEmail)]);
+  if (normEmail(stored.email) && !known.has(normEmail(stored.email))) others.push(stored.email);
+
+  // What Google supplies is an identity — an address, a name, a photo — and
+  // that is the whole of what may be overwritten here. The pass, the punches,
+  // the dates, memberSince: none of it is any business of somebody signing in.
+  const linked = Object.assign({}, stored, {
+    name: user.displayName || stored.name || user.email,
+    email: user.email,
+    photo: user.photoURL || null,
+    linkedFrom: oldUid,
+    lastUpdatedBy: user.email,
+    lastUpdatedAt: now,
+  }, others.length ? { additionalEmails: JSON.stringify(others) } : {});
+
+  await db.collection('users').doc(user.uid).set(linked);
+
+  // The original is now a copy of what was just written, and removing it is
+  // part of the join rather than tidying afterwards: left standing it is a
+  // second row for the same person in the directory this panel exists to keep
+  // straight. The privileges are in place by this point, so a failure here is
+  // reported and stepped over — locking an admin out over a duplicate would
+  // shut them out of the one screen that can merge it.
+  try {
+    await db.collection('users').doc(oldUid).delete();
+    console.log('[Auth] Joined', user.uid, 'to record', oldUid, 'by email');
+  } catch(e) {
+    console.error('[Auth] Joined', user.uid, 'but could not remove the old record', oldUid, e);
+    setTimeout(() => toast('Your record was joined to this account, but the old copy could not be removed — you may be listed twice in the directory.', true), 1200);
+  }
+  return linked;
+}
+
+function deny(detail) {
+  document.getElementById('denied-detail').textContent = detail ||
+    'Your account does not have admin or supervisor privileges. If KBC staff have just granted them, sign out and sign in again. ' +
+    'If the gym holds your record under a different email address, sign into the member app with this account first to join the two.';
+  show('denied-screen');
+}
+
 auth.onAuthStateChanged(async (user) => {
   if (!user) { show('login-screen'); return; }
   let profile;
-  try { const d = await db.collection('users').doc(user.uid).get(); profile = d.exists ? d.data() : null; } catch {}
+  try {
+    const d = await db.collection('users').doc(user.uid).get();
+    profile = d.exists ? d.data() : await claimStaffRecord(user);
+  } catch(e) {
+    // A lookup that threw is not the same as no record, and the difference
+    // matters: swallowed, a directory outage or a rules change reads back as
+    // "you are not an admin", which is a wrong answer rather than a failure and
+    // sends whoever hit it looking in entirely the wrong place.
+    console.error('[Auth] Could not establish access for', user.email, e);
+    deny('We could not check your access: ' + e.message);
+    return;
+  }
   const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL;
-  if (!isSuperAdmin && (!profile || (!profile.isAdmin && !profile.isSupervisor))) { show('denied-screen'); return; }
+  if (!isSuperAdmin && (!profile || (!profile.isAdmin && !profile.isSupervisor))) { deny(); return; }
   currentUser = { uid: user.uid, email: user.email, displayName: user.displayName };
   document.getElementById('header-user').textContent = user.displayName || user.email;
   show('app-screen');
