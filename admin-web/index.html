@@ -1566,7 +1566,27 @@ function accessPassText(m) {
 function dlBlob(blob, filename) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click(); URL.revokeObjectURL(a.href); }
 function setLoading(id) { document.getElementById(id).innerHTML = '<div class="loading"><span class="spinner"></span>Loading…</div>'; }
 function toCSV(rows) { return rows.map(r => r.map(v => `"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n'); }
-function avgGrade(votes) { if (!votes) return null; const v = Object.values(votes).filter(x=>typeof x==='number'); return v.length ? Math.round(v.reduce((a,b)=>a+b,0)/v.length) : null; }
+/**
+ * A stored grade vote read as the band its voter pressed.
+ *
+ * This panel has always written the band index — initGradeBar() stores
+ * Math.floor(frac*5) — but web/ used to write a POSITION on the 0-4 scale
+ * instead: pressing the middle of Black recorded 3.6, and pressing just inside
+ * it recorded 3.2. Both were then rounded, so a boulder two people had marked
+ * Black was counted, filtered and exported as Pink.
+ *
+ * Legacy values are put back through the bar they came from. Whole numbers are
+ * fixed points — snap(3) is 3 — so every vote this panel ever wrote is
+ * untouched, which is what makes this safe to apply to the whole history.
+ * Mirrors gradeIndexFromVote() in web/src/domain/gradeVote.ts.
+ */
+function gradeIndexFromVote(v) {
+  if (typeof v !== 'number' || !isFinite(v)) return 0;
+  const frac = Math.max(0, Math.min(4, v)) / 4;
+  return Math.min(4, Math.floor(frac * 5));
+}
+/** The community's grade: every vote read as a band, then averaged. */
+function avgGrade(votes) { if (!votes) return null; const v = Object.values(votes).filter(x=>typeof x==='number'); return v.length ? Math.round(v.reduce((a,b)=>a+gradeIndexFromVote(b),0)/v.length) : null; }
 function avgQuality(votes) { if (!votes) return null; const v = Object.values(votes).filter(x=>typeof x==='number'); return v.length ? (v.reduce((a,b)=>a+b,0)/v.length).toFixed(1) : null; }
 function gradeChip(idx) { if (idx==null||idx<0||idx>4) return '<span style="color:var(--muted)">—</span>'; return `<span class="grade-chip" style="background:${KBC_GRADE_BG[idx]};color:${KBC_GRADE_FG[idx]}">${KBC_GRADES[idx]}</span>`; }
 function makeLogId(ts) { return ts.replace(/[:.]/g,'-').slice(0,23)+'-'+Math.random().toString(36).slice(2,7); }

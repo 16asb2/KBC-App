@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import { KBC } from '@/constants/theme'
+import { fractionForGrade, gradeFromFraction, gradeIndexFromVote } from '@/domain/gradeVote'
 import { GRADES, GRADE_COLORS, avgGrade } from '@/services/boulders'
 
 // Ported from mobile@1cdfada/components/grade-bar.tsx. RN's PanResponder + .measure()
@@ -13,12 +14,23 @@ export type GradeBarProps = {
   compact?: boolean
 }
 
+/**
+ * A mark standing at the middle of grade `value`'s band.
+ *
+ * It used to sit at `value / 4` of the bar, which is a different thing
+ * entirely: the bar is five bands of 20%, so that put White hard against the
+ * left edge, Black hard against the right, and every average about one band too
+ * far right — a boulder averaging 3.2 drew its marker at 80%, the start of
+ * Black, while every count rounded it to Pink. The screen and the numbers were
+ * reading the same field and disagreeing about it.
+ */
 function Marker({ value, color }: { value: number; color: string }) {
+  const at = fractionForGrade(value)
   return (
     <div className="pointer-events-none absolute inset-0 flex" style={{ top: -2, bottom: -2 }}>
-      <div style={{ flex: Math.max(value, 0) }} />
+      <div style={{ flex: Math.max(at, 0) }} />
       <div style={{ width: 4, background: color, borderRadius: 2 }} />
-      <div style={{ flex: Math.max(4 - value, 0) }} />
+      <div style={{ flex: Math.max(1 - at, 0) }} />
     </div>
   )
 }
@@ -33,14 +45,24 @@ export function GradeBar({
   const barRef = useRef<HTMLDivElement>(null)
 
   const avg = avgGrade(votes)
-  const userVote = userUid !== undefined && userUid in votes ? votes[userUid] : null
+  // Read as the band it was pressed in, so a vote stored by the old bar shows
+  // up under the grade its owner chose rather than one band down.
+  const userVote =
+    userUid !== undefined && userUid in votes ? gradeIndexFromVote(votes[userUid]) : null
   const voteCount = Object.keys(votes).length
 
+  /**
+   * The grade a press means: the band it landed in, whole.
+   *
+   * This used to return `(relX / width) * 4` — a position on the 0–4 scale, not
+   * a grade. Pressing the middle of Black recorded 3.6 and pressing just inside
+   * it recorded 3.2, both of which every count rounded down to Pink.
+   * `admin-web/` has always recorded the band index; this is the same rule.
+   */
   function gradeFromClientX(clientX: number): number {
     const rect = barRef.current?.getBoundingClientRect()
     if (!rect || rect.width === 0) return 0
-    const relX = Math.max(0, Math.min(rect.width, clientX - rect.left))
-    return Math.max(0, Math.min(4, (relX / rect.width) * 4))
+    return gradeFromFraction((clientX - rect.left) / rect.width)
   }
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
@@ -91,14 +113,14 @@ export function GradeBar({
             {voteCount > 0 && (
               <span className="text-[11px] text-neutral-400">
                 {voteCount} vote{voteCount !== 1 ? 's' : ''}
-                {avg !== null ? ` · avg: ${GRADES[Math.round(avg)]}` : ''}
+                {avg !== null ? ` · avg: ${GRADES[avg]}` : ''}
               </span>
             )}
             {userVote !== null && (
               <span className="text-[11px] text-neutral-400">
                 {'  '}
                 <span className="font-bold" style={{ color: KBC.live }}>
-                  ● {GRADES[Math.round(userVote)]}
+                  ● {GRADES[userVote]}
                 </span>
                 {'  '}
                 <button

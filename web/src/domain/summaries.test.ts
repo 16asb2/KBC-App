@@ -109,6 +109,31 @@ describe('communityGradeIndex', () => {
   })
 })
 
+describe('communityGradeIndex, on votes the old grade bar wrote', () => {
+  // The reported bug, at the level it was reported: a boulder on the Yellow
+  // Wall that a setter and a member had both marked Black sat in the Pink row.
+  // The old bar recorded a press as a position on 0–4 rather than as a band, so
+  // presses inside Black stored 3.2–3.4 and every count rounded them to Pink —
+  // while the bar went on drawing the marker in the Black band.
+  it('counts a boulder two people marked Black as Black', () => {
+    const b = boulder({ setterGradeVote: 3.4, gradeVotes: { a: 3.52 }, locations: ['Yellow Wall'] })
+    expect(communityGradeIndex(b, GRADES.length)).toBe(4)
+    expect(MATRIX([b]).counts.Black['Yellow Wall']).toBe(1)
+  })
+
+  it('leaves a boulder people really did mark Pink in Pink', () => {
+    const b = boulder({ setterGradeVote: 2.8, gradeVotes: { a: 3.0 }, locations: ['Yellow Wall'] })
+    expect(communityGradeIndex(b, GRADES.length)).toBe(3)
+    expect(MATRIX([b]).counts.Pink['Yellow Wall']).toBe(1)
+  })
+
+  it('does not move a boulder whose votes were already whole grades', () => {
+    const b = boulder({ setterGradeVote: 3, gradeVotes: { a: 3, c: 4 } })
+    // Two Pinks and a Black: still Pink, exactly as before.
+    expect(communityGradeIndex(b, GRADES.length)).toBe(3)
+  })
+})
+
 describe('boulderCell', () => {
   const CELL = (b: Boulder) => boulderCell(b, GRADES, LOCATIONS)
 
