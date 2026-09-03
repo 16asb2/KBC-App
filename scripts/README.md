@@ -28,6 +28,28 @@ invisible to the duplicate check and got created again on every run.
 It also counts how many profiles carry a **waiver**, which no CSV column can
 restore.
 
+## `inspect-boulders.mjs`
+
+Read-only. Writes nothing, deletes nothing.
+
+```bash
+node inspect-boulders.mjs                        # list the seasons
+node inspect-boulders.mjs --season F2026
+node inspect-boulders.mjs --season F2026 --grade Black
+node inspect-boulders.mjs --season F2026 --wall "Yellow Wall"
+```
+
+It exists because a rendered count cannot be argued with. The Boulder Summary's
+grade × wall table is built out of four stored fields, and when a boulder does
+not turn up where somebody expects it the question is always the same: is the
+table wrong, or is the record? This prints those fields **as they are actually
+stored** — `locations` as JSON, so a trailing space or a lower-case spelling is
+visible rather than guessed at — then rebuilds the same table underneath them.
+
+If the printed table matches what the app shows but a boulder's `locations`
+names a wall you did not expect, the record is what needs correcting. If they
+disagree, the app has a bug and this output is the evidence for it.
+
 ## `wipe-firestore.mjs`
 
 Deletes Firestore collections so a clean re-import can replace them. **This
