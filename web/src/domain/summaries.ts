@@ -66,6 +66,33 @@ export function canonicalWall(locations: readonly string[], raw: string): string
   return locations.find((l) => l.trim().toLowerCase() === target) ?? null
 }
 
+/**
+ * Where one boulder lands in the table: its grade row, and the wall columns it
+ * counts in.
+ *
+ * Pulled out of `gradeLocationMatrix` so the screen can ask the same question
+ * of a single boulder and get the same answer by construction. A table that
+ * says "4" and cannot tell you which four is a table you have to take on
+ * trust — which is exactly how a miscount goes unnoticed, and how a *correct*
+ * count gets mistaken for one.
+ */
+export function boulderCell(
+  b: Boulder,
+  grades: readonly string[],
+  locations: readonly string[],
+): { row: GradeRow; walls: string[] } {
+  const gi = communityGradeIndex(b, grades.length)
+  const walls = new Set<string>()
+  for (const raw of b.locations) {
+    const wall = canonicalWall(locations, raw)
+    if (wall) walls.add(wall)
+  }
+  return {
+    row: gi === null ? UNGRADED : grades[gi],
+    walls: walls.size > 0 ? [...walls] : [UNASSIGNED_WALL],
+  }
+}
+
 export type GradeLocationMatrix = {
   /** counts[grade][location] */
   counts: Record<GradeRow, Record<string, number>>
@@ -118,20 +145,14 @@ export function gradeLocationMatrix(
   colTotals[UNASSIGNED_WALL] = 0
 
   for (const b of boulders) {
-    const gi = communityGradeIndex(b, grades.length)
-    const row: GradeRow = gi === null ? UNGRADED : grades[gi]
+    const { row, walls } = boulderCell(b, grades, locations)
     rowTotals[row]++
 
-    const walls = new Set<string>()
     for (const raw of b.locations) {
-      const wall = canonicalWall(locations, raw)
-      if (wall) walls.add(wall)
-      else if (raw.trim()) unrecognised.add(raw.trim())
+      if (!canonicalWall(locations, raw) && raw.trim()) unrecognised.add(raw.trim())
     }
-    if (walls.size === 0) {
-      walls.add(UNASSIGNED_WALL)
-      unassigned++
-    }
+    if (walls[0] === UNASSIGNED_WALL) unassigned++
+
     for (const wall of walls) {
       counts[row][wall] = (counts[row][wall] ?? 0) + 1
       colTotals[wall]++

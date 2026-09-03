@@ -5,6 +5,7 @@ import { cellFill } from '@/constants/chart'
 import { KBC } from '@/constants/theme'
 import {
   UNASSIGNED_WALL,
+  boulderCell,
   gradeLocationMatrix,
   gradeRows,
   qualityBuckets,
@@ -68,6 +69,23 @@ export function BoulderSummaryModal({
   }, [seasonId])
 
   const matrix = useMemo(() => gradeLocationMatrix(boulders, GRADES, LOCATIONS), [boulders])
+
+  // Which cell the reader has opened up. A count you cannot look inside has to
+  // be taken on trust, and that is how a correct count gets mistaken for a
+  // broken one — "there is a black boulder on the yellow wall and this says
+  // zero" is answerable in one tap once the cell will say what it is holding.
+  const [focus, setFocus] = useState<{ row: string; wall: string | null } | null>(null)
+
+  const focused = useMemo(() => {
+    if (!focus) return []
+    return boulders
+      .map((b) => ({ b, cell: boulderCell(b, GRADES, LOCATIONS) }))
+      .filter(
+        ({ cell }) =>
+          cell.row === focus.row && (focus.wall === null || cell.walls.includes(focus.wall)),
+      )
+      .sort((x, y) => x.b.number - y.b.number)
+  }, [boulders, focus])
   const quality = useMemo(() => qualityBuckets(boulders), [boulders])
   const setters = useMemo(() => setterTallies(boulders), [boulders])
 
@@ -169,22 +187,49 @@ export function BoulderSummaryModal({
                       </th>
                       {matrix.columns.map((loc) => {
                         const n = matrix.counts[row][loc] ?? 0
+                        const open = focus?.row === row && focus.wall === loc
                         return (
                           <td key={loc} className="p-0.5">
-                            <span
-                              className="block rounded py-1.5 text-[13px] font-semibold tabular-nums"
-                              style={cellFill(n, matrix.busiestCell)}
+                            <button
+                              type="button"
+                              disabled={n === 0}
+                              onClick={() => setFocus(open ? null : { row, wall: loc })}
+                              aria-expanded={open}
+                              className="block w-full rounded py-1.5 text-[13px] font-semibold tabular-nums disabled:cursor-default"
+                              style={{
+                                ...cellFill(n, matrix.busiestCell),
+                                outline: open ? `2px solid ${KBC.pink}` : undefined,
+                              }}
                               title={`${row} · ${loc}: ${n} boulder${n === 1 ? '' : 's'}`}
                             >
                               {n || '·'}
-                            </span>
+                            </button>
                           </td>
                         )
                       })}
                       <td className="p-0.5">
-                        <span className="block rounded bg-neutral-100 py-1.5 text-[13px] font-bold text-neutral-700 tabular-nums">
+                        <button
+                          type="button"
+                          disabled={matrix.rowTotals[row] === 0}
+                          onClick={() =>
+                            setFocus(
+                              focus?.row === row && focus.wall === null
+                                ? null
+                                : { row, wall: null },
+                            )
+                          }
+                          aria-expanded={focus?.row === row && focus.wall === null}
+                          className="block w-full rounded bg-neutral-100 py-1.5 text-[13px] font-bold text-neutral-700 tabular-nums disabled:cursor-default"
+                          style={{
+                            outline:
+                              focus?.row === row && focus.wall === null
+                                ? `2px solid ${KBC.pink}`
+                                : undefined,
+                          }}
+                          title={`Every ${row} boulder and the wall it is on`}
+                        >
                           {matrix.rowTotals[row] || '·'}
-                        </span>
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -210,6 +255,51 @@ export function BoulderSummaryModal({
                 </tbody>
               </table>
             </div>
+
+            {/* What the tapped cell is actually holding. The wall column is the
+                point of it: a boulder somebody expected in one cell and finds
+                in another is a record to correct, not a count to distrust, and
+                this is the difference between knowing that and guessing. */}
+            {focus && (
+              <div className="mt-3 rounded-xl bg-neutral-50 p-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="text-xs font-bold text-neutral-700">
+                    {focus.wall === null
+                      ? `Every ${focus.row} boulder`
+                      : `${focus.row} · ${focus.wall}`}
+                    <span className="ml-1.5 font-normal text-neutral-500">
+                      ({focused.length})
+                    </span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setFocus(null)}
+                    className="text-xs font-semibold"
+                    style={{ color: KBC.pink }}
+                  >
+                    Hide
+                  </button>
+                </div>
+                <ul className="mt-2 space-y-1">
+                  {focused.map(({ b, cell }) => (
+                    <li key={b.id} className="flex items-baseline justify-between gap-3 text-xs">
+                      <span className="min-w-0 truncate font-semibold text-neutral-800">
+                        #{b.number}
+                        {b.name ? ` ${b.name}` : ''}
+                      </span>
+                      <span
+                        className="shrink-0"
+                        style={{
+                          color: cell.walls[0] === UNASSIGNED_WALL ? KBC.orange : '#737373',
+                        }}
+                      >
+                        {cell.walls.join(', ')}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </Card>
 
           <Card
