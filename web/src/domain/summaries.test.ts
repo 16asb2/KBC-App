@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  boulderCell,
   climbSections,
   climbStats,
   communityGradeIndex,
   gradeBars,
   gradeLocationMatrix,
+  gradeRows,
   qualityBuckets,
   setterTallies,
   UNASSIGNED_WALL,
@@ -104,6 +106,48 @@ describe('communityGradeIndex', () => {
   it('clamps a stray out-of-range average into the scale', () => {
     expect(communityGradeIndex(boulder({ gradeVotes: { a: 9 } }), GRADES.length)).toBe(4)
     expect(communityGradeIndex(boulder({ gradeVotes: { a: -3 } }), GRADES.length)).toBe(0)
+  })
+})
+
+describe('boulderCell', () => {
+  const CELL = (b: Boulder) => boulderCell(b, GRADES, LOCATIONS)
+
+  it('names the row and walls a boulder is counted in', () => {
+    expect(CELL(boulder({ gradeVotes: { a: 4 }, locations: ['Yellow Wall'] }))).toEqual({
+      row: 'Black',
+      walls: ['Yellow Wall'],
+    })
+  })
+
+  it('answers UNASSIGNED_WALL for a boulder with nowhere to be', () => {
+    expect(CELL(boulder({ locations: [] })).walls).toEqual([UNASSIGNED_WALL])
+    expect(CELL(boulder({ locations: ['Nowhere'] })).walls).toEqual([UNASSIGNED_WALL])
+  })
+
+  // The drill-down list on the summary is built from this while the numbers
+  // beside it come from the matrix. If the two ever disagreed, the screen would
+  // show a cell reading 3 above a list of two boulders — which is worse than no
+  // list at all, so they are the same code and this says so.
+  it('agrees with the matrix on every boulder, cell by cell', () => {
+    const bs = [
+      boulder({ id: '1', gradeVotes: { a: 4 }, locations: ['Yellow Wall'] }),
+      boulder({ id: '2', gradeVotes: { a: 4 }, locations: ['Cave Right', 'Cave Middle'] }),
+      boulder({ id: '3', gradeVotes: { a: 0 }, locations: [] }),
+      boulder({ id: '4', locations: ['Nowhere'] }),
+      boulder({ id: '5', setterGradeVote: 2, locations: [' green wall '] }),
+    ]
+    const m = MATRIX(bs)
+    const tally: Record<string, Record<string, number>> = {}
+    for (const b of bs) {
+      const { row, walls } = CELL(b)
+      tally[row] ??= {}
+      for (const w of walls) tally[row][w] = (tally[row][w] ?? 0) + 1
+    }
+    for (const row of gradeRows(GRADES)) {
+      for (const col of m.columns) {
+        expect([row, col, m.counts[row][col] ?? 0]).toEqual([row, col, tally[row]?.[col] ?? 0])
+      }
+    }
   })
 })
 

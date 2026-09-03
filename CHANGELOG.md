@@ -7,6 +7,12 @@ All notable changes to KBC Scheduler are documented here.
 ## [Unreleased] — 2026-08-25
 
 ### Added
+- **Every cell in the boulder summary's grade × wall table opens up.** Tap one and it lists the boulders it is counting — number, name, and **the wall each is actually recorded on**. Tap a row's Total for every boulder of that grade, whatever wall it is on, which is the view that answers "I know there is a black boulder on the yellow wall, so why does that cell say zero": the boulder is in the list, against the wall its record names, and that is a record to correct rather than a count to distrust.
+
+  A count you cannot look inside has to be taken on trust, and that cuts both ways — it is how a genuine miscount goes unnoticed, and how a correct count gets mistaken for a broken one. The list and the numbers beside it are built from the same function (`boulderCell`), with a test that walks every cell of a mixed season and asserts the two agree, because a cell reading 3 above a list of two boulders would be worse than no list at all.
+
+  Boulders on no recorded wall show their **No wall** in amber in that list, so the ones needing attention are visible at a glance.
+
 - **The app's Members tab has an Include inactive box, unticked by default.** It matches the directory in `admin-web/`, and it is there for the same reason: what the screen is *for* is the people currently climbing at KBC, and an imported roster can be mostly names nobody has seen in years. A member counts as active if they have been in within the last six months **or** hold a pass or punches — so somebody who bought a pass this morning is in the list before their first visit.
 
   **It says what it is hiding.** The count beside the box is measured against the search rather than against the whole directory, so it is about what you are actually looking at: search a name, find nothing, and the screen still reports how many matches it is holding back and how to see them. Without that, "No members found" reads as "not a member" — which, of a lapsed member standing at the desk, is the wrong answer.
