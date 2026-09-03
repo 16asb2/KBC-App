@@ -268,6 +268,10 @@ have to happen on that first Google sign-in, and each is a separate rule:
 
 The `isAdmin(email, profileIsAdmin?)` helper in `constants/admins.ts` checks both sources.
 
+**The flag lives on a record, and the record is not always at the uid.** Both clients grant on `users/{request.auth.uid}` — `firestore.rules`' `isSupervisorOrAdmin()` reads that document and nothing else — but an admin created in `admin-web/` (`addMember`, `runImport`) is a document under a generated id, and nothing exists at their Firebase uid until they sign in somewhere. The grant is therefore only real once the record has been **joined** to the account, and both clients do that join on sign-in, by email, down the rules' `linksOwnExistingProfile()` branch: `findOrLinkProfile()` in `web/src/services/profiles.ts` for members, `claimStaffRecord()` in `admin-web/index.html` for staff. Neither can mint a flag — the rules re-check `isAdmin`/`isSupervisor` against the record named in `linkedFrom`, whose stored address must match the token's.
+
+Matching on a **legal name** is the member app's alone. It proves nothing — a legal name is public knowledge around a gym — so it needs the member to pick their own record out of a masked list, and the rules refuse to carry roles across it (the claimed record's flags travel as `claimedRoles` for an admin to grant deliberately). An admin whose record is filed under an address they no longer use therefore signs into the member app first; the admin panel does not offer that path, and its Access Denied screen says where to go.
+
 ---
 
 ## Calendar Mediator Architecture (v0.5)
