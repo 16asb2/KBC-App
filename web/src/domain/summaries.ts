@@ -1,4 +1,5 @@
 import type { Boulder } from '@/services/boulders'
+import { averageGradeIndex } from './gradeVote'
 import type { ClimbLocation, GradeSystem, PersonalClimb } from '@/services/climblog'
 
 // The numbers behind the two summary screens, kept out of the components so
@@ -32,9 +33,10 @@ export function gradeRows(grades: readonly string[]): GradeRow[] {
 export function communityGradeIndex(b: Boulder, gradeCount: number): number | null {
   const votes = Object.values(b.gradeVotes ?? {})
   if (b.setterGradeVote !== null && b.setterGradeVote !== undefined) votes.push(b.setterGradeVote)
-  if (votes.length === 0) return null
-  const avg = votes.reduce((s, v) => s + v, 0) / votes.length
-  return Math.round(Math.min(Math.max(avg, 0), gradeCount - 1))
+  // Each vote is read as the band its voter pressed before any averaging — see
+  // domain/gradeVote.ts. Averaging the raw numbers is how a boulder two people
+  // had marked Black landed in the Pink row of this very table.
+  return averageGradeIndex(votes, gradeCount)
 }
 
 /**

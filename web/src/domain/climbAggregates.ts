@@ -1,4 +1,5 @@
 import type { PersonalClimb } from '@/services/climblog'
+import { averageGradeIndex } from './gradeVote'
 
 export type ClimbAggregates = {
   sendCount: number
@@ -43,7 +44,9 @@ export function computeAggregates(
     }
   }
 
-  const avgGrade = gradeVotes.length > 0 ? gradeVotes.reduce((s, v) => s + v, 0) / gradeVotes.length : null
+  // Each vote read as the band its voter pressed, then averaged — the same rule
+  // the grade bar, the summary and admin-web/ all use now. See domain/gradeVote.ts.
+  const avgGrade = averageGradeIndex(gradeVotes)
   const avgQuality = qualityVotes.length > 0 ? qualityVotes.reduce((s, v) => s + v, 0) / qualityVotes.length : null
 
   const topBadges = Object.entries(badgeCounts)

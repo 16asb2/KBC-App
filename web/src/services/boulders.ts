@@ -9,6 +9,7 @@ import {
   setDoc,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { GRADE_BAND_COUNT, averageGradeIndex } from '@/domain/gradeVote'
 import { generateId } from '@/utils/id'
 
 // Same `boulders/{id}`, `boulders/{id}/comments/{id}`, `boulderSeasons/{id}`,
@@ -26,6 +27,18 @@ export const LOCATIONS = ['Cave Right', 'Cave Middle', 'Cave Left', 'Green Wall'
 export type Location = (typeof LOCATIONS)[number]
 
 export const GRADES = ['White', 'Blue', 'Purple', 'Pink', 'Black'] as const
+
+// `domain/gradeVote.ts` cannot import this — it would pull `lib/firebase` in
+// behind it and stop being testable in a plain Node process — so it carries the
+// band count as a constant and this is where the two are held together. A grade
+// added to the scale without updating it would silently make every vote read as
+// the wrong band.
+if (import.meta.env.DEV && GRADES.length !== GRADE_BAND_COUNT) {
+  console.error(
+    `[boulders] GRADES has ${GRADES.length} entries but domain/gradeVote.ts is built for ` +
+      `${GRADE_BAND_COUNT}. Update GRADE_BAND_COUNT.`,
+  )
+}
 export const GRADE_COLORS = ['#e8e8e8', '#00b4d8', '#9b5de5', '#f5a5c9', '#1a1a1a']
 export const GRADE_TEXT = ['#555', '#fff', '#fff', '#fff', '#fff']
 export type Grade = (typeof GRADES)[number]
@@ -94,10 +107,16 @@ export type BoulderComment = {
   createdAt: string
 }
 
+/**
+ * The community's grade, as an index on `GRADES`.
+ *
+ * Every vote is read as the band its voter pressed before being averaged — see
+ * `domain/gradeVote.ts` for why that is not the same as averaging the numbers
+ * as stored. It used to be a plain mean of the raw values, which is how a
+ * boulder two people had marked Black came out as Pink.
+ */
 export function avgGrade(votes: Record<string, number>): number | null {
-  const vals = Object.values(votes)
-  if (!vals.length) return null
-  return vals.reduce((s, v) => s + v, 0) / vals.length
+  return averageGradeIndex(Object.values(votes))
 }
 
 export function avgQuality(votes: Record<string, number>): number | null {

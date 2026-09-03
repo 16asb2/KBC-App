@@ -30,8 +30,9 @@ export function BoulderLogModal({
   const initialGradeIdx = (() => {
     const allVotes: Record<string, number> = { ...boulder.gradeVotes }
     if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) allVotes['__setter'] = boulder.setterGradeVote
-    const avg = avgGrade(allVotes)
-    return avg !== null ? Math.round(Math.max(0, Math.min(4, avg))) : -1
+    // avgGrade already answers with a grade index, votes read as the bands
+    // their voters pressed — see domain/gradeVote.ts.
+    return avgGrade(allVotes) ?? -1
   })()
 
   const [logDate, setLogDate] = useState(() => toLocalInputValue(new Date()))
@@ -56,7 +57,7 @@ export function BoulderLogModal({
       const allVotes: Record<string, number> = { ...boulder.gradeVotes }
       if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) allVotes['__setter'] = boulder.setterGradeVote
       const communityAvg = avgGrade(allVotes)
-      const establishedGrade = communityAvg !== null ? KBC_GRADE_LABELS[Math.round(Math.max(0, Math.min(4, communityAvg)))] : ''
+      const establishedGrade = communityAvg !== null ? KBC_GRADE_LABELS[communityAvg] : ''
       const personalGrade = initialGradeIdx >= 0 ? KBC_GRADE_LABELS[initialGradeIdx] : ''
 
       const entry = await addClimb({
