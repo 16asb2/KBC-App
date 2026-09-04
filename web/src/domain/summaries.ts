@@ -33,9 +33,10 @@ export function gradeRows(grades: readonly string[]): GradeRow[] {
 export function communityGradeIndex(b: Boulder, gradeCount: number): number | null {
   const votes = Object.values(b.gradeVotes ?? {})
   if (b.setterGradeVote !== null && b.setterGradeVote !== undefined) votes.push(b.setterGradeVote)
-  // Each vote is read as the band its voter pressed before any averaging — see
-  // domain/gradeVote.ts. Averaging the raw numbers is how a boulder two people
-  // had marked Black landed in the Pink row of this very table.
+  // Averaged as pressed, then truncated into the band the average falls in —
+  // see domain/gradeVote.ts. Rounding to the nearest whole index is how a
+  // boulder several people had voted low in Black landed in the Pink row of
+  // this very table.
   return averageGradeIndex(votes, gradeCount)
 }
 

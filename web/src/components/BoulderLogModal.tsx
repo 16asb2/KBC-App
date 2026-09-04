@@ -30,8 +30,8 @@ export function BoulderLogModal({
   const initialGradeIdx = (() => {
     const allVotes: Record<string, number> = { ...boulder.gradeVotes }
     if (boulder.setterGradeVote !== null && boulder.setterGradeVote !== undefined) allVotes['__setter'] = boulder.setterGradeVote
-    // avgGrade already answers with a grade index, votes read as the bands
-    // their voters pressed — see domain/gradeVote.ts.
+    // avgGrade answers with a grade index already — the band the average vote
+    // lands in. See domain/gradeVote.ts.
     return avgGrade(allVotes) ?? -1
   })()
 

@@ -1,83 +1,90 @@
-// What a stored grade vote means.
+// What a grade vote is, and what a set of them adds up to.
 //
-// The grade bar is five equal colour bands — White, Blue, Purple, Pink, Black —
-// and a vote is which band the voter pressed. That is the whole idea, and the
-// two clients disagreed about how to write it down:
+// The bar is **analog**. A vote is wherever on it you pressed — a continuous
+// position on 0–4, not one of five steps — because a setter who thinks a
+// problem sits at the soft end of Black should be able to say so, and the
+// average of a dozen such opinions is the point of collecting them.
 //
-//   admin-web/  stored the BAND INDEX:      Math.min(4, Math.floor(frac * 5))
-//   web/        stored a POSITION on 0–4:   (x / width) * 4
+// What is *not* analog is the answer. A boulder is White, Blue, Purple, Pink or
+// Black, and which one it is comes from **where the average lands on the bar**:
+// the bar is five equal bands, so the grade is the band the average falls in.
+// That is a truncation, not a rounding, and the difference is the whole of the
+// bug this replaces:
 //
-// Into the same `gradeVotes` map and the same `setterGradeVote` field. The
-// second is skewed against its own bar: pressing the middle of Black is 90% of
-// the way along, which the app wrote down as 3.6, and pressing just inside
-// Black wrote down 3.2. Every count then rounds — `Math.round(3.2)` is 3 — so a
-// boulder two people had marked **Black** was counted, filtered and summarised
-// as **Pink**, while the bar went on drawing the marker at `3.2 / 4` = 80% of
-// the way along, which is inside the Black band. The screen said one thing and
-// every number said another, and both were reading the same field.
+//   Two people vote low in Black — 3.25 and 3.30, both plainly inside the black
+//   band, which starts at 3.2. Their average is 3.275, still inside it, and the
+//   marker is drawn there. Rounding to the nearest whole index gives 3 — Pink.
+//   The bar showed Black and every count said Pink, and both were reading the
+//   same number.
 //
-// A vote is an index here, and this module is the one place that decides so.
+// Truncating to the band the average sits in gives Black, which is what the bar
+// has been showing all along and what the people voting meant.
+//
+// Rounding is wrong here for a reason worth stating: the whole numbers are not
+// the grades. Index 4 is the *far right edge* of the bar, not the middle of
+// Black — so "nearest whole number" asks which band **boundary** the average is
+// closest to, which is not a question anybody was trying to answer.
 
 /** The KBC scale: five bands. Must equal `GRADES.length` in services/boulders.ts. */
 export const GRADE_BAND_COUNT = 5
 
-/**
- * The band a press landed in, as a fraction of the bar's width.
- *
- * This is what a vote *is* — press anywhere in Black and you have voted Black,
- * exactly as `admin-web/` has always recorded it. The last band takes the
- * closing edge, since `frac` of 1 would otherwise fall off the end.
- */
-export function gradeFromFraction(frac: number, bands: number = GRADE_BAND_COUNT): number {
-  const clamped = Math.max(0, Math.min(1, frac))
-  return Math.min(bands - 1, Math.floor(clamped * bands))
-}
+/** The top of the analog scale — a vote runs from 0 to this. */
+export const MAX_VOTE = GRADE_BAND_COUNT - 1
 
 /**
- * Where to draw a mark standing for grade `index` — the centre of its band.
+ * The vote a press means: exactly where on the bar it landed.
  *
- * The old marker sat at `index / (bands - 1)`, which puts White hard against
- * the left edge, Black hard against the right, and every fractional average
- * roughly one band too far right. Centre is the only position that means "this
- * grade" rather than "this far along".
+ * Analog and deliberately so. This briefly snapped to whole bands, which threw
+ * away the shading a setter was trying to express.
  */
-export function fractionForGrade(index: number, bands: number = GRADE_BAND_COUNT): number {
-  const clamped = Math.max(0, Math.min(bands - 1, index))
-  return (clamped + 0.5) / bands
+export function voteFromFraction(frac: number, bands: number = GRADE_BAND_COUNT): number {
+  return Math.max(0, Math.min(1, frac)) * (bands - 1)
 }
 
-/**
- * A stored vote read as the band its voter pressed.
- *
- * Legacy votes are positions on 0–4 written by the old bar, so they are put
- * back through that bar: 3.4 was a press at 85% of the way along, which is
- * Black. Whole numbers are left exactly where they are — `snap(3)` is 3 — so
- * every vote `admin-web/` ever wrote, and every vote written from here on, is a
- * fixed point. That is what makes this safe to apply to the whole history
- * rather than only to new votes: it cannot move a vote that was already an
- * index, and for the rest it recovers what the person actually pressed.
- */
-export function gradeIndexFromVote(vote: number, bands: number = GRADE_BAND_COUNT): number {
+/** Where along the bar a vote sits, as a fraction of its width. */
+export function fractionForVote(vote: number, bands: number = GRADE_BAND_COUNT): number {
   if (!Number.isFinite(vote)) return 0
-  return gradeFromFraction(Math.max(0, Math.min(bands - 1, vote)) / (bands - 1), bands)
+  return Math.max(0, Math.min(bands - 1, vote)) / (bands - 1)
 }
 
 /**
- * The community's grade: every vote read as a band, averaged.
+ * The colour band a position on the bar falls in — the truncation.
  *
- * Snapping happens per vote and before the average, not after. Two people
- * pressing Black average to Black; two Pinks and a Black average to Pink,
- * which is the right answer and the one a straight average of the raw
- * positions could not give.
+ * The bar is `bands` equal stripes, so this is which stripe you are looking at.
+ * The last one takes its closing edge, since a vote of exactly `MAX_VOTE` is at
+ * 100% and would otherwise fall off the end.
+ */
+export function gradeIndexFromPosition(
+  position: number,
+  bands: number = GRADE_BAND_COUNT,
+): number {
+  if (!Number.isFinite(position)) return 0
+  return Math.min(bands - 1, Math.floor(fractionForVote(position, bands) * bands))
+}
+
+/**
+ * The mean of the votes, on the same analog scale — where the marker goes.
  *
- * Returns null when nobody has voted — an ungraded boulder, not a White one.
+ * Null when nobody has voted: an ungraded boulder, not a White one.
+ */
+export function averageVotePosition(votes: readonly number[]): number | null {
+  const usable = votes.filter((v) => Number.isFinite(v))
+  if (usable.length === 0) return null
+  return usable.reduce((sum, v) => sum + v, 0) / usable.length
+}
+
+/**
+ * The boulder's grade: the band the average vote lands in.
+ *
+ * Averaged first, truncated second, and in that order. Truncating each vote
+ * before averaging would be a different question — "how many people said
+ * Black" rather than "where does this problem sit" — and it would throw away
+ * the shading the analog bar exists to collect.
  */
 export function averageGradeIndex(
   votes: readonly number[],
   bands: number = GRADE_BAND_COUNT,
 ): number | null {
-  const usable = votes.filter((v) => Number.isFinite(v))
-  if (usable.length === 0) return null
-  const mean = usable.reduce((sum, v) => sum + gradeIndexFromVote(v, bands), 0) / usable.length
-  return Math.round(Math.max(0, Math.min(bands - 1, mean)))
+  const mean = averageVotePosition(votes)
+  return mean === null ? null : gradeIndexFromPosition(mean, bands)
 }

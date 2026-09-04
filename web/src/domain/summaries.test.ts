@@ -127,9 +127,11 @@ describe('communityGradeIndex, on votes the old grade bar wrote', () => {
     expect(MATRIX([b]).counts.Pink['Yellow Wall']).toBe(1)
   })
 
-  it('does not move a boulder whose votes were already whole grades', () => {
-    const b = boulder({ setterGradeVote: 3, gradeVotes: { a: 3, c: 4 } })
-    // Two Pinks and a Black: still Pink, exactly as before.
+  it('calls two Pinks and a Black a Pink', () => {
+    // Votes at the middle of their bands, which is where both clients now put
+    // a vote: 2.8 is mid-Pink, 3.6 is mid-Black. The mean is 3.07 — inside
+    // Pink, and where the marker is drawn.
+    const b = boulder({ setterGradeVote: 2.8, gradeVotes: { a: 2.8, c: 3.6 } })
     expect(communityGradeIndex(b, GRADES.length)).toBe(3)
   })
 })

@@ -44,8 +44,9 @@ export function computeAggregates(
     }
   }
 
-  // Each vote read as the band its voter pressed, then averaged — the same rule
-  // the grade bar, the summary and admin-web/ all use now. See domain/gradeVote.ts.
+  // Averaged as pressed, then truncated into the band that average falls in —
+  // the same rule the grade bar, the summary and admin-web/ all use now. See
+  // domain/gradeVote.ts.
   const avgGrade = averageGradeIndex(gradeVotes)
   const avgQuality = qualityVotes.length > 0 ? qualityVotes.reduce((s, v) => s + v, 0) / qualityVotes.length : null
 

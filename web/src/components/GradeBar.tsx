@@ -1,7 +1,12 @@
 import { useRef } from 'react'
 import { KBC } from '@/constants/theme'
-import { fractionForGrade, gradeFromFraction, gradeIndexFromVote } from '@/domain/gradeVote'
-import { GRADES, GRADE_COLORS, avgGrade } from '@/services/boulders'
+import {
+  averageVotePosition,
+  fractionForVote,
+  gradeIndexFromPosition,
+  voteFromFraction,
+} from '@/domain/gradeVote'
+import { GRADES, GRADE_COLORS } from '@/services/boulders'
 
 // Ported from mobile@1cdfada/components/grade-bar.tsx. RN's PanResponder + .measure()
 // becomes pointer events + getBoundingClientRect() — same value-mapping math.
@@ -15,17 +20,15 @@ export type GradeBarProps = {
 }
 
 /**
- * A mark standing at the middle of grade `value`'s band.
+ * A mark standing exactly where `value` sits on the bar.
  *
- * It used to sit at `value / 4` of the bar, which is a different thing
- * entirely: the bar is five bands of 20%, so that put White hard against the
- * left edge, Black hard against the right, and every average about one band too
- * far right — a boulder averaging 3.2 drew its marker at 80%, the start of
- * Black, while every count rounded it to Pink. The screen and the numbers were
- * reading the same field and disagreeing about it.
+ * The bar is analog, so the mark is too — a vote of 3.28 is drawn at 82%, just
+ * inside Black, and not at the middle of some step. The band it visually sits
+ * in is the grade `gradeIndexFromPosition` reports, which is what keeps the
+ * picture and the count telling the same story.
  */
 function Marker({ value, color }: { value: number; color: string }) {
-  const at = fractionForGrade(value)
+  const at = fractionForVote(value)
   return (
     <div className="pointer-events-none absolute inset-0 flex" style={{ top: -2, bottom: -2 }}>
       <div style={{ flex: Math.max(at, 0) }} />
@@ -44,25 +47,21 @@ export function GradeBar({
 }: GradeBarProps) {
   const barRef = useRef<HTMLDivElement>(null)
 
-  const avg = avgGrade(votes)
-  // Read as the band it was pressed in, so a vote stored by the old bar shows
-  // up under the grade its owner chose rather than one band down.
-  const userVote =
-    userUid !== undefined && userUid in votes ? gradeIndexFromVote(votes[userUid]) : null
+  // Two readings of the same votes, and they are not the same thing. The marker
+  // wants the analog average — where the opinions actually sit. The label wants
+  // the grade, which is the band that position falls in.
+  const avgPosition = averageVotePosition(Object.values(votes))
+  const avgGradeIndex = avgPosition === null ? null : gradeIndexFromPosition(avgPosition)
+
+  const userVote = userUid !== undefined && userUid in votes ? votes[userUid] : null
+
   const voteCount = Object.keys(votes).length
 
-  /**
-   * The grade a press means: the band it landed in, whole.
-   *
-   * This used to return `(relX / width) * 4` — a position on the 0–4 scale, not
-   * a grade. Pressing the middle of Black recorded 3.6 and pressing just inside
-   * it recorded 3.2, both of which every count rounded down to Pink.
-   * `admin-web/` has always recorded the band index; this is the same rule.
-   */
+  /** Where on the bar the press landed — analog, kept as pressed. */
   function gradeFromClientX(clientX: number): number {
     const rect = barRef.current?.getBoundingClientRect()
     if (!rect || rect.width === 0) return 0
-    return gradeFromFraction((clientX - rect.left) / rect.width)
+    return voteFromFraction((clientX - rect.left) / rect.width)
   }
 
   function handlePointerDown(e: React.PointerEvent<HTMLDivElement>) {
@@ -92,7 +91,7 @@ export function GradeBar({
         </div>
 
         {/* Solid yellow — community average */}
-        {avg !== null && <Marker value={avg} color="#FFE600" />}
+        {avgPosition !== null && <Marker value={avgPosition} color="#FFE600" />}
         {/* Teal green — this user's vote */}
         {userVote !== null && <Marker value={userVote} color="#00e676" />}
       </div>
@@ -113,14 +112,14 @@ export function GradeBar({
             {voteCount > 0 && (
               <span className="text-[11px] text-neutral-400">
                 {voteCount} vote{voteCount !== 1 ? 's' : ''}
-                {avg !== null ? ` · avg: ${GRADES[avg]}` : ''}
+                {avgGradeIndex !== null ? ` · avg: ${GRADES[avgGradeIndex]}` : ''}
               </span>
             )}
             {userVote !== null && (
               <span className="text-[11px] text-neutral-400">
                 {'  '}
                 <span className="font-bold" style={{ color: KBC.live }}>
-                  ● {GRADES[userVote]}
+                  ● {GRADES[gradeIndexFromPosition(userVote)]}
                 </span>
                 {'  '}
                 <button
