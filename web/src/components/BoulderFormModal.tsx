@@ -5,7 +5,7 @@ import { GradeBar } from '@/components/GradeBar'
 import { GymMap } from '@/components/GymMap'
 import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
-import { gradeIndexFromVote } from '@/domain/gradeVote'
+import { gradeIndexFromPosition } from '@/domain/gradeVote'
 import { resizeImageFileToDataUrl } from '@/utils/imageResize'
 import {
   BADGE_GROUPS,
@@ -246,9 +246,10 @@ export function BoulderFormModal({
           <Field label={`Grade Votes (${voteRows.length})`}>
             <div className="overflow-hidden rounded-lg border border-neutral-100">
               {voteRows.map((row, i) => {
-                // The band this voter pressed, not a rounded position: a vote
-                // stored by the old grade bar reads one band low.
-                const idx = gradeIndexFromVote(row.grade)
+                // The band this vote's position falls in. Votes are analog, so
+                // rounding would name the nearest band *boundary* rather than
+                // the colour the voter was pointing at.
+                const idx = gradeIndexFromPosition(row.grade)
                 return (
                   <div key={i} className={`flex items-center gap-2.5 px-3 py-2 ${i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}`}>
                     <span className="flex-1 text-sm text-neutral-600">{row.label}</span>

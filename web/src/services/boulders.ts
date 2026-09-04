@@ -110,10 +110,11 @@ export type BoulderComment = {
 /**
  * The community's grade, as an index on `GRADES`.
  *
- * Every vote is read as the band its voter pressed before being averaged — see
- * `domain/gradeVote.ts` for why that is not the same as averaging the numbers
- * as stored. It used to be a plain mean of the raw values, which is how a
- * boulder two people had marked Black came out as Pink.
+ * The votes are averaged as they are — analog, exactly where each person
+ * pressed — and the mean is then **truncated** into the band it falls in. See
+ * `domain/gradeVote.ts`: rounding to the nearest whole index asks which band
+ * *boundary* the average is nearest, which is why several votes low in Black
+ * used to come back as Pink.
  */
 export function avgGrade(votes: Record<string, number>): number | null {
   return averageGradeIndex(Object.values(votes))
