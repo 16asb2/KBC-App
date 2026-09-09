@@ -179,36 +179,6 @@ export function gradeLocationMatrix(
   }
 }
 
-export type QualityBuckets = {
-  threeStar: number
-  twoStar: number
-  oneStar: number
-  unrated: number
-}
-
-/**
- * Boulders bucketed by their average quality vote.
- *
- * Reads `qualityVotes` off the boulder rather than recomputing from climb logs:
- * that is where a vote is stored, and it avoids a summary disagreeing with the
- * stars shown on the boulder itself.
- */
-export function qualityBuckets(boulders: Boulder[]): QualityBuckets {
-  const out: QualityBuckets = { threeStar: 0, twoStar: 0, oneStar: 0, unrated: 0 }
-  for (const b of boulders) {
-    const votes = Object.values(b.qualityVotes ?? {}).filter((v) => v > 0)
-    if (votes.length === 0) {
-      out.unrated++
-      continue
-    }
-    const avg = votes.reduce((s, v) => s + v, 0) / votes.length
-    if (avg >= 2.5) out.threeStar++
-    else if (avg >= 1.5) out.twoStar++
-    else out.oneStar++
-  }
-  return out
-}
-
 export type SetterTally = { name: string; count: number; percent: number }
 
 /**

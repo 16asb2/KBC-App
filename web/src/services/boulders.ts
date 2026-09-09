@@ -5,8 +5,10 @@ import {
   getDoc,
   getDocs,
   addDoc,
+  query,
   updateDoc,
   setDoc,
+  where,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { GRADE_BAND_COUNT, averageGradeIndex } from '@/domain/gradeVote'
@@ -43,11 +45,24 @@ export const GRADE_COLORS = ['#e8e8e8', '#00b4d8', '#9b5de5', '#f5a5c9', '#1a1a1
 export const GRADE_TEXT = ['#555', '#fff', '#fff', '#fff', '#fff']
 export type Grade = (typeof GRADES)[number]
 
+/**
+ * Hold types that are meaningfully different at two sizes — a small crimp and
+ * a large crimp are not the same problem. `Small `/`Large ` prefixes are a
+ * naming convention, not a data structure: `baseHoldBadge()` in
+ * `components/BadgeIcon.tsx` strips them to pick the drawing and the colour.
+ */
+export const SIZED_HOLDS = ['Jugs', 'Crimps', 'Slopers', 'Pinches'] as const
+
 export const BADGE_GROUPS = [
   {
     title: 'Hold Types',
     badges: [
-      'Jugs', 'Crimps', 'Slopers', 'Pinches', 'Pockets', 'Underclings',
+      // The four sized holds each come in three flavours: the unsized original
+      // and a Small/Large pair. The original is kept rather than replaced —
+      // every climb logged before the split records a bare 'Jugs'/'Crimps'/
+      // 'Slopers'/'Pinches', and dropping it would orphan those badge counts.
+      ...SIZED_HOLDS.flatMap((hold) => [hold, `Small ${hold}`, `Large ${hold}`]),
+      'Pockets', 'Underclings',
       'Side Pulls', 'Gaston', 'Crack', 'Small-feet', 'Slippery-feet',
     ],
   },
@@ -56,7 +71,6 @@ export const BADGE_GROUPS = [
     badges: [
       'Balancing', 'Drop Knee', 'Flagging', 'Heel Hook', 'Toe Hook', 'Bicycle',
       'Deadpoint', 'Compression', 'Dyno', 'Double Dyno', 'Campus', 'Bat Hang',
-      'Hand-Jam', 'Finger-Jam', 'Foot-Jam',
     ],
   },
   {
@@ -91,12 +105,12 @@ export type Boulder = {
   updatedAt: string
   locations: string[] // wall sections (Cave Right, etc.)
   photo: string
+  thumb: string // small square JPEG data URI derived from `photo`; '' = none. Drawn as the card's round icon.
   removed: boolean
   likes: string[] // UIDs of users who liked this boulder
   setterGradeVote: number | null // setter's initial grade vote (stored on boulder, not a log)
   setterBadges: string[] // setter's initial badge picks (stored on boulder, not a log)
   gradeVotes: Record<string, number> // community grade votes; key=uid, value=grade index 0-4
-  qualityVotes: Record<string, number> // community quality votes; key=uid, value=1-3 stars
 }
 
 export type BoulderComment = {
@@ -118,12 +132,6 @@ export type BoulderComment = {
  */
 export function avgGrade(votes: Record<string, number>): number | null {
   return averageGradeIndex(Object.values(votes))
-}
-
-export function avgQuality(votes: Record<string, number>): number | null {
-  const vals = Object.values(votes)
-  if (!vals.length) return null
-  return vals.reduce((s, v) => s + v, 0) / vals.length
 }
 
 // ─── Tape Color Pool ─────────────────────────────────────────────────────────
@@ -182,6 +190,7 @@ function docToBoulder(id: string, d: Record<string, unknown>): Boulder {
     updatedAt: (d.updatedAt as string) ?? '',
     locations: Array.isArray(d.locations) ? (d.locations as string[]) : [],
     photo: (d.photo as string) ?? '',
+    thumb: (d.thumb as string) ?? '',
     removed: (d.removed as boolean) ?? false,
     likes: Array.isArray(d.likes) ? (d.likes as string[]) : [],
     setterGradeVote: typeof d.setterGradeVote === 'number' ? d.setterGradeVote : null,
@@ -190,27 +199,35 @@ function docToBoulder(id: string, d: Record<string, unknown>): Boulder {
       typeof d.gradeVotes === 'object' && d.gradeVotes !== null && !Array.isArray(d.gradeVotes)
         ? (d.gradeVotes as Record<string, number>)
         : {},
-    qualityVotes:
-      typeof d.qualityVotes === 'object' && d.qualityVotes !== null && !Array.isArray(d.qualityVotes)
-        ? (d.qualityVotes as Record<string, number>)
-        : {},
   }
 }
 
+/**
+ * One season's problems.
+ *
+ * Filtered on the server. This used to read the whole `boulders` collection and
+ * pick the season out in JS, which meant every visit to the Boulders tab
+ * downloaded every problem the gym has ever set — including removed ones —
+ * and each of those documents carries a base64 `photo` field. On a phone that
+ * is the difference between a few hundred kB and several MB per load, and it
+ * is the first thing to fix for iOS Safari, whose memory ceiling is far lower
+ * than Android Chrome's. See DESIGN.md.
+ *
+ * `removed` stays a client-side filter: soft-deleted problems are rare, and
+ * a second equality clause would be one more index to keep alive for almost
+ * no traffic saved.
+ */
 export async function getBouldersForSeason(seasonId: string): Promise<Boulder[]> {
-  const snap = await getDocs(collection(db, 'boulders'))
+  const snap = await getDocs(query(collection(db, 'boulders'), where('seasonId', '==', seasonId)))
   return snap.docs
     .map((d) => docToBoulder(d.id, d.data()))
-    .filter((b) => b.seasonId === seasonId && !b.removed)
+    .filter((b) => !b.removed)
     .sort((a, b) => a.number - b.number)
 }
 
 export async function getNextBoulderNumber(seasonId: string): Promise<number> {
-  const snap = await getDocs(collection(db, 'boulders'))
-  const nums = snap.docs
-    .map((d) => docToBoulder(d.id, d.data()))
-    .filter((b) => b.seasonId === seasonId)
-    .map((b) => b.number)
+  const snap = await getDocs(query(collection(db, 'boulders'), where('seasonId', '==', seasonId)))
+  const nums = snap.docs.map((d) => (d.data().number as number) ?? 0)
   return nums.length ? Math.max(...nums) + 1 : 1
 }
 
@@ -244,35 +261,66 @@ export async function toggleLike(id: string, uid: string, liked: boolean): Promi
   await updateDoc(doc(db, 'boulders', id), { likes: updated, updatedAt: new Date().toISOString() })
 }
 
-export async function setQualityVote(
-  id: string,
-  uid: string,
-  stars: number,
-  currentVotes: Record<string, number>,
-): Promise<void> {
-  const updated = { ...currentVotes }
-  if (stars <= 0) delete updated[uid]
-  else updated[uid] = stars
-  await updateDoc(doc(db, 'boulders', id), { qualityVotes: updated, updatedAt: new Date().toISOString() })
+/**
+ * A member's own boulder data — their projects and their star ratings.
+ *
+ * `userBoulderData/{uid}` is readable and writable by its owner and by nobody
+ * else (`firestore.rules`), which is the whole point for `ratings`: a star
+ * rating is a private note to yourself, not a score the gym publishes. It used
+ * to live in a `qualityVotes` map on the boulder itself, where every member
+ * could read every other member's vote and the average was printed on the
+ * card. That community rating is gone; this replaced it.
+ */
+export type UserBoulderData = {
+  projectIds: string[]
+  /** key = Boulder.internalId, value = 1–3 stars. Absent = not rated. */
+  ratings: Record<string, number>
 }
 
-export async function getBoulderProjects(uid: string): Promise<string[]> {
+const EMPTY_USER_BOULDER_DATA: UserBoulderData = { projectIds: [], ratings: {} }
+
+export async function getUserBoulderData(uid: string): Promise<UserBoulderData> {
   try {
     const snap = await getDoc(doc(db, 'userBoulderData', uid))
-    if (!snap.exists()) return []
-    const projectIds = snap.data().projectIds
-    return Array.isArray(projectIds) ? (projectIds as string[]) : []
+    if (!snap.exists()) return EMPTY_USER_BOULDER_DATA
+    const d = snap.data()
+    const ratings = d.ratings
+    return {
+      projectIds: Array.isArray(d.projectIds) ? (d.projectIds as string[]) : [],
+      ratings:
+        typeof ratings === 'object' && ratings !== null && !Array.isArray(ratings)
+          ? (ratings as Record<string, number>)
+          : {},
+    }
   } catch {
-    return []
+    return EMPTY_USER_BOULDER_DATA
   }
 }
 
-export async function setBoulderProject(uid: string, internalId: string, isProject: boolean): Promise<void> {
-  const current = await getBoulderProjects(uid)
-  const updated = isProject
-    ? [...current.filter((id) => id !== internalId), internalId]
-    : current.filter((id) => id !== internalId)
-  await setDoc(doc(db, 'userBoulderData', uid), { projectIds: updated }, { merge: true })
+/**
+ * Replace this member's project list.
+ *
+ * Takes the whole list, and so does `saveBoulderRatings` below. Both used to
+ * read the document, edit one entry and write it back, which loses an edit
+ * whenever two land close together: mark a project and rate a boulder in quick
+ * succession and the second read still sees the state from before the first
+ * write. The caller already holds the current value in component state — that
+ * is the copy edits are applied to in order — so it passes the result and
+ * these just store it.
+ *
+ * The two fields are written separately with `merge`, so a projects write and
+ * a ratings write never overwrite each other's field.
+ */
+export async function saveBoulderProjects(uid: string, projectIds: string[]): Promise<void> {
+  await setDoc(doc(db, 'userBoulderData', uid), { projectIds }, { merge: true })
+}
+
+/** Replace this member's ratings map: key = Boulder.internalId, value = 1–3. */
+export async function saveBoulderRatings(uid: string, ratings: Record<string, number>): Promise<void> {
+  // The map is written whole rather than as a `ratings.<id>` field path: an
+  // internalId is generated, and a field path containing a '.' would address a
+  // nested map instead of the key it looks like.
+  await setDoc(doc(db, 'userBoulderData', uid), { ratings }, { merge: true })
 }
 
 // ─── Comments ─────────────────────────────────────────────────────────────────

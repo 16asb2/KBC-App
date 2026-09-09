@@ -41,10 +41,24 @@ describe('computeAggregates', () => {
     expect(agg.avgGrade).toBe(2) // (0 + 2 + 4) / 3
   })
 
-  it('returns null avgGrade/avgQuality with no votes', () => {
-    const agg = computeAggregates([log({ gradeVote: null, quality: 0 })])
+  it('returns null avgGrade with no votes', () => {
+    const agg = computeAggregates([log({ gradeVote: null })])
     expect(agg.avgGrade).toBeNull()
-    expect(agg.avgQuality).toBeNull()
+  })
+
+  it('counts sends and attempts together as climbedCount', () => {
+    const agg = computeAggregates([
+      log({ type: 'ascent' }),
+      log({ type: 'attempt' }),
+      log({ type: 'attempt' }),
+    ])
+    expect(agg).toMatchObject({ sendCount: 1, attemptCount: 2, climbedCount: 3 })
+  })
+
+  it('reports a climbedCount of 0 for a problem nobody has touched', () => {
+    // The setter's own grade vote and badge picks are not a climb — a brand
+    // new problem must not read as already having traffic on it.
+    expect(computeAggregates([], 2, ['Crimps']).climbedCount).toBe(0)
   })
 
   it('ranks top badges by frequency, counting setter picks', () => {

@@ -7,7 +7,6 @@ import {
   gradeBars,
   gradeLocationMatrix,
   gradeRows,
-  qualityBuckets,
   setterTallies,
   UNASSIGNED_WALL,
   UNGRADED,
@@ -51,12 +50,12 @@ function boulder(over: Partial<Boulder> = {}): Boulder {
     updatedAt: '',
     locations: ['Cave Right'],
     photo: '',
+    thumb: '',
     removed: false,
     likes: [],
     setterGradeVote: null,
     setterBadges: [],
     gradeVotes: {},
-    qualityVotes: {},
     ...over,
   }
 }
@@ -261,22 +260,6 @@ describe('gradeLocationMatrix', () => {
     const m = MATRIX([])
     expect(m.total).toBe(0)
     expect(m.busiestCell).toBe(0)
-  })
-})
-
-describe('qualityBuckets', () => {
-  it('buckets by average vote and counts unvoted boulders as unrated', () => {
-    const b = qualityBuckets([
-      boulder({ qualityVotes: { a: 3, b: 3 } }),
-      boulder({ qualityVotes: { a: 2 } }),
-      boulder({ qualityVotes: { a: 1 } }),
-      boulder(),
-    ])
-    expect(b).toEqual({ threeStar: 1, twoStar: 1, oneStar: 1, unrated: 1 })
-  })
-
-  it('ignores zero votes, which mean "no opinion" rather than nought stars', () => {
-    expect(qualityBuckets([boulder({ qualityVotes: { a: 0 } })]).unrated).toBe(1)
   })
 })
 

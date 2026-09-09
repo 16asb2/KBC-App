@@ -43,12 +43,12 @@ service cloud.firestore {
     }
 
     // Fields that only admins/supervisors may change on a boulder document.
-    // Regular members can update any other field (grade votes, quality votes,
+    // Regular members can update any other field (grade votes,
     // badge votes, updatedAt, etc.) without restriction.
     function touchesBoulderAdminFields() {
       return request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'name', 'setter', 'setterEmail', 'seasonId',
-        'locations', 'photo', 'removed', 'internalId', 'local', 'area',
+        'locations', 'photo', 'thumb', 'removed', 'internalId', 'local', 'area',
         'permissions', 'createdAt'
       ]);
     }
@@ -258,8 +258,9 @@ service cloud.firestore {
     }
 
     // ── boulders/{id} ────────────────────────────────────────────────────────
-    // Members can vote (grade, quality, badges); only admins/supervisors can
-    // create, delete, or change structural fields.
+    // Members can vote on the grade and like a boulder; only admins/supervisors
+    // can create, delete, or change structural fields. Star ratings are NOT
+    // here — they are private to their owner and live in userBoulderData/{uid}.
     match /boulders/{boulderId} {
       allow read:           if isAuthenticated();
       allow create, delete: if isSupervisorOrAdmin();
@@ -315,7 +316,10 @@ service cloud.firestore {
     }
 
     // ── userBoulderData/{uid} ────────────────────────────────────────────────
-    // Per-user data for KBC boulders (e.g. projectIds). Fully private to the owner.
+    // Per-user data for KBC boulders: projectIds, and `ratings` — a member's
+    // own star rating per boulder. Fully private to the owner, which is the
+    // point of `ratings` living here rather than in a map on the boulder: a
+    // rating is a note to yourself, and the gym publishes no average of them.
     match /userBoulderData/{uid} {
       allow read, write: if isAuthenticated() && request.auth.uid == uid;
     }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BadgeIcon } from '@/components/BadgeIcon'
 import { EffortBar } from '@/components/EffortBar'
 import { Modal } from '@/components/Modal'
+import { StarRating } from '@/components/StarRating'
 import { KBC } from '@/constants/theme'
 import { addComment, avgGrade, BADGE_GROUPS, type Boulder } from '@/services/boulders'
 import { addClimb, KBC_GRADE_LABELS, type PersonalClimb } from '@/services/climblog'
@@ -20,12 +21,17 @@ export function BoulderLogModal({
   onSaved,
   userUid,
   userName,
+  myRating,
+  onRate,
 }: {
   boulder: Boulder
   onClose: () => void
   onSaved: (newLog: PersonalClimb) => void
   userUid: string
   userName: string
+  /** This member's standing private rating for the boulder, or null. */
+  myRating: number | null
+  onRate: (stars: number) => void
 }) {
   const initialGradeIdx = (() => {
     const allVotes: Record<string, number> = { ...boulder.gradeVotes }
@@ -40,6 +46,10 @@ export function BoulderLogModal({
   const [selectedBadges, setSelectedBadges] = useState<string[]>([])
   const [badgesOpen, setBadgesOpen] = useState(false)
   const [effort, setEffort] = useState<number | null>(50)
+  // Seeded from the standing rating so re-logging a problem you have already
+  // rated does not silently blank it, and re-rating here updates both the log
+  // entry and that standing value.
+  const [rating, setRating] = useState<number>(myRating ?? 0)
   const [project, setProject] = useState(false)
   const [attempts, setAttempts] = useState('1')
   const [publicComment, setPublicComment] = useState('')
@@ -72,7 +82,7 @@ export function BoulderLogModal({
         personalGrade,
         gradeVote: initialGradeIdx >= 0 ? initialGradeIdx : null,
         problemInternalId: boulder.internalId,
-        quality: 0,
+        quality: rating,
         effort: effort ?? '',
         type,
         project,
@@ -81,6 +91,8 @@ export function BoulderLogModal({
         comment: privateComment,
         createdAt: now,
       })
+
+      if (rating !== (myRating ?? 0)) onRate(rating)
 
       if (publicComment.trim()) {
         await addComment(boulder.id, { uid: userUid, name: userName, text: publicComment.trim(), createdAt: now })
@@ -147,6 +159,10 @@ export function BoulderLogModal({
 
         <Field label="Effort">
           <EffortBar value={effort} onChange={setEffort} />
+        </Field>
+
+        <Field label="My Rating">
+          <StarRating value={rating} onChange={setRating} emptyHint="Tap to rate — private to you" />
         </Field>
 
         <div>

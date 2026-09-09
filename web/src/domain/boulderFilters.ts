@@ -1,7 +1,20 @@
 // Ported from mobile@1cdfada/app/(tabs)/boulders.tsx's filter state. Persistence uses
 // localStorage instead of expo-file-system.
 
-export type SortKey = 'number' | 'name' | 'grade' | 'setter' | 'updatedAt'
+export type SortKey = 'number' | 'name' | 'grade' | 'popular' | 'setter' | 'updatedAt'
+
+/**
+ * How popular a boulder is: everyone who liked it, plus every time anyone
+ * climbed on it (sends and attempts alike — see `ClimbAggregates.climbedCount`).
+ *
+ * A plain sum, deliberately. Weighting one input over the other would be a
+ * guess, and the two already measure different things — a like is an opinion,
+ * a climb is traffic — so a problem needs both to top the list.
+ */
+export function popularityScore(likeCount: number, climbedCount: number): number {
+  return likeCount + climbedCount
+}
+
 export type SortDir = 'asc' | 'desc'
 
 export type BoulderFilterState = {
