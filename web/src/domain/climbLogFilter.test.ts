@@ -6,6 +6,7 @@ function climb(overrides: Partial<PersonalClimb>): PersonalClimb {
   return {
     id: overrides.id ?? Math.random().toString(),
     uid: 'u1',
+    hasPhoto: false,
     locationId: 'kbc',
     boulderId: '',
     sectorId: '',

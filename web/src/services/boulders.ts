@@ -13,6 +13,7 @@ import {
 import { db } from '@/lib/firebase'
 import { GRADE_BAND_COUNT, averageGradeIndex } from '@/domain/gradeVote'
 import { generateId } from '@/utils/id'
+import { deletePhoto, readPhoto, writePhoto } from '@/services/photoStore'
 
 // Same `boulders/{id}`, `boulders/{id}/comments/{id}`, `boulderSeasons/{id}`,
 // `boulderConfig/main`, and `userBoulderData/{uid}` documents mobile/'s
@@ -104,8 +105,12 @@ export type Boulder = {
   createdAt: string
   updatedAt: string
   locations: string[] // wall sections (Cave Right, etc.)
-  photo: string
-  thumb: string // small square JPEG data URI derived from `photo`; '' = none. Drawn as the card's round icon.
+  // The full picture is deliberately NOT here — it lives in
+  // `boulders/{id}/media/main` and is fetched by `getBoulderPhoto()` when the
+  // overview opens. It used to be a field, and so was downloaded by every read
+  // of this collection. See services/photoStore.ts.
+  thumb: string // small square JPEG data URI derived from the photo; '' = none. Drawn as the card's round icon.
+  hasPhoto: boolean // whether a full picture exists to fetch
   removed: boolean
   likes: string[] // UIDs of users who liked this boulder
   setterGradeVote: number | null // setter's initial grade vote (stored on boulder, not a log)
@@ -189,8 +194,11 @@ function docToBoulder(id: string, d: Record<string, unknown>): Boulder {
     createdAt: (d.createdAt as string) ?? '',
     updatedAt: (d.updatedAt as string) ?? '',
     locations: Array.isArray(d.locations) ? (d.locations as string[]) : [],
-    photo: (d.photo as string) ?? '',
     thumb: (d.thumb as string) ?? '',
+    // Trust the explicit flag where it exists. Infer it otherwise: `thumb` is
+    // derived from a picture so implies one, and `photo` is the legacy field,
+    // still set on any boulder scripts/migrate-photos.mjs has not moved yet.
+    hasPhoto: typeof d.hasPhoto === 'boolean' ? d.hasPhoto : Boolean(d.thumb || d.photo),
     removed: (d.removed as boolean) ?? false,
     likes: Array.isArray(d.likes) ? (d.likes as string[]) : [],
     setterGradeVote: typeof d.setterGradeVote === 'number' ? d.setterGradeVote : null,
@@ -231,17 +239,25 @@ export async function getNextBoulderNumber(seasonId: string): Promise<number> {
   return nums.length ? Math.max(...nums) + 1 : 1
 }
 
+/**
+ * Create a boulder. `photo` is stored separately from the document — see
+ * `services/photoStore.ts` — so it is passed alongside rather than within.
+ */
 export async function createBoulder(
-  data: Omit<Boulder, 'id' | 'internalId' | 'local' | 'area' | 'permissions'>,
+  data: Omit<Boulder, 'id' | 'internalId' | 'local' | 'area' | 'permissions' | 'hasPhoto'>,
+  photo = '',
 ): Promise<Boulder> {
+  const { ...fields } = data
   const full = {
-    ...data,
+    ...fields,
+    hasPhoto: Boolean(photo),
     internalId: generateId(),
     local: 'KBC',
     area: 'Boulders',
     permissions: { view: 'members' as const, edit: 'admin' as const },
   }
   const ref = await addDoc(collection(db, 'boulders'), full)
+  if (photo) await writePhoto('boulders', ref.id, photo)
   return docToBoulder(ref.id, full)
 }
 
@@ -249,8 +265,36 @@ export async function updateBoulder(id: string, updates: Partial<Omit<Boulder, '
   await updateDoc(doc(db, 'boulders', id), { ...updates, updatedAt: new Date().toISOString() })
 }
 
+/** The boulder's full picture, fetched only when something is about to show it. */
+export async function getBoulderPhoto(boulderId: string): Promise<string> {
+  return readPhoto('boulders', boulderId)
+}
+
+/**
+ * Store or clear the boulder's full picture. Admin/supervisor only, per the rules.
+ *
+ * Also maintains `hasPhoto` on the boulder itself, because that flag is the
+ * only thing telling the overview whether a fetch is worth making — and a flag
+ * kept in step by its callers rather than by the write it describes is a flag
+ * that eventually lies.
+ */
+export async function setBoulderPhoto(boulderId: string, photo: string): Promise<void> {
+  await writePhoto('boulders', boulderId, photo)
+  await updateDoc(doc(db, 'boulders', boulderId), { hasPhoto: Boolean(photo) })
+}
+
+/**
+ * Soft-delete. The picture goes with it: `removed` boulders are filtered out of
+ * every read, so nothing would ever fetch the media document again, and a
+ * subcollection is not removed by deleting its parent even when that day comes.
+ */
 export async function removeBoulder(id: string): Promise<void> {
-  await updateDoc(doc(db, 'boulders', id), { removed: true, updatedAt: new Date().toISOString() })
+  await updateDoc(doc(db, 'boulders', id), {
+    removed: true,
+    hasPhoto: false,
+    updatedAt: new Date().toISOString(),
+  })
+  await deletePhoto('boulders', id)
 }
 
 export async function toggleLike(id: string, uid: string, liked: boolean): Promise<void> {

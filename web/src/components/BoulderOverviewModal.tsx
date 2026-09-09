@@ -4,7 +4,7 @@ import { GradeBar } from '@/components/GradeBar'
 import { GymMap } from '@/components/GymMap'
 import { StarRating } from '@/components/StarRating'
 import { KBC } from '@/constants/theme'
-import { addComment, deleteComment, getComments, type Boulder, type BoulderComment } from '@/services/boulders'
+import { addComment, deleteComment, getBoulderPhoto, getComments, type Boulder, type BoulderComment } from '@/services/boulders'
 import type { PersonalClimb } from '@/services/climblog'
 import { formatMonthDay, formatShortDate } from '@/utils/datetime'
 
@@ -107,7 +107,24 @@ export function BoulderOverviewModal({
   const [loadingComments, setLoadingComments] = useState(true)
   const [postingComment, setPostingComment] = useState(false)
   const [showFullPhoto, setShowFullPhoto] = useState(false)
+  // The picture is not on the boulder document — it is fetched here, by the one
+  // screen that shows it, so the list does not pay for it. See
+  // services/photoStore.ts.
+  const [photo, setPhoto] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!boulder.hasPhoto) return
+    let cancelled = false
+    getBoulderPhoto(boulder.id)
+      .then((p) => {
+        if (!cancelled) setPhoto(p)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [boulder.id, boulder.hasPhoto])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -157,11 +174,17 @@ export function BoulderOverviewModal({
         )}
       </div>
 
-      {boulder.photo && (
-        <button type="button" onClick={() => setShowFullPhoto(true)} className="block w-full">
-          <img src={boulder.photo} alt="" className="max-h-80 w-full object-cover" />
-        </button>
-      )}
+      {boulder.hasPhoto &&
+        // The list icon is not used as a placeholder here: it is now a
+        // separately chosen crop, often of a different picture entirely, so
+        // showing it while the photo loads would promise the wrong image.
+        (photo ? (
+          <button type="button" onClick={() => setShowFullPhoto(true)} className="block w-full">
+            <img src={photo} alt="" className="max-h-80 w-full object-cover" />
+          </button>
+        ) : (
+          <div className="h-40 w-full animate-pulse bg-neutral-100" />
+        ))}
 
       <div className="mx-auto max-w-2xl space-y-4 p-5 pb-16">
         <div className="flex items-start gap-2.5">
@@ -339,13 +362,13 @@ export function BoulderOverviewModal({
         )}
       </div>
 
-      {boulder.photo && showFullPhoto && (
+      {photo && showFullPhoto && (
         <button
           type="button"
           onClick={() => setShowFullPhoto(false)}
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
         >
-          <img src={boulder.photo} alt="" className="max-h-full max-w-full object-contain" />
+          <img src={photo} alt="" className="max-h-full max-w-full object-contain" />
         </button>
       )}
     </div>
