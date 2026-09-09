@@ -8,7 +8,6 @@ import {
   boulderCell,
   gradeLocationMatrix,
   gradeRows,
-  qualityBuckets,
   setterTallies,
 } from '@/domain/summaries'
 import {
@@ -86,7 +85,6 @@ export function BoulderSummaryModal({
       )
       .sort((x, y) => x.b.number - y.b.number)
   }, [boulders, focus])
-  const quality = useMemo(() => qualityBuckets(boulders), [boulders])
   const setters = useMemo(() => setterTallies(boulders), [boulders])
 
   // Climb logs are gym-wide, so they are narrowed to this season's boulders.
@@ -300,18 +298,6 @@ export function BoulderSummaryModal({
                 </ul>
               </div>
             )}
-          </Card>
-
-          <Card
-            title="Quality ratings"
-            note="From members' star votes; a boulder with no votes is unrated."
-          >
-            <div className="mt-3 flex gap-2">
-              <StatTile label="★★★" value={String(quality.threeStar)} accent={KBC.orange} />
-              <StatTile label="★★" value={String(quality.twoStar)} accent={KBC.orange} />
-              <StatTile label="★" value={String(quality.oneStar)} accent={KBC.orange} />
-              <StatTile label="Unrated" value={String(quality.unrated)} accent="#9e9e9e" />
-            </div>
           </Card>
 
           {setters.length > 0 && (

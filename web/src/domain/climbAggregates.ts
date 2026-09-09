@@ -4,8 +4,16 @@ import { averageGradeIndex } from './gradeVote'
 export type ClimbAggregates = {
   sendCount: number
   attemptCount: number
+  /**
+   * Sends + attempts: how many times this problem has been climbed on at all.
+   *
+   * The single number the boulder list shows. Splitting it into ✓sends and
+   * △attempts on the card asked the reader to add two figures up to answer
+   * "is anyone on this?", and made a hard problem — lots of attempts, few
+   * sends — look less travelled than an easy one.
+   */
+  climbedCount: number
   avgGrade: number | null // 0–4 for KBC; null if no votes
-  avgQuality: number | null // 1–3; null if no votes
   topBadges: string[] // up to 5, by frequency (setter pick counts as 1 initial vote)
 }
 
@@ -17,7 +25,6 @@ export function computeAggregates(
   let sendCount = 0
   let attemptCount = 0
   const gradeVotes: number[] = []
-  const qualityVotes: number[] = []
   const badgeCounts: Record<string, number> = {}
 
   // Setter's initial grade vote counts like a community vote
@@ -36,9 +43,6 @@ export function computeAggregates(
     if (log.gradeVote !== null && log.gradeVote !== undefined) {
       gradeVotes.push(log.gradeVote)
     }
-    if (log.quality > 0) {
-      qualityVotes.push(log.quality)
-    }
     for (const b of log.badges ?? []) {
       badgeCounts[b] = (badgeCounts[b] ?? 0) + 1
     }
@@ -48,14 +52,13 @@ export function computeAggregates(
   // the same rule the grade bar, the summary and admin-web/ all use now. See
   // domain/gradeVote.ts.
   const avgGrade = averageGradeIndex(gradeVotes)
-  const avgQuality = qualityVotes.length > 0 ? qualityVotes.reduce((s, v) => s + v, 0) / qualityVotes.length : null
 
   const topBadges = Object.entries(badgeCounts)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
     .map(([badge]) => badge)
 
-  return { sendCount, attemptCount, avgGrade, avgQuality, topBadges }
+  return { sendCount, attemptCount, climbedCount: sendCount + attemptCount, avgGrade, topBadges }
 }
 
 /** Returns the most recent log entry for the given user, or null. */

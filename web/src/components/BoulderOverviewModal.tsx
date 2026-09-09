@@ -4,7 +4,7 @@ import { GradeBar } from '@/components/GradeBar'
 import { GymMap } from '@/components/GymMap'
 import { StarRating } from '@/components/StarRating'
 import { KBC } from '@/constants/theme'
-import { addComment, avgQuality, deleteComment, getComments, type Boulder, type BoulderComment } from '@/services/boulders'
+import { addComment, deleteComment, getComments, type Boulder, type BoulderComment } from '@/services/boulders'
 import type { PersonalClimb } from '@/services/climblog'
 import { formatMonthDay, formatShortDate } from '@/utils/datetime'
 
@@ -30,7 +30,8 @@ export function BoulderOverviewModal({
   onToggleProject,
   onLog,
   onVoteGrade,
-  onVoteQuality,
+  myRating,
+  onRate,
 }: {
   boulder: Boulder
   logs: PersonalClimb[]
@@ -47,12 +48,12 @@ export function BoulderOverviewModal({
   onToggleProject: () => void
   onLog: () => void
   onVoteGrade: (grade: number) => void
-  onVoteQuality?: (stars: number) => void
+  /** This member's own 1–3 star rating, or null. Nobody else ever sees it. */
+  myRating: number | null
+  onRate: (stars: number) => void
 }) {
   const [localGradeVotes, setLocalGradeVotes] = useState<Record<string, number>>({})
-  const [localQualityVotes, setLocalQualityVotes] = useState<Record<string, number>>({})
   const voteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const qualityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const merged: Record<string, number> = { ...boulder.gradeVotes }
@@ -61,7 +62,6 @@ export function BoulderOverviewModal({
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalGradeVotes(merged)
-    setLocalQualityVotes(boulder.qualityVotes ?? {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boulder.id])
 
@@ -74,17 +74,6 @@ export function BoulderOverviewModal({
     })
     if (voteTimerRef.current) clearTimeout(voteTimerRef.current)
     voteTimerRef.current = setTimeout(() => onVoteGrade(g), 500)
-  }
-
-  function handleQualityVote(stars: number) {
-    setLocalQualityVotes((prev) => {
-      const next = { ...prev }
-      if (stars <= 0) delete next[uid]
-      else next[uid] = stars
-      return next
-    })
-    if (qualityTimerRef.current) clearTimeout(qualityTimerRef.current)
-    qualityTimerRef.current = setTimeout(() => onVoteQuality?.(stars), 500)
   }
 
   const badgeCounts = useMemo(() => {
@@ -154,9 +143,6 @@ export function BoulderOverviewModal({
     }
   }
 
-  const qualityVoteCount = Object.keys(localQualityVotes).length
-  const avgQ = avgQuality(localQualityVotes)
-
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-white">
       <div className="flex items-center gap-3 border-b border-neutral-100 px-4 py-3">
@@ -187,15 +173,6 @@ export function BoulderOverviewModal({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-500">
-          {qualityVoteCount > 0 && (
-            <>
-              <StarRating votes={localQualityVotes} compact />
-              <span>
-                {avgQ?.toFixed(1)}★ · {qualityVoteCount} vote{qualityVoteCount !== 1 ? 's' : ''}
-              </span>
-              <span>·</span>
-            </>
-          )}
           {likeCount > 0 && (
             <>
               <span className="font-bold text-[#e91e63]">♥ {likeCount}</span>
@@ -236,8 +213,8 @@ export function BoulderOverviewModal({
           </div>
         )}
 
-        <Section label="Quality">
-          <StarRating votes={localQualityVotes} userUid={uid} onVote={handleQualityVote} />
+        <Section label="My Rating">
+          <StarRating value={myRating} onChange={onRate} emptyHint="Tap to rate — private to you" />
         </Section>
 
         {sortedBadges.length > 0 && (

@@ -36,9 +36,6 @@ export const BADGE_COLOR: Record<string, string> = {
   'Double Dyno': '#e91e63',
   Campus: '#ec407a',
   'Bat Hang': '#37474f',
-  'Hand-Jam': '#ff6b35',
-  'Finger-Jam': '#ffb347',
-  'Foot-Jam': '#4ecdc4',
   // Body Dependent
   Flexibility: '#00acc1',
   Reachy: '#2196f3',
@@ -59,6 +56,28 @@ export const BADGE_COLOR: Record<string, string> = {
   'Love it': '#e91e63',
   'Hate it': '#424242',
   Suffer: '#6a1b9a',
+}
+
+/**
+ * The hold a badge is a size of: 'Large Crimps' → 'Crimps'.
+ *
+ * `Small `/`Large ` are a naming convention over the four sized holds in
+ * `services/boulders.ts`'s SIZED_HOLDS, not separate icons — a large crimp is
+ * still drawn as a crimp, in the crimp colour, just bigger. Anything else,
+ * including 'Small-feet' and 'Small-fit' (hyphenated, and holds in their own
+ * right), passes through untouched.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- shared helper, colocated with the components that use it
+export function baseHoldBadge(label: string): string {
+  const base = label.replace(/^(Small|Large) /, '')
+  return base in BADGE_COLOR ? base : label
+}
+
+/** How much bigger or smaller a sized variant draws than its base hold. */
+function holdSizeScale(label: string): number {
+  if (label.startsWith('Small ')) return 0.72
+  if (label.startsWith('Large ')) return 1.18
+  return 1
 }
 
 function Box({ style, children }: { style: CSSProperties; children?: ReactNode }) {
@@ -103,9 +122,9 @@ const triangle = (
 }
 
 export function HoldIcon({ badge, color, size }: { badge: string; color: string; size: number }) {
-  const s = size
+  const s = size * holdSizeScale(badge)
 
-  switch (badge) {
+  switch (baseHoldBadge(badge)) {
     case 'Crimps':
       return (
         <Box style={wrap(s, { flexDirection: 'column', gap: 3 })}>
@@ -482,29 +501,6 @@ export function HoldIcon({ badge, color, size }: { badge: string; color: string;
           <Box style={{ width: s * 0.1, height: s * 0.46, background: color, borderRadius: 2, position: 'absolute', bottom: s * 0.04, transform: 'rotate(-12deg)', marginLeft: s * 0.06 }} />
         </Box>
       )
-    case 'Hand-Jam':
-      return (
-        <Box style={wrap(s)}>
-          <Box style={{ width: s * 0.11, height: s * 0.68, background: color, borderRadius: 2, position: 'absolute', left: s * 0.22 }} />
-          <Box style={{ width: s * 0.11, height: s * 0.68, background: color, borderRadius: 2, position: 'absolute', right: s * 0.22 }} />
-          <Box style={{ width: s * 0.44, height: s * 0.11, background: color, borderRadius: 2 }} />
-        </Box>
-      )
-    case 'Finger-Jam':
-      return (
-        <Box style={wrap(s)}>
-          <Box style={{ width: s * 0.09, height: s * 0.58, background: color, borderRadius: 2, position: 'absolute', left: s * 0.28 }} />
-          <Box style={{ width: s * 0.09, height: s * 0.58, background: color, borderRadius: 2, position: 'absolute', right: s * 0.28 }} />
-          <Box style={{ width: s * 0.32, height: s * 0.09, background: color, borderRadius: 2 }} />
-        </Box>
-      )
-    case 'Foot-Jam':
-      return (
-        <Box style={wrap(s)}>
-          <Box style={{ width: s * 0.62, height: s * 0.18, background: color, borderRadius: 4, position: 'absolute', bottom: s * 0.16 }} />
-          <Box style={{ width: s * 0.14, height: s * 0.44, background: color, borderRadius: 3, position: 'absolute', bottom: s * 0.3 }} />
-        </Box>
-      )
     case 'Love it':
       return (
         <Box style={wrap(s)}>
@@ -559,7 +555,7 @@ export function BadgeIcon({
   size?: 'xs' | 'sm' | 'md'
   compact?: boolean
 }) {
-  const color = BADGE_COLOR[label] ?? KBC.purple
+  const color = BADGE_COLOR[baseHoldBadge(label)] ?? KBC.purple
   const dim = size === 'xs' ? 24 : size === 'sm' ? 36 : 44
   const iconSz = size === 'xs' ? 10 : size === 'sm' ? 15 : 19
 

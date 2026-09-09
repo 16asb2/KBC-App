@@ -111,8 +111,8 @@ The `HoldIcon` component in `components/badge-icon.tsx` renders 40 different cli
 | **Punch pass vs membership model** | Both exist but the distinction isn't fully enforced in the UI. What exactly can punch pass holders do vs full members? |
 | **Boulder seasons** | A `seasons` collection exists in Firestore but the UI for managing season transitions (archiving old boulders, starting a new season) is not built yet. |
 | **Waiver versioning** | The waiver is stored as a flag on the member doc but there's no version tracking. If the waiver text changes, existing members won't be prompted to re-sign. |
-| **Camera + GPS** | Planned but no design decision yet on how photos are stored (Firestore is not a good fit for binary blobs — Firebase Storage would be needed). |
-| **iOS** | No Apple Developer account, no iOS build profile. Would need a Mac for certain build steps. |
+| **Photos live in Firestore documents** | A boulder's `photo` is a base64 JPEG data URI on the `boulders/{id}` document, so every list read downloads every picture whether or not it is shown. `thumb` (v0.9) took the *rendering* cost off the card, but the bytes still ship. The fix is to move `photo` off the document — a `boulders/{id}/media/main` subdoc read only when the overview opens, or Firebase Storage — which needs a migration for existing problems. This is the largest remaining item in the iPhone performance work below. |
+| **iOS** | Nothing native is planned — `web/` is the only client and installs as a PWA. What remains is an on-device install check on a real iPhone (Phase 6) and the photo-storage change above. |
 | **What happens when gym closes?** | `gymStatus/current` sets a 2-hour `closesAt` window but there's no mechanism to close early or extend. Supervisors currently can't "close" the gym explicitly — it just times out. |
 
 ---
@@ -325,3 +325,59 @@ The default order for every member list: the picker behind **Sign In Another Cli
 **Keeping the copy honest.** `admin-web/` is one static HTML file: no bundler, no test run, so the rule is duplicated there rather than imported. `web/src/domain/memberSort.adminMirror.test.ts` lifts the panel's block out of the file, evaluates it, and asserts it ranks a fixture directory identically and agrees record-by-record on `isActiveMember`. That test reads `admin-web/` from `web/`'s suite — a boundary this repo otherwise keeps — and earns it by being the only thing that fails when the two drift.
 
 **Active members.** `isActiveMember` is *not* purely a recency question: a confirmed pass or a punch in hand counts as evidence of a live member on its own. It previously read `lastSignInAt` alone, which listed a member who had just bought an annual pass as inactive. A sign-in dated in the future is excluded here but sorts as recent in `recencyBucket` — the one deliberate disagreement between the two, since a sort has to place every record somewhere while a badge should not assert a visit that has not happened.
+
+---
+
+## Why the app ran worse on iPhone than on Android (v0.9)
+
+Reported as "slower to load and more buggy on iPhones". It is not one bug. Four
+separate things were in play, three of them fixed here and the fourth written
+up above as an open question.
+
+**The short version.** Nothing in the app was iOS-specific *by intent*, but
+almost everything expensive it did was sized for a desktop budget, and iOS
+Safari is the one target that enforces a small one. Safari's web content process
+is killed at a far lower memory watermark than Chrome on Android tolerates, so
+the same page that merely feels heavy on a Pixel gets reloaded out from under
+the user on an iPhone — which is what "more buggy" was describing. A blank tab
+after a scroll is the tab having been killed and restored, not a rendering bug.
+
+**1. The boulder list downloaded every photo the gym had ever taken.**
+`getBouldersForSeason` read the whole `boulders` collection and picked the
+season out in JavaScript. Every problem from every season, removed ones
+included, each carrying a base64 `photo` on the document. Now filtered
+server-side with `where('seasonId', '==', …)`. `getNextBoulderNumber` did the
+same thing and got the same fix.
+
+**2. Every card rendered a full-size photo as a data URI.** The cost is worse
+than the transfer suggests. A 1080px JPEG is ~200 kB on the wire, ~270 kB as a
+base64 string in JS, and — once the browser paints it — roughly
+`width × height × 4` bytes as a decoded bitmap, about **6 MB** for one
+1080×1440 photo. Thirty problems on one scrolling list is on the order of
+180 MB of bitmap. Android Chrome absorbs that; iOS Safari does not.
+Boulders now carry a second field, `thumb`: a 96px square JPEG at q0.6, a
+couple of kB, generated alongside the photo and the only image the card draws.
+The full picture loads when the overview modal opens, one at a time.
+
+**3. Adding a photo from an iPhone failed outright.** `resizeImageFileToDataUrl`
+went through `createImageBitmap`, which Safari rejects for HEIC blobs — and
+HEIC is what the iPhone camera roll hands a file input by default. The same
+file decodes fine through an `<img>` element, because WebKit supports HEIC in
+its image pipeline but not its bitmap one. `utils/imageResize.ts` now falls
+back to `<img>` + `decode()`. This one was genuinely iOS-only: on Android the
+picker returns JPEG and the fast path always worked.
+
+**4. Switching season refetched every KBC climb log.** `getKBCLogs()` reads the
+entire `climbLogs` collection where `locationId == 'kbc'`, and
+`handleSelectSeason` called it again on each switch even though those logs are
+keyed by `problemInternalId` and are not season-scoped — the same rows, re-read.
+Removed. The underlying read is still unbounded and grows with every climb
+anyone logs; scoping it properly needs a season or date field on the log
+documents, which is not in this change.
+
+**Ruled out.** The viewport handling is already correct for mobile Safari —
+`h-svh`/`max-h-[…svh]` throughout, chosen deliberately over `vh`/`dvh` so
+expanding browser chrome cannot clip the layout (see `layout/AppShell.tsx`).
+The swipe hook does not `preventDefault`, so it never fights Safari's scrolling.
+Auth persistence already falls back from IndexedDB to localStorage, which is
+what Safari private browsing needs.

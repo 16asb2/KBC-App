@@ -6,7 +6,7 @@ import { GymMap } from '@/components/GymMap'
 import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
 import { gradeIndexFromPosition } from '@/domain/gradeVote'
-import { resizeImageFileToDataUrl } from '@/utils/imageResize'
+import { resizeImageFileToDataUrl, resizeImageFileToIconDataUrl } from '@/utils/imageResize'
 import {
   BADGE_GROUPS,
   GRADES,
@@ -26,6 +26,11 @@ export type BoulderFormMode = { type: 'add'; seasonId: string; nextNumber: numbe
 // mobile's visual GymMap. Photo picker uses a file input + canvas resize
 // (utils/imageResize.ts) instead of expo-image-picker/expo-image-manipulator
 // — same target format (base64 JPEG data URI, width 1080, quality 0.7).
+//
+// Two files come out of one picked image: `photo` (the full picture, shown in
+// the overview) and `thumb` (a 96px square crop, drawn as the round icon on
+// every boulder card). They are always written together, so the icon cannot
+// drift out of date with the picture it came from.
 export function BoulderFormModal({
   mode,
   onClose,
@@ -57,6 +62,7 @@ export function BoulderFormModal({
   const [setter, setSetter] = useState(b?.setter ?? defaultSetter)
   const [locations, setLocations] = useState<string[]>(b?.locations ?? [])
   const [photo, setPhoto] = useState(b?.photo ?? '')
+  const [thumb, setThumb] = useState(b?.thumb ?? '')
   const [photoBusy, setPhotoBusy] = useState(false)
   const [gradeIdx, setGradeIdx] = useState<number | null>(b?.setterGradeVote ?? null)
   const [selectedBadges, setSelectedBadges] = useState<string[]>(b?.setterBadges ?? [])
@@ -92,7 +98,12 @@ export function BoulderFormModal({
     if (!file) return
     setPhotoBusy(true)
     try {
-      setPhoto(await resizeImageFileToDataUrl(file))
+      const [full, icon] = await Promise.all([
+        resizeImageFileToDataUrl(file),
+        resizeImageFileToIconDataUrl(file),
+      ])
+      setPhoto(full)
+      setThumb(icon)
     } catch {
       setError('Could not process the image. Please try a different one.')
     } finally {
@@ -112,8 +123,8 @@ export function BoulderFormModal({
     try {
       const now = new Date().toISOString()
       if (isEdit && b) {
-        await updateBoulder(b.id, { name, number: parsedNumber, tapeColor, setter, locations, photo, setterGradeVote: gradeIdx, setterBadges: selectedBadges, updatedAt: now })
-        onSaved({ ...b, name, number: parsedNumber, tapeColor, setter, locations, photo, setterGradeVote: gradeIdx ?? null, setterBadges: selectedBadges, gradeVotes: localGradeVotes, updatedAt: now })
+        await updateBoulder(b.id, { name, number: parsedNumber, tapeColor, setter, locations, photo, thumb, setterGradeVote: gradeIdx, setterBadges: selectedBadges, updatedAt: now })
+        onSaved({ ...b, name, number: parsedNumber, tapeColor, setter, locations, photo, thumb, setterGradeVote: gradeIdx ?? null, setterBadges: selectedBadges, gradeVotes: localGradeVotes, updatedAt: now })
       } else if (mode.type === 'add') {
         await createBoulder({
           seasonId: mode.seasonId,
@@ -127,12 +138,12 @@ export function BoulderFormModal({
           updatedAt: now,
           locations,
           photo,
+          thumb,
           removed: false,
           likes: [],
           setterGradeVote: gradeIdx,
           setterBadges: selectedBadges,
           gradeVotes: {},
-          qualityVotes: {},
         })
         onSaved()
       }
@@ -272,15 +283,36 @@ export function BoulderFormModal({
           {photo ? (
             <div className="space-y-2">
               <img src={photo} alt="" className="max-h-48 w-full rounded-lg object-contain" />
-              <button type="button" onClick={() => setPhoto('')} className="text-sm font-bold text-red-600">
-                ✕ Remove
-              </button>
+              <div className="flex items-center gap-3">
+                {thumb && (
+                  <>
+                    <img src={thumb} alt="" className="size-10 rounded-full border border-neutral-200 object-cover" />
+                    <span className="text-xs text-neutral-400">How it appears on the boulder list</span>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhoto('')
+                    setThumb('')
+                  }}
+                  className="ml-auto text-sm font-bold text-red-600"
+                >
+                  ✕ Remove
+                </button>
+              </div>
             </div>
           ) : (
-            <label className="block w-full cursor-pointer rounded-xl border border-dashed border-neutral-300 p-4 text-center text-sm font-bold text-neutral-500">
-              {photoBusy ? 'Processing…' : '📷 Choose Photo'}
-              <input type="file" accept="image/*" className="hidden" onChange={(e) => void handlePhotoChange(e)} disabled={photoBusy} />
-            </label>
+            <div className="flex gap-2">
+              {/* Two inputs rather than one: `capture` asks the OS for the
+                  camera directly, which is what "take a picture of this
+                  problem" wants, but it also removes the option to pick an
+                  existing shot — so the library path stays beside it. On a
+                  desktop browser `capture` is ignored and both open a file
+                  dialog. */}
+              <PhotoInput label={photoBusy ? 'Processing…' : '📷 Take Photo'} capture busy={photoBusy} onPick={handlePhotoChange} />
+              <PhotoInput label={photoBusy ? 'Processing…' : '🖼 Choose Photo'} busy={photoBusy} onPick={handlePhotoChange} />
+            </div>
           )}
         </Field>
 
@@ -327,6 +359,32 @@ export function BoulderFormModal({
         )}
       </div>
     </Modal>
+  )
+}
+
+function PhotoInput({
+  label,
+  capture = false,
+  busy,
+  onPick,
+}: {
+  label: string
+  capture?: boolean
+  busy: boolean
+  onPick: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>
+}) {
+  return (
+    <label className="block flex-1 cursor-pointer rounded-xl border border-dashed border-neutral-300 p-4 text-center text-sm font-bold text-neutral-500">
+      {label}
+      <input
+        type="file"
+        accept="image/*"
+        {...(capture ? { capture: 'environment' as const } : {})}
+        className="hidden"
+        onChange={(e) => void onPick(e)}
+        disabled={busy}
+      />
+    </label>
   )
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BoulderCard } from '@/components/BoulderCard'
 import { BoulderFilterModal } from '@/components/BoulderFilterModal'
 import { BoulderFormModal, type BoulderFormMode } from '@/components/BoulderFormModal'
@@ -10,17 +10,17 @@ import { KBC } from '@/constants/theme'
 import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { computeAggregates } from '@/domain/climbAggregates'
-import { boulderFilterCount, DEFAULT_BOULDER_FILTER, loadSavedBoulderFilters, saveBoulderFilters, type BoulderFilterState, type SortDir, type SortKey } from '@/domain/boulderFilters'
+import { boulderFilterCount, DEFAULT_BOULDER_FILTER, loadSavedBoulderFilters, popularityScore, saveBoulderFilters, type BoulderFilterState, type SortDir, type SortKey } from '@/domain/boulderFilters'
 import { isAdmin, isPrivileged } from '@/domain/roles'
 import {
-  getBoulderProjects,
   getBouldersForSeason,
   getNextBoulderNumber,
   getSeasons,
   getTapeColorPool,
+  getUserBoulderData,
   saveTapeColorPool,
-  setBoulderProject,
-  setQualityVote,
+  saveBoulderProjects,
+  saveBoulderRatings,
   toggleLike,
   updateBoulder,
   type Boulder,
@@ -32,6 +32,7 @@ const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'number', label: 'Number' },
   { key: 'name', label: 'Name' },
   { key: 'grade', label: 'Grade' },
+  { key: 'popular', label: 'Popular' },
   { key: 'setter', label: 'Setter' },
   { key: 'updatedAt', label: 'Modified' },
 ]
@@ -63,12 +64,21 @@ export function BouldersPage() {
   const [tapeColorPool, setTapeColorPool] = useState<string[]>([])
   const [viewBoulder, setViewBoulder] = useState<Boulder | null>(null)
   const [myProjects, setMyProjects] = useState<Set<string>>(new Set())
+  // Keyed by Boulder.internalId. Private to this member — see
+  // services/boulders.ts's UserBoulderData.
+  const [myRatings, setMyRatings] = useState<Record<string, number>>({})
+  const ratingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingRatingsRef = useRef<Record<string, number> | null>(null)
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setFilters(loadSavedBoulderFilters())
     getTapeColorPool().then(setTapeColorPool)
-    if (userUid) getBoulderProjects(userUid).then((ids) => setMyProjects(new Set(ids)))
+    if (userUid)
+      getUserBoulderData(userUid).then((d) => {
+        setMyProjects(new Set(d.projectIds))
+        setMyRatings(d.ratings)
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -107,18 +117,15 @@ export function BouldersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Only the boulders are re-read. The KBC climb logs are not scoped to a
+  // season — `logsByProblem` is keyed by problemInternalId and already holds
+  // every one of them — so refetching the whole collection on each season
+  // switch downloaded the same rows again for nothing.
   async function handleSelectSeason(season: BoulderSeason) {
     setSelectedSeason(season)
     setLoading(true)
     try {
-      const [b, kbcLogs] = await Promise.all([getBouldersForSeason(season.id), getKBCLogs()])
-      setBoulders(b)
-      const map: Record<string, PersonalClimb[]> = {}
-      for (const log of kbcLogs) {
-        if (!log.problemInternalId) continue
-        ;(map[log.problemInternalId] ??= []).push(log)
-      }
-      setLogsByProblem(map)
+      setBoulders(await getBouldersForSeason(season.id))
     } catch (e) {
       console.warn('Failed to load season:', e)
     } finally {
@@ -139,15 +146,15 @@ export function BouldersPage() {
   }
 
   async function handleToggleProject(boulder: Boulder) {
-    const wasProject = myProjects.has(boulder.internalId)
-    const newSet = new Set(myProjects)
-    if (wasProject) newSet.delete(boulder.internalId)
-    else newSet.add(boulder.internalId)
-    setMyProjects(newSet)
+    const previous = myProjects
+    const next = new Set(previous)
+    if (next.has(boulder.internalId)) next.delete(boulder.internalId)
+    else next.add(boulder.internalId)
+    setMyProjects(next)
     try {
-      await setBoulderProject(userUid, boulder.internalId, !wasProject)
+      await saveBoulderProjects(userUid, [...next])
     } catch {
-      setMyProjects(myProjects)
+      setMyProjects(previous)
     }
   }
 
@@ -177,19 +184,32 @@ export function BouldersPage() {
     }
   }
 
-  async function handleVoteQuality(boulder: Boulder, stars: number) {
-    const oldVotes = boulder.qualityVotes ?? {}
-    const updated: Record<string, number> = { ...oldVotes }
-    if (stars <= 0) delete updated[userUid]
-    else updated[userUid] = stars
-    setBoulders((prev) => prev.map((b) => (b.id === boulder.id ? { ...b, qualityVotes: updated } : b)))
-    setViewBoulder((prev) => (prev?.id === boulder.id ? { ...prev, qualityVotes: updated } : prev))
-    try {
-      await setQualityVote(boulder.id, userUid, stars, oldVotes)
-    } catch {
-      setBoulders((prev) => prev.map((b) => (b.id === boulder.id ? { ...b, qualityVotes: oldVotes } : b)))
-      setViewBoulder((prev) => (prev?.id === boulder.id ? { ...prev, qualityVotes: oldVotes } : prev))
-    }
+  // Debounced, like the grade vote beside it: dragging from one star to three
+  // is three presses, and each would otherwise be its own Firestore write.
+  // The stars follow the finger regardless — only the save waits.
+  //
+  // The next map is built inside the state updater rather than from the
+  // `myRatings` in scope, which is only as fresh as the last render: two
+  // presses in one tick would both start from the same stale copy and the
+  // first would be lost. `pendingRatingsRef` carries the result out for the
+  // timer, which is the value actually written.
+  function handleRate(boulder: Boulder, stars: number) {
+    const rollback = pendingRatingsRef.current ?? myRatings
+    setMyRatings((prev) => {
+      const next = { ...prev }
+      if (stars <= 0) delete next[boulder.internalId]
+      else next[boulder.internalId] = stars
+      pendingRatingsRef.current = next
+      return next
+    })
+
+    if (ratingTimerRef.current) clearTimeout(ratingTimerRef.current)
+    ratingTimerRef.current = setTimeout(() => {
+      const toSave = pendingRatingsRef.current
+      if (!toSave) return
+      pendingRatingsRef.current = null
+      saveBoulderRatings(userUid, toSave).catch(() => setMyRatings(rollback))
+    }, 500)
   }
 
   async function openAddForm() {
@@ -202,7 +222,7 @@ export function BouldersPage() {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     else {
       setSortKey(key)
-      setSortDir(key === 'number' || key === 'updatedAt' ? 'desc' : 'asc')
+      setSortDir(key === 'number' || key === 'updatedAt' || key === 'popular' ? 'desc' : 'asc')
     }
   }
 
@@ -262,6 +282,13 @@ export function BouldersPage() {
           const ag = boulderAggregates[a.internalId]?.avgGrade ?? -1
           const bg = boulderAggregates[b.internalId]?.avgGrade ?? -1
           return dir * (ag - bg)
+        }
+        case 'popular': {
+          const ap = popularityScore(a.likes.length, boulderAggregates[a.internalId]?.climbedCount ?? 0)
+          const bp = popularityScore(b.likes.length, boulderAggregates[b.internalId]?.climbedCount ?? 0)
+          // Ties fall back to boulder number, so equally unpopular problems
+          // keep a stable, readable order instead of shuffling per render.
+          return dir * (ap - bp) || a.number - b.number
         }
         case 'setter':
           return dir * a.setter.localeCompare(b.setter)
@@ -426,7 +453,8 @@ export function BouldersPage() {
           onToggleProject={() => void handleToggleProject(viewBoulder)}
           onLog={() => setLogBoulder(viewBoulder)}
           onVoteGrade={(g) => void handleVoteGrade(viewBoulder, g)}
-          onVoteQuality={(s) => void handleVoteQuality(viewBoulder, s)}
+          myRating={myRatings[viewBoulder.internalId] ?? null}
+          onRate={(s) => handleRate(viewBoulder, s)}
         />
       )}
 
@@ -457,6 +485,8 @@ export function BouldersPage() {
           boulder={logBoulder}
           userUid={userUid}
           userName={profile?.preferredName || user?.displayName || user?.email || 'Unknown'}
+          myRating={myRatings[logBoulder.internalId] ?? null}
+          onRate={(s) => handleRate(logBoulder, s)}
           onClose={() => setLogBoulder(null)}
           onSaved={(entry) => {
             setLogsByProblem((prev) => ({ ...prev, [logBoulder.internalId]: [...(prev[logBoulder.internalId] ?? []), entry] }))

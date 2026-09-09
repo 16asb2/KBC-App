@@ -4,6 +4,42 @@ All notable changes to KBC Scheduler are documented here.
 
 ---
 
+## [Unreleased] — 2026-09-09
+
+### Changed
+- **A boulder's star rating is now yours alone.** The community rating is gone — no average on the card, no vote count in the overview, no *Quality ratings* tile in the season summary, no *Avg Quality* column in `admin-web/`. In its place, **My Rating**: three stars in the boulder overview and on the log form, showing what *you* thought of the problem and nothing else.
+
+  This is a privacy change, not a display change, and it had to move the data to be real. Ratings used to live in a `qualityVotes` map on the boulder document, which every signed-in member can read — hiding the average in the UI would have left everyone's vote sitting there for anyone who opened the network tab. They now live in `userBoulderData/{uid}`, a document `firestore.rules` lets nobody but its owner read or write. There is no aggregate to publish because the server cannot assemble one.
+
+  The rating is also part of logging a climb now, which is where an opinion about a problem actually forms. Rate it on the log form and the value goes to both the log entry and your standing rating for that boulder; open the form again and it comes back pre-filled rather than blank.
+
+- **Sends and attempts became one number: Climbed.** The boulder list showed `✓3 △7` and left you to add them up. It also made a hard problem — lots of attempts, few sends — look *less* travelled than an easy one, which is backwards for the question the card is being asked: is anyone on this? One count now, sends and attempts together. The overview modal still breaks it down; the list does not.
+
+- **The top-right corner of a boulder card is one line.** Likes, Climbed, and your own Sent/Tried chip used to stack into a three-row column that pushed the title around. They sit on a single row now, and the badges below them are right-aligned to the same edge.
+
+- **Every boulder card carries a round photo icon.** It sits at the left of the grade bar, which gives up the width for it; problems with no photo yet get a numbered placeholder so the column of icons stays straight. Adding a photo now offers **Take Photo** beside **Choose Photo** — on a phone the first opens the camera directly.
+
+  The icon is a separate, deliberately tiny image (`thumb`, 96px square, ~2 kB), generated from the same picture and stored beside it. The card draws only that. See the iPhone notes below for why that distinction matters more than it sounds.
+
+### Added
+- **A Popular sort on the Boulders tab**, beside Number, Name and Grade. It ranks by likes plus Climbed — an opinion and traffic, added unweighted, so a problem needs both to reach the top. Ties fall back to boulder number so equally quiet problems keep a stable order.
+
+- **Small and Large versions of Jugs, Crimps, Slopers and Pinches.** A small crimp and a large crimp are not the same problem. The unsized originals stay on the list: every climb logged before today records a bare `Crimps`, and dropping it would orphan those badge counts. The variants reuse their base hold's colour and drawing, scaled up or down, so twelve badges did not become twelve new icons.
+
+### Removed
+- **The Hand-Jam, Finger-Jam and Foot-Jam badges**, from the app and from `admin-web/`.
+
+### Fixed
+- **The app was slower and flakier on iPhone than on Android.** Four separate causes, three fixed here — `DESIGN.md` has the full write-up.
+
+  The headline: iOS Safari kills a tab at a much lower memory watermark than Android Chrome tolerates, so the page that merely felt heavy on a Pixel was being reloaded out from under people on an iPhone. That is what "buggy" was describing — a list going blank mid-scroll is the tab having died and come back.
+
+  What it was doing to earn that. The Boulders tab **read every boulder the gym has ever set** on every visit — all seasons, removed problems included — because the season filter ran in JavaScript after the download; it is a server-side query now. Each of those documents carries a base64 photo, and every card **painted the full-size one**: ~200 kB on the wire, but roughly 6 MB as a decoded bitmap, times thirty cards on a scrolling list. Cards now draw the tiny `thumb` and load the real photo only when the overview opens. Switching season **re-downloaded the entire KBC climb log** for rows it already had.
+
+- **Adding a photo from an iPhone failed silently.** The resize pipeline went through `createImageBitmap`, which Safari refuses for HEIC — the format the iPhone camera roll hands a file input by default. The same file decodes fine through an `<img>` element, so that is the fallback now. Genuinely iOS-only: Android's picker returns JPEG, where the original path always worked.
+
+---
+
 ## [Unreleased] — 2026-08-25
 
 ### Added
