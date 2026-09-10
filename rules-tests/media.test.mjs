@@ -21,21 +21,11 @@
  */
 
 import test from 'node:test'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing'
+import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing'
 import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore'
+import { createTestEnv } from './harness.mjs'
 
-const rulesPath = fileURLToPath(new URL('../firestore.rules', import.meta.url))
-
-const testEnv = await initializeTestEnvironment({
-  projectId: 'kbc-app-3307b',
-  firestore: {
-    rules: readFileSync(rulesPath, 'utf8'),
-    host: '127.0.0.1',
-    port: 8080,
-  },
-})
+const testEnv = await createTestEnv(import.meta.url)
 
 /** Seed bypassing rules, the way the data would already exist. */
 async function seed(path, data) {

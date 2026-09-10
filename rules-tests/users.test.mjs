@@ -19,21 +19,11 @@
  */
 
 import test from 'node:test'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing'
+import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing'
 import { deleteDoc, doc, setDoc, updateDoc } from 'firebase/firestore'
+import { createTestEnv } from './harness.mjs'
 
-const rulesPath = fileURLToPath(new URL('../firestore.rules', import.meta.url))
-
-const testEnv = await initializeTestEnvironment({
-  projectId: 'kbc-app-3307b',
-  firestore: {
-    rules: readFileSync(rulesPath, 'utf8'),
-    host: '127.0.0.1',
-    port: 8080,
-  },
-})
+const testEnv = await createTestEnv(import.meta.url)
 
 /** A member profile shaped the way createNewMemberProfile() writes one. */
 function profile(overrides = {}) {
