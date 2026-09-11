@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BadgeIcon } from '@/components/BadgeIcon'
 import { DropdownPicker } from '@/components/DropdownPicker'
 import { GradeBar } from '@/components/GradeBar'
 import { GymMap } from '@/components/GymMap'
+import { CircleCropModal } from '@/components/CircleCropModal'
 import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
 import { gradeIndexFromPosition } from '@/domain/gradeVote'
-import { resizeImageFileToDataUrl, resizeImageFileToIconDataUrl } from '@/utils/imageResize'
+import { resizeImageFileToDataUrl } from '@/utils/imageResize'
 import {
   BADGE_GROUPS,
   GRADES,
@@ -14,7 +15,9 @@ import {
   GRADE_TEXT,
   LOCATIONS,
   createBoulder,
+  getBoulderPhoto,
   removeBoulder,
+  setBoulderPhoto,
   updateBoulder,
   type Boulder,
 } from '@/services/boulders'
@@ -61,14 +64,40 @@ export function BoulderFormModal({
   const [newTapeColorText, setNewTapeColorText] = useState('')
   const [setter, setSetter] = useState(b?.setter ?? defaultSetter)
   const [locations, setLocations] = useState<string[]>(b?.locations ?? [])
-  const [photo, setPhoto] = useState(b?.photo ?? '')
+  const [photo, setPhoto] = useState('')
   const [thumb, setThumb] = useState(b?.thumb ?? '')
   const [photoBusy, setPhotoBusy] = useState(false)
+  // The existing picture is not on the boulder document, so editing has to go
+  // and get it. Until it arrives the form knows only that there *is* one
+  // (`hasPhoto`), and `photoDirty` stays false — so saving before it loads
+  // leaves the stored picture alone rather than blanking it.
+  const [photoLoading, setPhotoLoading] = useState(Boolean(b?.hasPhoto))
+  const [photoDirty, setPhotoDirty] = useState(false)
+  // The picture currently open in the circle cropper, or null. Held apart from
+  // `photo`: the icon may come from an entirely different image.
+  const [cropSource, setCropSource] = useState<string | null>(null)
+  const [iconBusy, setIconBusy] = useState(false)
   const [gradeIdx, setGradeIdx] = useState<number | null>(b?.setterGradeVote ?? null)
   const [selectedBadges, setSelectedBadges] = useState<string[]>(b?.setterBadges ?? [])
   const [localGradeVotes, setLocalGradeVotes] = useState<Record<string, number>>(b?.gradeVotes ?? {})
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!b?.hasPhoto) return
+    let cancelled = false
+    getBoulderPhoto(b.id)
+      .then((p) => {
+        if (!cancelled) setPhoto(p)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setPhotoLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [b?.id, b?.hasPhoto])
 
   function toggleLocation(loc: string) {
     setLocations((prev) => (prev.includes(loc) ? prev.filter((l) => l !== loc) : [...prev, loc]))
@@ -98,16 +127,30 @@ export function BoulderFormModal({
     if (!file) return
     setPhotoBusy(true)
     try {
-      const [full, icon] = await Promise.all([
-        resizeImageFileToDataUrl(file),
-        resizeImageFileToIconDataUrl(file),
-      ])
+      const full = await resizeImageFileToDataUrl(file)
       setPhoto(full)
-      setThumb(icon)
+      setPhotoDirty(true)
     } catch {
       setError('Could not process the image. Please try a different one.')
     } finally {
       setPhotoBusy(false)
+    }
+  }
+
+  async function handleIconPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setIconBusy(true)
+    try {
+      // Normalised to a JPEG data URI first. That is the same path the photo
+      // takes, and it is what makes an iPhone's HEIC workable — see
+      // utils/imageResize.ts. The cropper then works in plain image pixels.
+      setCropSource(await resizeImageFileToDataUrl(file))
+    } catch {
+      setError('Could not process the image. Please try a different one.')
+    } finally {
+      setIconBusy(false)
     }
   }
 
@@ -123,10 +166,15 @@ export function BoulderFormModal({
     try {
       const now = new Date().toISOString()
       if (isEdit && b) {
-        await updateBoulder(b.id, { name, number: parsedNumber, tapeColor, setter, locations, photo, thumb, setterGradeVote: gradeIdx, setterBadges: selectedBadges, updatedAt: now })
-        onSaved({ ...b, name, number: parsedNumber, tapeColor, setter, locations, photo, thumb, setterGradeVote: gradeIdx ?? null, setterBadges: selectedBadges, gradeVotes: localGradeVotes, updatedAt: now })
+        await updateBoulder(b.id, { name, number: parsedNumber, tapeColor, setter, locations, thumb, setterGradeVote: gradeIdx, setterBadges: selectedBadges, updatedAt: now })
+        // Only when the picker was actually used. A photo is the largest write
+        // this form makes, and re-sending an unchanged one on every rename
+        // would cost the most for the least.
+        if (photoDirty) await setBoulderPhoto(b.id, photo)
+        onSaved({ ...b, name, number: parsedNumber, tapeColor, setter, locations, thumb, hasPhoto: photoDirty ? Boolean(photo) : (b.hasPhoto ?? false), setterGradeVote: gradeIdx ?? null, setterBadges: selectedBadges, gradeVotes: localGradeVotes, updatedAt: now })
       } else if (mode.type === 'add') {
-        await createBoulder({
+        await createBoulder(
+          {
           seasonId: mode.seasonId,
           number: parsedNumber,
           name,
@@ -137,14 +185,15 @@ export function BoulderFormModal({
           createdAt: now,
           updatedAt: now,
           locations,
-          photo,
           thumb,
           removed: false,
           likes: [],
           setterGradeVote: gradeIdx,
           setterBadges: selectedBadges,
           gradeVotes: {},
-        })
+          },
+          photo,
+        )
         onSaved()
       }
     } catch (e) {
@@ -280,21 +329,25 @@ export function BoulderFormModal({
         )}
 
         <Field label="Photo (optional)">
-          {photo ? (
+          {photoLoading ? (
+            <p className="rounded-xl border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-400">Loading photo…</p>
+          ) : photo ? (
             <div className="space-y-2">
               <img src={photo} alt="" className="max-h-48 w-full rounded-lg object-contain" />
-              <div className="flex items-center gap-3">
-                {thumb && (
-                  <>
-                    <img src={thumb} alt="" className="size-10 rounded-full border border-neutral-200 object-cover" />
-                    <span className="text-xs text-neutral-400">How it appears on the boulder list</span>
-                  </>
-                )}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCropSource(photo)}
+                  className="text-sm font-bold"
+                  style={{ color: KBC.cyan }}
+                >
+                  Make icon from this
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     setPhoto('')
-                    setThumb('')
+                    setPhotoDirty(true)
                   }}
                   className="ml-auto text-sm font-bold text-red-600"
                 >
@@ -314,6 +367,38 @@ export function BoulderFormModal({
               <PhotoInput label={photoBusy ? 'Processing…' : '🖼 Choose Photo'} busy={photoBusy} onPick={handlePhotoChange} />
             </div>
           )}
+        </Field>
+
+        {/* The icon is its own picture and its own crop, not a square cut out
+            of the photo above. A wide shot of a problem centres on the wall,
+            and the automatic middle of one is almost never the hold or the
+            move that would identify it in a list. "Make icon from this" is
+            there for when the photo genuinely is the right source — it opens
+            the same cropper, seeded. */}
+        <Field label="List icon (optional)">
+          <div className="flex items-center gap-3">
+            {thumb ? (
+              <img src={thumb} alt="" className="size-14 shrink-0 rounded-full border border-neutral-200 object-cover" />
+            ) : (
+              <div className="flex size-14 shrink-0 items-center justify-center rounded-full border border-dashed border-neutral-300 text-[11px] font-bold text-neutral-300">
+                none
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-neutral-400">
+                {thumb ? 'Shown beside this boulder in the list.' : 'Pick a picture and choose the circle to show in the list.'}
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-2">
+                <IconInput label={iconBusy ? 'Processing…' : '📷 Take'} capture busy={iconBusy} onPick={handleIconPick} />
+                <IconInput label={iconBusy ? 'Processing…' : '🖼 Choose'} busy={iconBusy} onPick={handleIconPick} />
+                {thumb && (
+                  <button type="button" onClick={() => setThumb('')} className="text-xs font-bold text-red-600">
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </Field>
 
         <Field label={`Setter Badges${selectedBadges.length > 0 ? ` · ${selectedBadges.length} selected` : ''}`}>
@@ -358,7 +443,47 @@ export function BoulderFormModal({
           </button>
         )}
       </div>
+
+      {/* Rendered after the form so it paints on top — same ordering rule the
+          Boulders page relies on for its stack of modals. */}
+      {cropSource && (
+        <CircleCropModal
+          src={cropSource}
+          onCancel={() => setCropSource(null)}
+          onDone={(icon) => {
+            setThumb(icon)
+            setCropSource(null)
+          }}
+        />
+      )}
     </Modal>
+  )
+}
+
+/** A small pill-shaped file button, for the icon row where space is tight. */
+function IconInput({
+  label,
+  capture = false,
+  busy,
+  onPick,
+}: {
+  label: string
+  capture?: boolean
+  busy: boolean
+  onPick: (e: React.ChangeEvent<HTMLInputElement>) => Promise<void>
+}) {
+  return (
+    <label className="cursor-pointer rounded-full border border-neutral-300 px-3 py-1 text-xs font-bold text-neutral-600">
+      {label}
+      <input
+        type="file"
+        accept="image/*"
+        {...(capture ? { capture: 'environment' as const } : {})}
+        className="hidden"
+        onChange={(e) => void onPick(e)}
+        disabled={busy}
+      />
+    </label>
   )
 }
 

@@ -274,6 +274,15 @@ service cloud.firestore {
                                  (resource.data.uid == request.auth.uid ||
                                   isSupervisorOrAdmin());
       }
+
+      // The boulder's full picture, held apart from the document so that a
+      // query over this collection does not download it. Same permission as
+      // the `photo` field it replaces — 'photo' is in
+      // touchesBoulderAdminFields, so setting it was already admin-only.
+      match /media/{mediaId} {
+        allow read:  if isAuthenticated();
+        allow write: if isSupervisorOrAdmin();
+      }
     }
 
     // ── climbLogs/{id} ───────────────────────────────────────────────────────
@@ -286,6 +295,20 @@ service cloud.firestore {
                             );
       allow create:         if isAuthenticated() && request.resource.data.uid == request.auth.uid;
       allow update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+
+      // A climb's photo, held apart from the log document — see the boulders
+      // media rule above for why. Owner-only, including for KBC logs: the
+      // parent is readable by every member so the community stats work, but
+      // the stats are counts and badges, and nothing in the app has ever
+      // displayed somebody else's climb photo.
+      //
+      // The owner is carried on the media document itself rather than read off
+      // the parent: a get() here would bill a document read on every single
+      // evaluation of this rule.
+      match /media/{mediaId} {
+        allow read, update, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+        allow create:               if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+      }
     }
 
     // ── climbLocations/{id} ──────────────────────────────────────────────────

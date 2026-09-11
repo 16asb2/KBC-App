@@ -50,6 +50,45 @@ If the printed table matches what the app shows but a boulder's `locations`
 names a wall you did not expect, the record is what needs correcting. If they
 disagree, the app has a bug and this output is the evidence for it.
 
+## `migrate-photos.mjs`
+
+Moves base64 photos out of the documents that list them —
+`boulders/{id}.photo` and `climbLogs/{id}.photo` become
+`<collection>/{id}/media/main`.
+
+A field is downloaded by every query over its collection, and the Boulders tab
+reads both collections whole: a season of problems, and every KBC climb ever
+logged. So it was pulling down megabytes of pictures it never draws, which is
+most of why the app crawled on iPhone. A subcollection is not returned by a
+query on its parent, which is the whole point. See `DESIGN.md`.
+
+The app reads **both** shapes, so nothing breaks before this runs. This is what
+stops the old bytes shipping.
+
+```bash
+node migrate-photos.mjs                          # dry run, both collections
+node migrate-photos.mjs --collections boulders
+node migrate-photos.mjs --confirm --keep-field   # copy, keep the original
+node migrate-photos.mjs --confirm                # copy and drop the original
+```
+
+**Dry run by default** — it reports how many documents carry a photo, the total
+size, and the three largest, and writes nothing until `--confirm`.
+
+`--keep-field` copies without deleting, so both copies exist and the app behaves
+identically; re-run without it to reclaim the space. Every step is idempotent,
+so re-running is safe.
+
+Deploy the current app before or alongside the delete step: a build older than
+this change reads only the field.
+
+Naming a collection it doesn't know is an error rather than a silent no-op — a
+typo would otherwise "succeed" by migrating nothing.
+
+It does **not** generate list icons. Those are a hand-picked circular crop now
+(the boulder form's *List icon* field), not something derivable from the photo,
+so a migrated boulder keeps the numbered placeholder until somebody chooses one.
+
 ## `wipe-firestore.mjs`
 
 Deletes Firestore collections so a clean re-import can replace them. **This

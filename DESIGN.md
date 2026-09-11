@@ -111,7 +111,7 @@ The `HoldIcon` component in `components/badge-icon.tsx` renders 40 different cli
 | **Punch pass vs membership model** | Both exist but the distinction isn't fully enforced in the UI. What exactly can punch pass holders do vs full members? |
 | **Boulder seasons** | A `seasons` collection exists in Firestore but the UI for managing season transitions (archiving old boulders, starting a new season) is not built yet. |
 | **Waiver versioning** | The waiver is stored as a flag on the member doc but there's no version tracking. If the waiver text changes, existing members won't be prompted to re-sign. |
-| **Photos live in Firestore documents** | A boulder's `photo` is a base64 JPEG data URI on the `boulders/{id}` document, so every list read downloads every picture whether or not it is shown. `thumb` (v0.9) took the *rendering* cost off the card, but the bytes still ship. The fix is to move `photo` off the document — a `boulders/{id}/media/main` subdoc read only when the overview opens, or Firebase Storage — which needs a migration for existing problems. This is the largest remaining item in the iPhone performance work below. |
+| **Photos in Firebase Storage?** | Resolved for now by moving them to `media/main` subdocuments (v0.9) — see below. Storage would be better still: a CDN-served URL beats a base64 blob through Firestore, and a 1 MiB document limit currently caps a photo. It needs a bucket, its own rules file, and an upload path, none of which exist yet. |
 | **iOS** | Nothing native is planned — `web/` is the only client and installs as a PWA. What remains is an on-device install check on a real iPhone (Phase 6) and the photo-storage change above. |
 | **What happens when gym closes?** | `gymStatus/current` sets a 2-hour `closesAt` window but there's no mechanism to close early or extend. Supervisors currently can't "close" the gym explicitly — it just times out. |
 
@@ -330,9 +330,10 @@ The default order for every member list: the picker behind **Sign In Another Cli
 
 ## Why the app ran worse on iPhone than on Android (v0.9)
 
-Reported as "slower to load and more buggy on iPhones". It is not one bug. Four
-separate things were in play, three of them fixed here and the fourth written
-up above as an open question.
+Reported as "slower to load and more buggy on iPhones". It is not one bug. Five
+separate things were in play, all of them fixed here — though the largest, the
+photo storage, also needs `scripts/migrate-photos.mjs` run against the database
+before existing records stop paying for it.
 
 **The short version.** Nothing in the app was iOS-specific *by intent*, but
 almost everything expensive it did was sized for a desktop budget, and iOS
@@ -342,14 +343,15 @@ the same page that merely feels heavy on a Pixel gets reloaded out from under
 the user on an iPhone — which is what "more buggy" was describing. A blank tab
 after a scroll is the tab having been killed and restored, not a rendering bug.
 
-**1. The boulder list downloaded every photo the gym had ever taken.**
+**1. The boulder list downloaded every boulder the gym had ever set.**
 `getBouldersForSeason` read the whole `boulders` collection and picked the
 season out in JavaScript. Every problem from every season, removed ones
 included, each carrying a base64 `photo` on the document. Now filtered
 server-side with `where('seasonId', '==', …)`. `getNextBoulderNumber` did the
 same thing and got the same fix.
 
-**2. Every card rendered a full-size photo as a data URI.** The cost is worse
+**2. Every card rendered a full-size photo as a data URI.** (See *the fix for
+1 and 2* below for where the pictures went.) The cost is worse
 than the transfer suggests. A 1080px JPEG is ~200 kB on the wire, ~270 kB as a
 base64 string in JS, and — once the browser paints it — roughly
 `width × height × 4` bytes as a decoded bitmap, about **6 MB** for one
@@ -374,6 +376,25 @@ keyed by `problemInternalId` and are not season-scoped — the same rows, re-rea
 Removed. The underlying read is still unbounded and grows with every climb
 anyone logs; scoping it properly needs a season or date field on the log
 documents, which is not in this change.
+
+**The fix for 1 and 2, in full.** A photo is no longer a *field*. It lives in
+`<collection>/{id}/media/main`, a subdocument, and a query on the parent does not
+return subcollections — which is the whole property being bought. The screen that
+shows a picture fetches it; nothing else pays. `web/src/services/photoStore.ts`
+holds the read/write pair, `firestore.rules` gains a `media` match under both
+collections, and `scripts/migrate-photos.mjs` moves what already exists. The
+reader accepts both shapes, so the app works before the migration has been run
+and after.
+
+`climbLogs` had the same disease and a worse case of it: nothing in the app has
+*ever* displayed a climb-log photo except the edit form that wrote it, yet
+`getKBCLogs()` pulled every one of them into the Boulders tab on load. Those
+photos are now owner-only as well — the parent stays readable by every member so
+the community counts work, but the picture attached to it does not.
+
+The card-sized icon stays on the boulder document deliberately: it is a couple of
+kB and the list needs all of them at once, so a per-boulder round trip would
+trade a small download for dozens of requests.
 
 **Ruled out.** The viewport handling is already correct for mobile Safari —
 `h-svh`/`max-h-[…svh]` throughout, chosen deliberately over `vh`/`dvh` so

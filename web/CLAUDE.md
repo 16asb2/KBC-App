@@ -83,6 +83,11 @@ src/
 
   services/      — Firestore + Calendar I/O (modular Firebase SDK)
     profiles.ts, logbook.ts, boulders.ts, climblog.ts, calendar.ts
+    photoStore.ts       — photos live in `<collection>/{id}/media/main`, not as
+                          a field, so a query over the parent collection does
+                          not download them. boulders.ts and climblog.ts both
+                          go through it; scripts/migrate-photos.mjs moved the
+                          ones that predate it.
 
   context/
     AuthContext.tsx     — user, loading, signInWithGoogle(), signOut()

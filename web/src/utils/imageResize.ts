@@ -64,35 +64,40 @@ export async function resizeImageFileToDataUrl(file: File, maxWidth = 1080, qual
 }
 
 /**
- * A square, low-resolution crop of the same picture, for the round icon on the
- * boulder card.
+ * Cut a square region out of an already-decoded data URI.
  *
- * Deliberately tiny. It is stored on the boulder document as a data URI and so
- * travels with every read of the `boulders` collection — at 96px/q0.6 that is
- * a couple of kB, against a couple of hundred for `photo`. The card renders
- * *only* this, which is what keeps a season of boulders from putting a
- * megabyte of full-size JPEG on screen at once.
+ * The region is given in the source image's own pixels, which is what
+ * `CircleCropModal` works in: it positions a circular viewport over the picture
+ * and hands back the square that circle inscribes. The output stays square and
+ * is drawn round by the card — a JPEG with no alpha channel is a good deal
+ * smaller than a PNG with a transparent corner, and the corners are never seen.
  *
- * The crop is centred and covers the square (the shorter side wins), matching
- * how the icon is displayed — an `object-cover` circle — so nothing is
- * squashed and nothing is re-cropped at paint time.
+ * Deliberately tiny. The result is stored on the boulder document and so
+ * travels with every read of the collection: at 96px/q0.6 that is a couple of
+ * kB, against a couple of hundred for the full picture, which is what keeps a
+ * season of boulders off the phone's memory budget.
  */
-export async function resizeImageFileToIconDataUrl(file: File, size = 96, quality = 0.6): Promise<string> {
-  const source = await decodeImage(file)
-  try {
-    const side = Math.min(source.width, source.height)
-    const sx = (source.width - side) / 2
-    const sy = (source.height - side) / 2
+export async function cropSquareToDataUrl(
+  src: string,
+  region: { x: number; y: number; size: number },
+  out = 96,
+  quality = 0.6,
+): Promise<string> {
+  const img = new Image()
+  img.decoding = 'async'
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve()
+    img.onerror = () => reject(new Error('Could not decode image'))
+    img.src = src
+  })
+  await img.decode().catch(() => {})
 
-    const canvas = document.createElement('canvas')
-    canvas.width = size
-    canvas.height = size
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('Canvas not supported')
-    ctx.drawImage(source, sx, sy, side, side, 0, 0, size, size)
+  const canvas = document.createElement('canvas')
+  canvas.width = out
+  canvas.height = out
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas not supported')
+  ctx.drawImage(img, region.x, region.y, region.size, region.size, 0, 0, out, out)
 
-    return canvas.toDataURL('image/jpeg', quality)
-  } finally {
-    releaseSource(source)
-  }
+  return canvas.toDataURL('image/jpeg', quality)
 }

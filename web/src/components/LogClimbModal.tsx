@@ -5,7 +5,7 @@ import { EffortBar, effortToNumber } from '@/components/EffortBar'
 import { Modal } from '@/components/Modal'
 import { KBC } from '@/constants/theme'
 import { BADGE_GROUPS } from '@/services/boulders'
-import { addClimb, updateClimb, type ClimbLocation, type PersonalClimb } from '@/services/climblog'
+import { addClimb, getClimbPhoto, updateClimb, type ClimbLocation, type PersonalClimb } from '@/services/climblog'
 import { resizeImageFileToDataUrl } from '@/utils/imageResize'
 
 function toDateInputValue(d: Date): string {
@@ -48,10 +48,32 @@ export function LogClimbModal({
   const [badges, setBadges] = useState<string[]>(editingClimb?.badges ?? [])
   const [badgesOpen, setBadgesOpen] = useState(false)
   const [comment, setComment] = useState(editingClimb?.comment ?? '')
-  const [photo, setPhoto] = useState(editingClimb?.photo ?? '')
+  const [photo, setPhoto] = useState('')
   const [photoBusy, setPhotoBusy] = useState(false)
+  // Fetched rather than read off the entry: a climb-log photo lives in
+  // `climbLogs/{id}/media/main`, not on the log. Until it arrives `photoDirty`
+  // is false, so saving early leaves the stored picture untouched instead of
+  // wiping it. See services/photoStore.ts.
+  const [photoLoading, setPhotoLoading] = useState(Boolean(editingClimb?.hasPhoto))
+  const [photoDirty, setPhotoDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!editingClimb?.hasPhoto) return
+    let cancelled = false
+    getClimbPhoto(editingClimb.id)
+      .then((p) => {
+        if (!cancelled) setPhoto(p)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setPhotoLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [editingClimb?.id, editingClimb?.hasPhoto])
 
   useEffect(() => {
     if (editingClimb) {
@@ -75,6 +97,7 @@ export function LogClimbModal({
     setPhotoBusy(true)
     try {
       setPhoto(await resizeImageFileToDataUrl(file))
+      setPhotoDirty(true)
     } catch {
       setError('Could not process the image. Please try a different one.')
     } finally {
@@ -111,16 +134,17 @@ export function LogClimbModal({
         project,
         badges,
         comment: comment.trim(),
-        photo,
         createdAt: editingClimb?.createdAt ?? now,
       }
 
       let saved: PersonalClimb
       if (isEdit && editingClimb) {
-        await updateClimb(editingClimb.id, payload)
-        saved = { ...editingClimb, ...payload }
+        // The photo argument is passed only when the picker was used, so an
+        // edit that never touched it neither re-uploads nor clears it.
+        await updateClimb(editingClimb.id, payload, photoDirty ? photo : undefined)
+        saved = { ...editingClimb, ...payload, hasPhoto: photoDirty ? Boolean(photo) : editingClimb.hasPhoto }
       } else {
-        saved = await addClimb(payload)
+        saved = await addClimb(payload, photo)
       }
       onSaved(saved, isEdit)
       onClose()
@@ -274,10 +298,19 @@ export function LogClimbModal({
         </Field>
 
         <Field label="Photo">
-          {photo ? (
+          {photoLoading ? (
+            <p className="rounded-xl border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-400">Loading photo…</p>
+          ) : photo ? (
             <div className="space-y-2">
               <img src={photo} alt="" className="max-h-48 w-full rounded-lg object-cover" />
-              <button type="button" onClick={() => setPhoto('')} className="text-sm font-bold text-red-600">
+              <button
+                type="button"
+                onClick={() => {
+                  setPhoto('')
+                  setPhotoDirty(true)
+                }}
+                className="text-sm font-bold text-red-600"
+              >
                 Remove Photo
               </button>
             </div>

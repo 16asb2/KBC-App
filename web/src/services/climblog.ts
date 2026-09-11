@@ -1,5 +1,6 @@
 import { addDoc, collection, deleteDoc, doc, getDocs, query, updateDoc, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { deletePhoto, readPhoto, writePhoto } from '@/services/photoStore'
 
 // Same `climbLogs/{id}` and `climbLocations/{id}` documents mobile/'s
 // services/climblog.ts reads and writes — see services/boulders.ts's header
@@ -34,7 +35,11 @@ export type PersonalClimb = {
   id: string
   uid: string
   userName?: string // display name of the climber (optional; absent in older records)
-  photo?: string // base64 data URI or '' — optional, absent in older records
+  // As with Boulder, the picture is not a field: it lives in
+  // `climbLogs/{id}/media/main`. This one mattered most — nothing in the app
+  // ever *displayed* a climb-log photo except the edit form that wrote it, yet
+  // getKBCLogs() pulled every one of them into the Boulders tab on load.
+  hasPhoto: boolean
   locationId: string
   boulderId: string // KBC only; '' otherwise (legacy; prefer problemInternalId)
   sectorId: string
@@ -114,7 +119,7 @@ function docToClimb(id: string, d: Record<string, unknown>): PersonalClimb {
     id,
     uid: (d.uid as string) ?? '',
     userName: (d.userName as string) ?? undefined,
-    photo: (d.photo as string) ?? '',
+    hasPhoto: Boolean(d.hasPhoto) || Boolean(d.photo),
     locationId: (d.locationId as string) ?? '',
     boulderId: (d.boulderId as string) ?? '',
     sectorId: (d.sectorId as string) ?? '',
@@ -166,16 +171,42 @@ export async function getMyLogs(uid: string, locationId?: string): Promise<Perso
   return snap.docs.map((d) => docToClimb(d.id, d.data())).sort((a, b) => b.timestamp.localeCompare(a.timestamp))
 }
 
-export async function addClimb(entry: Omit<PersonalClimb, 'id'>): Promise<PersonalClimb> {
-  const ref = await addDoc(collection(db, 'climbLogs'), entry)
-  return docToClimb(ref.id, entry)
+/** Photo, if any, is stored beside the log rather than in it — see services/photoStore.ts. */
+export async function addClimb(
+  entry: Omit<PersonalClimb, 'id' | 'hasPhoto'>,
+  photo = '',
+): Promise<PersonalClimb> {
+  const ref = await addDoc(collection(db, 'climbLogs'), { ...entry, hasPhoto: Boolean(photo) })
+  if (photo) await writePhoto('climbLogs', ref.id, photo, entry.uid)
+  return docToClimb(ref.id, { ...entry, hasPhoto: Boolean(photo) })
 }
 
-export async function updateClimb(id: string, updates: Partial<Omit<PersonalClimb, 'id'>>): Promise<void> {
-  await updateDoc(doc(db, 'climbLogs', id), updates)
+/**
+ * Update a log entry.
+ *
+ * `photo` is only touched when passed: leaving it out keeps whatever picture
+ * the entry already has, which is what an edit that did not open the picker
+ * means. Pass '' to remove one.
+ */
+export async function updateClimb(
+  id: string,
+  updates: Partial<Omit<PersonalClimb, 'id' | 'hasPhoto'>>,
+  photo?: string,
+): Promise<void> {
+  const fields: Record<string, unknown> = { ...updates }
+  if (photo !== undefined) fields.hasPhoto = Boolean(photo)
+  await updateDoc(doc(db, 'climbLogs', id), fields)
+  if (photo !== undefined) await writePhoto('climbLogs', id, photo, updates.uid)
+}
+
+export async function getClimbPhoto(climbId: string): Promise<string> {
+  return readPhoto('climbLogs', climbId)
 }
 
 export async function deleteClimb(id: string): Promise<void> {
+  // The media subdocument first: once the parent is gone the rules can no
+  // longer establish who owned it, and a subcollection outlives its parent.
+  await deletePhoto('climbLogs', id)
   await deleteDoc(doc(db, 'climbLogs', id))
 }
 

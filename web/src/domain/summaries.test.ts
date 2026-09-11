@@ -49,8 +49,8 @@ function boulder(over: Partial<Boulder> = {}): Boulder {
     createdAt: '',
     updatedAt: '',
     locations: ['Cave Right'],
-    photo: '',
     thumb: '',
+    hasPhoto: false,
     removed: false,
     likes: [],
     setterGradeVote: null,
@@ -64,6 +64,7 @@ function climb(over: Partial<PersonalClimb> = {}): PersonalClimb {
   return {
     id: 'c1',
     uid: 'u1',
+    hasPhoto: false,
     locationId: 'kbc',
     boulderId: '',
     sectorId: '',

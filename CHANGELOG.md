@@ -17,9 +17,11 @@ All notable changes to KBC Scheduler are documented here.
 
 - **The top-right corner of a boulder card is one line.** Likes, Climbed, and your own Sent/Tried chip used to stack into a three-row column that pushed the title around. They sit on a single row now, and the badges below them are right-aligned to the same edge.
 
-- **Every boulder card carries a round photo icon.** It sits at the left of the grade bar, which gives up the width for it; problems with no photo yet get a numbered placeholder so the column of icons stays straight. Adding a photo now offers **Take Photo** beside **Choose Photo** — on a phone the first opens the camera directly.
+- **Every boulder card carries a round photo icon**, at the left of the grade bar, which gives up the width for it. Problems without one get a numbered placeholder so the column of icons stays straight.
 
-  The icon is a separate, deliberately tiny image (`thumb`, 96px square, ~2 kB), generated from the same picture and stored beside it. The card draws only that. See the iPhone notes below for why that distinction matters more than it sounds.
+  **You choose the circle.** The boulder form has a *List icon* field with its own picker — take a photo or pick one — which opens a cropper: drag the picture around, zoom, and the circle you see is exactly what gets saved. It is a separate picture from the boulder photo, and separately framed, because a wide shot of a problem centres on the wall and the automatic square out of the middle of one is almost never the hold or the move that would identify it in a list. When the photo *is* the right source, **Make icon from this** opens the same cropper seeded with it.
+
+  The icon is deliberately tiny — 96px square, a couple of kB — and is the only image the card draws. See the iPhone notes below for why that matters more than it sounds.
 
 ### Added
 - **A Popular sort on the Boulders tab**, beside Number, Name and Grade. It ranks by likes plus Climbed — an opinion and traffic, added unweighted, so a problem needs both to reach the top. Ties fall back to boulder number so equally quiet problems keep a stable order.
@@ -30,11 +32,19 @@ All notable changes to KBC Scheduler are documented here.
 - **The Hand-Jam, Finger-Jam and Foot-Jam badges**, from the app and from `admin-web/`.
 
 ### Fixed
-- **The app was slower and flakier on iPhone than on Android.** Four separate causes, three fixed here — `DESIGN.md` has the full write-up.
+- **The app was slower and flakier on iPhone than on Android.** Five separate causes, all fixed — `DESIGN.md` has the full write-up. The largest of them also needs `scripts/migrate-photos.mjs` run against the database before existing records stop paying for it.
 
   The headline: iOS Safari kills a tab at a much lower memory watermark than Android Chrome tolerates, so the page that merely felt heavy on a Pixel was being reloaded out from under people on an iPhone. That is what "buggy" was describing — a list going blank mid-scroll is the tab having died and come back.
 
-  What it was doing to earn that. The Boulders tab **read every boulder the gym has ever set** on every visit — all seasons, removed problems included — because the season filter ran in JavaScript after the download; it is a server-side query now. Each of those documents carries a base64 photo, and every card **painted the full-size one**: ~200 kB on the wire, but roughly 6 MB as a decoded bitmap, times thirty cards on a scrolling list. Cards now draw the tiny `thumb` and load the real photo only when the overview opens. Switching season **re-downloaded the entire KBC climb log** for rows it already had.
+  What it was doing to earn that. The Boulders tab **read every boulder the gym has ever set** on every visit — all seasons, removed problems included — because the season filter ran in JavaScript after the download; it is a server-side query now. Every card **painted a full-size photo**: ~200 kB on the wire, but roughly 6 MB as a decoded bitmap, times thirty cards on a scrolling list. And switching season **re-downloaded the entire KBC climb log** for rows it already had.
+
+- **Photos are no longer stored inside the documents that list them.** This is the big one, and the rest of the iPhone work depends on it.
+
+  A picture in this app is a base64 JPEG. Stored as a *field*, it is downloaded by every query that touches the collection — and the Boulders tab reads two collections whole: a season of problems, and every KBC climb ever logged. So opening the tab pulled down megabytes of pictures it never draws. A photo now lives in `<collection>/{id}/media/main`, a subdocument, and a query on the parent does not return subcollections. The screen that shows a picture fetches it; nothing else pays.
+
+  `climbLogs` was the worse case: **nothing in the app has ever displayed a climb-log photo** except the edit form that wrote it, and every one of them was being shipped to the Boulders tab on load. They are also owner-only now — the log itself stays readable by every member so the community counts keep working, but the picture attached to it does not, which it always should have been.
+
+  Nothing breaks in the meantime: the app reads both the old field and the new subdocument. `scripts/migrate-photos.mjs` moves what already exists — dry run by default, `--keep-field` to copy before committing, and safe to re-run.
 
 - **Adding a photo from an iPhone failed silently.** The resize pipeline went through `createImageBitmap`, which Safari refuses for HEIC — the format the iPhone camera roll hands a file input by default. The same file decodes fine through an `<img>` element, so that is the fallback now. Genuinely iOS-only: Android's picker returns JPEG, where the original path always worked.
 
