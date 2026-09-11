@@ -3,8 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "One-off maintenance scripts. Its own package so firebase-admin — a server SDK with credentials that bypass security rules — never lands in web/'s dependency tree or its bundle.",
+  "description": "One-off maintenance scripts. Its own package so firebase-admin \u2014 a server SDK with credentials that bypass security rules \u2014 never lands in web/'s dependency tree or its bundle.",
   "dependencies": {
-    "firebase-admin": "^13.0.0"
+    "firebase-admin": "^13.0.0",
+    "qrcode": "^1.5.4"
   }
 }

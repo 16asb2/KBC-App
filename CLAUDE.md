@@ -25,6 +25,12 @@ rules-tests/  — Security-rules tests for firestore.rules, run against the
                 otherwise break `npm test` in web/ for anyone lacking a JDK.
                 CI runs them (`rules-test` job); locally use
                 `npm run test:emulated`.
+print/        — Things meant to come out of a printer. Currently the app
+                poster for the gym wall: one US Letter page, a large QR to the
+                `web` hosting target, and add-to-home-screen steps. Generated
+                from a template by `print/build-poster.mjs` rather than
+                hand-edited, because a QR code is two kilobytes of path data
+                nobody can proofread. Not deployed anywhere.
 DESIGN.md     — Product/architecture decisions and open questions (role
                 hierarchy, punch-pass vs. membership model, etc.).
 CHANGELOG.md  — Project-wide history.
