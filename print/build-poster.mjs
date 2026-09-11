@@ -17,13 +17,23 @@
  * URL ever changes, regenerating is correct and retyping is not — and the
  * round-trip check below is only possible here.
  *
+ * It also writes a PDF beside the HTML, by driving a headless Chrome. That is
+ * the copy to hand somebody who just needs to print it: every glyph the page
+ * draws is carried inside the file — the static faces as TrueType programs and
+ * the variable one as Type3 outlines — so it prints identically on a machine
+ * that has never heard of Archivo Black, and on one with no network at all.
+ * The PDF is generated every run rather than on request, because a committed
+ * PDF that quietly stops matching the HTML is worse than no PDF.
+ *
  *   --url <url>   what the QR should point at (default: the live app)
  *   --body-only   emit the page without the document wrapper, for publishing
- *                 as an Artifact (which supplies its own <head>)
+ *                 as an Artifact (which supplies its own <head>). Skips the PDF.
+ *   --no-pdf      write only the HTML
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url))
@@ -108,7 +118,66 @@ ${bodyPart.trim()}
 const target = arg('out', bodyOnly ? here('kbc-app-poster.body.html') : here('kbc-app-poster.html'))
 writeFileSync(target, out)
 
+/**
+ * Somewhere to print from.
+ *
+ * Chrome or Edge, whichever is installed — both are Chromium and both honour
+ * the `@page` rule the sheet depends on. CHROME_PATH overrides for anything
+ * else. Nothing is installed to make this work: a machine without a Chromium
+ * gets the HTML and a warning, not a failure.
+ */
+function findBrowser() {
+  const candidates = [
+    process.env.CHROME_PATH,
+    'C:/Program Files/Google/Chrome/Application/chrome.exe',
+    'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
+    `${process.env.LOCALAPPDATA ?? ''}/Google/Chrome/Application/chrome.exe`,
+    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+    'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+  ].filter(Boolean)
+  return candidates.find((c) => existsSync(c)) ?? null
+}
+
+let pdfNote = 'skipped (--no-pdf)'
+if (!bodyOnly && !process.argv.includes('--no-pdf')) {
+  const browser = findBrowser()
+  if (!browser) {
+    pdfNote = 'skipped — no Chrome or Edge found. Set CHROME_PATH to build it.'
+  } else {
+    const pdfPath = target.replace(/\.html$/, '.pdf')
+    execFileSync(browser, [
+      '--headless=new',
+      '--disable-gpu',
+      '--no-pdf-header-footer',
+      // The page fetches its stylesheet from Google Fonts. Without the wait the
+      // PDF can embed the fallback stack instead of the faces it was designed
+      // in — and unlike the HTML, a PDF cannot change its mind later.
+      '--virtual-time-budget=15000',
+      `--print-to-pdf=${pdfPath}`,
+      pathToFileURL(target).href,
+    ], { stdio: 'pipe' })
+
+    // One sheet, US Letter. The sheet is a fixed 11in and the content is a hair
+    // under it, so an edit that adds a line paginates silently — which is the
+    // sort of thing you find out about at the printer.
+    const pdf = readFileSync(pdfPath).toString('latin1')
+    const pages = (pdf.match(/\/Type\s*\/Page[^s]/g) ?? []).length
+    const box = pdf.match(/\/MediaBox\s*\[([^\]]+)\]/)?.[1]?.trim()
+    pdfNote = `${pdfPath} — ${pages} page${pages === 1 ? '' : 's'}, MediaBox [${box}]`
+    if (pages !== 1) {
+      console.error(`\nThe poster no longer fits one page (${pages}). Trim it before printing.`)
+      process.exitCode = 1
+    }
+  }
+}
+
 console.log(`url      ${APP_URL}`)
 console.log(`qr       version ${symbol.version}, ${symbol.modules.size}x${symbol.modules.size} modules, EC ${QR_OPTIONS.errorCorrectionLevel}`)
 console.log(`logo     ${(logo.length / 1024).toFixed(0)} kB inlined`)
-console.log(`wrote    ${target} (${(out.length / 1024).toFixed(0)} kB)`)
+console.log(`html     ${target} (${(out.length / 1024).toFixed(0)} kB)`)
+console.log(`pdf      ${pdfNote}`)
