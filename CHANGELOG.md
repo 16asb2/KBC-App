@@ -4,6 +4,24 @@ All notable changes to KBC Scheduler are documented here.
 
 ---
 
+## [Unreleased] — 2026-09-11
+
+### Changed
+- **The boulder card's photo icon is twice the size**, and it now stands beside both the badges and the grade bar rather than above one of them. At 80px it is as tall as those two together, so stacking it would have left a column of empty space next to a thin bar. The grade bar gives up the width, which is the trade being made on purpose: the picture identifies a problem faster than the bar does.
+
+  New icons are stored at 192px rather than 96 — a 40px icon was comfortably oversampled at 96, an 80px one is not, and a phone screen is two or three device pixels to each CSS one. Still under 10 kB. Icons cropped before this will look a touch soft until they are re-cropped.
+
+- **Badges on the list are just the shapes now — no counts, no names.** Tap one and its name appears under the row. Five badges each carrying a nine-pixel label made a line of small print nobody reads at a glance, and the counts were the least of it: a badge reading `3` invites "three out of how many?", which the card cannot answer. The boulder overview still lists every badge with its count, which is where that detail belongs.
+
+  Four badges on the card rather than five. An 80px icon and four discs fit the narrowest phone still in use with room to spare; the fifth pushed the leftmost disc under the icon. Nothing is only visible on the card — the overview has them all.
+
+- **A named problem puts its wall and tape on a second line.** They used to run into the name on one line as `Long Reach  |  Cave Right  |  Red Tape`, which on a phone truncated somewhere in the middle of whichever part you were actually looking for. An *unnamed* problem still leads with the wall and tape, there being nothing else to give the line.
+
+### Fixed
+- **The boulder card is no longer a `<button>` containing buttons.** It always held three of them — Project, Like, Log — and a button inside a button is invalid HTML that browsers resolve however they see fit. Now a `div` with the keyboard handling written out, which is also what let the badges become tappable.
+
+---
+
 ## [Unreleased] — 2026-09-09
 
 ### Changed

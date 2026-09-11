@@ -547,6 +547,7 @@ export function BadgeIcon({
   onPress,
   size = 'md',
   compact = false,
+  bare = false,
 }: {
   label: string
   count?: number
@@ -554,6 +555,20 @@ export function BadgeIcon({
   onPress?: () => void
   size?: 'xs' | 'sm' | 'md'
   compact?: boolean
+  /**
+   * Just the disc: no name under it and no count on it, at whatever size is
+   * asked for.
+   *
+   * This is what the boulder list wants. Five badges each carrying a nine-pixel
+   * label and a count bubble made a row of small print nobody reads at a glance,
+   * and the counts were the least of it — a badge saying `3` invites the
+   * question "three out of how many?", which the card cannot answer. The shapes
+   * are the information there; the name is one tap away.
+   *
+   * Distinct from `size: 'xs'`, which also drops both but is fixed at 24px —
+   * too small to tap.
+   */
+  bare?: boolean
 }) {
   const color = BADGE_COLOR[baseHoldBadge(label)] ?? KBC.purple
   const dim = size === 'xs' ? 24 : size === 'sm' ? 36 : 44
@@ -575,7 +590,7 @@ export function BadgeIcon({
       }}
     >
       <HoldIcon badge={label} color={selected ? '#fff' : color} size={iconSz} />
-      {size !== 'xs' && count != null && count > 0 && (
+      {size !== 'xs' && !bare && count != null && count > 0 && (
         <span
           style={{
             position: 'absolute',
@@ -621,7 +636,7 @@ export function BadgeIcon({
   )
 
   const medal =
-    size === 'xs' ? (
+    size === 'xs' || bare ? (
       <div style={{ opacity: selected ? 1 : 0.4 }}>{disk}</div>
     ) : compact ? (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '6px 0', opacity: selected ? 1 : 0.4 }}>
