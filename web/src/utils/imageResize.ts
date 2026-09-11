@@ -72,16 +72,20 @@ export async function resizeImageFileToDataUrl(file: File, maxWidth = 1080, qual
  * is drawn round by the card — a JPEG with no alpha channel is a good deal
  * smaller than a PNG with a transparent corner, and the corners are never seen.
  *
- * Deliberately tiny. The result is stored on the boulder document and so
- * travels with every read of the collection: at 96px/q0.6 that is a couple of
- * kB, against a couple of hundred for the full picture, which is what keeps a
- * season of boulders off the phone's memory budget.
+ * Deliberately small. The result is stored on the boulder document and so
+ * travels with every read of the collection: at 192px/q0.65 that is under
+ * 10 kB, against a couple of hundred for the full picture, which is what keeps
+ * a season of boulders off the phone's memory budget.
+ *
+ * 192 rather than 96 because the card draws the icon at 80 CSS px, and a
+ * phone screen is two or three device pixels to each of those. At 96 the icon
+ * was sharp when it was 40px on the card and soft as soon as it grew.
  */
 export async function cropSquareToDataUrl(
   src: string,
   region: { x: number; y: number; size: number },
-  out = 96,
-  quality = 0.6,
+  out = 192,
+  quality = 0.65,
 ): Promise<string> {
   const img = new Image()
   img.decoding = 'async'
