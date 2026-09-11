@@ -1,0 +1,399 @@
+<title>Scan to Climb</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&display=swap">
+<style>
+  /* ── Tokens ───────────────────────────────────────────────────────────────
+     One committed light palette. This is a sheet of paper: there is no dark
+     mode on a printer, so the page paints every colour explicitly and holds
+     on any host ground rather than inheriting one. */
+  :root {
+    --ink: #0a0a0a;          /* the logo's own ground */
+    --paper: #ffffff;
+    --mist: #eef2f4;         /* cool grey, biased toward the brand cyan */
+    --rule: #d3dde2;
+    --cyan: #007dab;         /* the blue sampled from KBC_logo.svg */
+    --muted: #55646b;
+
+    /* KBC's grade scale. Not V-grades — tape colours, in order.
+       Lifted from web/src/services/boulders.ts. */
+    --g-white: #e8e8e8;
+    --g-blue: #00b4d8;
+    --g-purple: #9b5de5;
+    --g-pink: #f5a5c9;
+    --g-black: #1a1a1a;
+
+    --display: 'Archivo Black', 'Arial Black', 'Helvetica Neue', sans-serif;
+    --body: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--mist);
+    color: var(--ink);
+    font-family: var(--body);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── The sheet ────────────────────────────────────────────────────────────
+     Exactly US Letter. Fixed inches rather than a fluid width, because the
+     one output that matters is 8.5 x 11 of paper — so what is on screen is
+     the printed page, not an approximation of it. */
+  .sheet {
+    width: 8.5in;
+    height: 11in;
+    margin: 0 auto;
+    padding: 0.58in 0.62in 0.5in;
+    background: var(--paper);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Nothing shrinks. The sheet is 11in of paper: an item that does not fit
+     must be made to fit, not squashed silently. Without this the grade rule
+     collapsed to its own border — a fixed-height column flexbox shrinks its
+     children to absorb an overrun, and the thinnest one pays most. */
+  .sheet > * { flex: 0 0 auto; }
+
+  /* ── Masthead ─────────────────────────────────────────────────────────── */
+  .masthead { display: flex; align-items: center; gap: 0.22in; }
+
+  .mark {
+    width: 0.92in; height: 0.92in;
+    flex: 0 0 auto;
+    border-radius: 4px;
+    display: block;
+  }
+
+  .masthead h1 {
+    margin: 0;
+    font-family: var(--display);
+    font-size: 27pt;
+    line-height: 0.9;
+    letter-spacing: -0.015em;
+  }
+
+  .masthead p {
+    margin: 0.055in 0 0;
+    font-family: var(--mono);
+    font-size: 8.5pt;
+    letter-spacing: 0.17em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  /* ── The grade rule ───────────────────────────────────────────────────────
+     The five KBC grades, in order, as the poster's spine. The White band is
+     nearly the colour of the paper, which is true to the scale — so the rule
+     carries a hairline to keep that band a band and not a gap. */
+  .grade-rule {
+    display: flex;
+    height: 0.105in;
+    margin: 0.2in 0 0;
+    border: 0.5pt solid var(--rule);
+    border-radius: 1pt;
+    overflow: hidden;
+  }
+  .grade-rule span { flex: 1; }
+
+  /* ── Lead ─────────────────────────────────────────────────────────────── */
+  .lead { margin-top: 0.24in; }
+
+  .lead h2 {
+    margin: 0;
+    font-family: var(--display);
+    font-size: 33pt;
+    line-height: 0.97;
+    letter-spacing: -0.022em;
+    text-wrap: balance;
+    max-width: 6.6in;
+  }
+
+  .lead h2 em { font-style: normal; color: var(--cyan); }
+
+  .lead p {
+    margin: 0.13in 0 0;
+    font-size: 11.5pt;
+    line-height: 1.5;
+    max-width: 5.9in;      /* ~62 characters */
+    color: #26333a;
+  }
+
+  /* ── Scan block ───────────────────────────────────────────────────────────
+     The one centred thing on the page, because a scan target should be
+     unmistakable from across the room. Everything else is left-aligned. */
+  .scan {
+    margin-top: 0.22in;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.34in;
+  }
+
+  .qr-frame {
+    flex: 0 0 auto;
+    width: 3.15in; height: 3.15in;
+    padding: 0.1in;
+    background: var(--paper);
+    border: 1.5pt solid var(--ink);
+    border-radius: 3pt;
+  }
+  .qr-frame svg { width: 100%; height: 100%; display: block; }
+
+  .scan-aside { min-width: 0; }
+
+  .scan-aside .cue {
+    margin: 0;
+    font-family: var(--display);
+    font-size: 16pt;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+  }
+
+  .url {
+    margin: 0.17in 0 0;
+    padding: 0.08in 0.11in;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 11.5pt;
+    letter-spacing: 0.01em;
+    border-radius: 2pt;
+    display: inline-block;
+    word-break: break-all;
+  }
+
+  .url-note {
+    margin: 0.08in 0 0;
+    font-size: 9pt;
+    line-height: 1.4;
+    color: var(--muted);
+  }
+
+  /* What the app is for, in the space the QR leaves beside it. A label/value
+     list rather than bullets: each row names a part of the app and says what
+     it does, so the pairing is the structure. */
+  .inside {
+    margin: 0.15in 0 0;
+    padding: 0.12in 0 0;
+    border-top: 0.5pt solid var(--rule);
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 0.13in;
+    row-gap: 0.045in;
+    font-size: 8.5pt;
+    line-height: 1.33;
+  }
+  .inside dt { font-weight: 700; color: var(--ink); }
+  .inside dd { margin: 0; color: var(--muted); }
+
+  /* ── Instructions ─────────────────────────────────────────────────────── */
+  .keepit { margin-top: auto; padding-top: 0.22in; }
+
+  .label {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 8.5pt;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--cyan);
+  }
+
+  .keepit > p.sub {
+    margin: 0.06in 0 0.16in;
+    font-size: 10.5pt;
+    color: var(--muted);
+  }
+
+  .platforms {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.3in;
+  }
+
+  .platform { border-top: 1pt solid var(--ink); padding-top: 0.1in; }
+
+  .platform h3 {
+    margin: 0 0 0.08in;
+    font-family: var(--body);
+    font-weight: 700;
+    font-size: 11.5pt;
+  }
+
+  .platform h3 small {
+    font-weight: 400;
+    font-size: 9pt;
+    color: var(--muted);
+  }
+
+  /* Numbered because these are steps in order — the numbers carry the
+     sequence, they are not decoration. */
+  .platform ol {
+    margin: 0;
+    padding-left: 0.19in;
+    font-size: 10pt;
+    line-height: 1.45;
+  }
+  .platform li { margin-bottom: 0.035in; }
+  .platform li::marker { font-family: var(--mono); font-size: 9pt; color: var(--cyan); }
+
+  .gotcha {
+    margin: 0.09in 0 0;
+    font-size: 8.5pt;
+    line-height: 1.38;
+    color: var(--ink);
+    background: var(--mist);
+    border-left: 2pt solid var(--cyan);
+    padding: 0.06in 0.09in;
+  }
+
+  /* ── Colophon ─────────────────────────────────────────────────────────── */
+  .colophon {
+    margin-top: 0.2in;
+    padding-top: 0.11in;
+    border-top: 0.5pt solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.2in;
+    font-family: var(--mono);
+    font-size: 8pt;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .colophon strong { color: var(--ink); font-weight: 600; }
+  /* A URL is not a label — it stays as typed. */
+  .colophon .addr { text-transform: none; letter-spacing: 0.02em; }
+
+  /* ── Screen-only helper ───────────────────────────────────────────────── */
+  .printhint {
+    max-width: 8.5in;
+    margin: 0.18in auto 0.3in;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64747c;
+    text-align: center;
+  }
+
+  /* ── Print ────────────────────────────────────────────────────────────── */
+  @page { size: letter; margin: 0; }
+
+  @media print {
+    body { background: var(--paper); }
+    .sheet { margin: 0; box-shadow: none; }
+    .printhint { display: none; }
+    /* Backgrounds and the grade rule are the design, not decoration —
+       browsers drop them unless told otherwise. */
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+
+  @media screen {
+    .sheet { box-shadow: 0 1px 3px rgba(10, 10, 10, 0.14), 0 12px 32px rgba(10, 10, 10, 0.1); }
+  }
+
+  /* The sheet is a fixed 8.5in and will not fit a phone. It scrolls inside
+     its own container so the page body never scrolls sideways. */
+  .stage { overflow-x: auto; padding: 0.14in 0; }
+  @media print { .stage { overflow: visible; padding: 0; } }
+</style>
+
+<!-- @body -->
+
+<div class="stage">
+<div class="sheet">
+  <header class="masthead">
+    <img class="mark" src="__LOGO__" alt="Kingston Boulder Cooperative logo">
+    <div>
+      <h1>KBC&nbsp;App</h1>
+      <p>Kingston Boulder Cooperative</p>
+    </div>
+  </header>
+
+  <div class="grade-rule" role="img" aria-label="The KBC grade scale: White, Blue, Purple, Pink, Black">
+    <span style="background: var(--g-white)"></span>
+    <span style="background: var(--g-blue)"></span>
+    <span style="background: var(--g-purple)"></span>
+    <span style="background: var(--g-pink)"></span>
+    <span style="background: var(--g-black)"></span>
+  </div>
+
+  <section class="lead">
+    <h2>Everything KBC,<br>in <em>one place</em>.</h2>
+    <p>
+      Sign in when you arrive, keep track of your membership and punches, see
+      what's on the schedule and who's supervising, look up another member, and
+      log your climbs. It's how the co-op keeps itself organised — and it runs
+      on your phone.
+    </p>
+  </section>
+
+  <section class="scan">
+    <div class="qr-frame">__QR__</div>
+    <div class="scan-aside">
+      <p class="cue">Point your camera<br>at the square.</p>
+      <span class="url">__URL_DISPLAY__</span>
+      <p class="url-note">
+        No app store and nothing to download — it opens in your browser. Sign in
+        with Google; the first time, it walks you through your profile and waiver.
+      </p>
+
+      <dl class="inside">
+        <dt>Sign in</dt>
+        <dd>Tap in when you get here. Your punches and pass keep themselves up to date.</dd>
+        <dt>Membership</dt>
+        <dd>What you hold, what's left on it, and when it runs out.</dd>
+        <dt>Schedule</dt>
+        <dd>Who's supervising, which sessions are open, and how to ask for one.</dd>
+        <dt>Members</dt>
+        <dd>The co-op directory, with everyone's access at a glance.</dd>
+        <dt>Boulders</dt>
+        <dd>Every problem we've set, by season and by wall.</dd>
+        <dt>Log Book</dt>
+        <dd>Your own record — sends, attempts, projects, notes.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section class="keepit">
+    <p class="label">Keep it one tap away</p>
+    <p class="sub">Save it to your home screen and it gets its own icon, like any other app.</p>
+
+    <div class="platforms">
+      <div class="platform">
+        <h3>iPhone &amp; iPad <small>— in Safari</small></h3>
+        <ol>
+          <li>Open the link in <strong>Safari</strong>.</li>
+          <li>Tap <strong>Share</strong> — the square with the arrow coming out of it.</li>
+          <li>Scroll down, tap <strong>Add to Home Screen</strong>.</li>
+          <li>Tap <strong>Add</strong>.</li>
+        </ol>
+        <p class="gotcha">Safari only. Chrome on an iPhone has no Add to Home Screen — if you scanned with a different browser, paste the link into Safari first.</p>
+      </div>
+
+      <div class="platform">
+        <h3>Android <small>— in Chrome</small></h3>
+        <ol>
+          <li>Open the link in <strong>Chrome</strong>.</li>
+          <li>Tap the <strong>three-dot menu</strong>, top right.</li>
+          <li>Tap <strong>Add to Home screen</strong> — or <strong>Install app</strong>, if it offers that.</li>
+          <li>Tap <strong>Install</strong>.</li>
+        </ol>
+        <p class="gotcha">Chrome may offer to install it on its own — a bar across the bottom of the screen. Taking that does the same thing.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="colophon">
+    <span><strong>Kingston Boulder Cooperative</strong> · Kingston, Ontario</span>
+    <span class="addr">__URL_DISPLAY__</span>
+  </footer>
+</div>
+</div>
+
+<p class="printhint">Print at 100% scale on US Letter · no page scaling, no margins</p>
