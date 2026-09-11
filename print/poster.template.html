@@ -127,7 +127,7 @@
   .scan {
     margin-top: 0.22in;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 0.34in;
   }
 
@@ -151,13 +151,6 @@
     letter-spacing: -0.01em;
   }
 
-  .scan-aside .cue-sub {
-    margin: 0.07in 0 0;
-    font-size: 10.5pt;
-    line-height: 1.45;
-    color: var(--muted);
-  }
-
   .url {
     margin: 0.17in 0 0;
     padding: 0.08in 0.11in;
@@ -178,6 +171,23 @@
     line-height: 1.4;
     color: var(--muted);
   }
+
+  /* What the app is for, in the space the QR leaves beside it. A label/value
+     list rather than bullets: each row names a part of the app and says what
+     it does, so the pairing is the structure. */
+  .inside {
+    margin: 0.15in 0 0;
+    padding: 0.12in 0 0;
+    border-top: 0.5pt solid var(--rule);
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    column-gap: 0.13in;
+    row-gap: 0.045in;
+    font-size: 8.5pt;
+    line-height: 1.33;
+  }
+  .inside dt { font-weight: 700; color: var(--ink); }
+  .inside dd { margin: 0; color: var(--muted); }
 
   /* ── Instructions ─────────────────────────────────────────────────────── */
   .keepit { margin-top: auto; padding-top: 0.22in; }
@@ -314,11 +324,12 @@
   </div>
 
   <section class="lead">
-    <h2>Log your sends.<br>Argue about <em>grades</em>.</h2>
+    <h2>Everything KBC,<br>in <em>one place</em>.</h2>
     <p>
-      Every problem we set is in here — all six walls, this season and the last.
-      Browse what's up, log sends and attempts, vote on the grade you think it
-      really is, keep a list of projects, and see who's supervising tonight.
+      Sign in when you arrive, keep track of your membership and punches, see
+      what's on the schedule and who's supervising, look up another member, and
+      log your climbs. It's how the co-op keeps itself organised — and it runs
+      on your phone.
     </p>
   </section>
 
@@ -326,14 +337,26 @@
     <div class="qr-frame">__QR__</div>
     <div class="scan-aside">
       <p class="cue">Point your camera<br>at the square.</p>
-      <p class="cue-sub">
-        No app store, no download. It opens in your browser and works like an app.
-      </p>
       <span class="url">__URL_DISPLAY__</span>
       <p class="url-note">
-        Sign in with Google. First time? It'll walk you through your profile and
-        waiver before you're in.
+        No app store and nothing to download — it opens in your browser. Sign in
+        with Google; the first time, it walks you through your profile and waiver.
       </p>
+
+      <dl class="inside">
+        <dt>Sign in</dt>
+        <dd>Tap in when you get here. Your punches and pass keep themselves up to date.</dd>
+        <dt>Membership</dt>
+        <dd>What you hold, what's left on it, and when it runs out.</dd>
+        <dt>Schedule</dt>
+        <dd>Who's supervising, which sessions are open, and how to ask for one.</dd>
+        <dt>Members</dt>
+        <dd>The co-op directory, with everyone's access at a glance.</dd>
+        <dt>Boulders</dt>
+        <dd>Every problem we've set, by season and by wall.</dd>
+        <dt>Log Book</dt>
+        <dd>Your own record — sends, attempts, projects, notes.</dd>
+      </dl>
     </div>
   </section>
 
@@ -367,7 +390,7 @@
   </section>
 
   <footer class="colophon">
-    <span><strong>Home</strong> · Schedule · Calendar · Members · <strong>Boulders</strong> · Log Book</span>
+    <span><strong>Kingston Boulder Cooperative</strong> · Kingston, Ontario</span>
     <span class="addr">__URL_DISPLAY__</span>
   </footer>
 </div>
