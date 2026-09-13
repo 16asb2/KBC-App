@@ -3,6 +3,7 @@ import { Modal } from '@/components/Modal'
 import { KBC, tint } from '@/constants/theme'
 import { smartSortMembers } from '@/domain/memberSort'
 import { accessPassLabel, isDatedPass, membershipGrantsEntry } from '@/domain/membershipPass'
+import { formatPunches, hasPunchesLeft } from '@/domain/punchPass'
 import { getAllProfiles } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
 
@@ -15,11 +16,8 @@ function accessSummary(m: UserProfile): { label: string; color: string } {
   if (isDatedPass(m.membershipAccessPass)) {
     return { label: `${accessPassLabel(m.membershipAccessPass)} · pending`, color: KBC.orange }
   }
-  if (m.punchPassRemaining > 0) {
-    return {
-      label: `${m.punchPassRemaining} punch${m.punchPassRemaining !== 1 ? 'es' : ''}`,
-      color: KBC.cyan,
-    }
+  if (hasPunchesLeft(m.punchPassRemaining)) {
+    return { label: formatPunches(m.punchPassRemaining), color: KBC.cyan }
   }
   return { label: 'No access', color: '#999' }
 }

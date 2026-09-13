@@ -363,7 +363,8 @@
             <strong>Purchase</strong> accepts the same names as the member import:
             <code>Annual</code> (or <code>12 months</code>, <code>Student Annual</code>) ·
             <code>8-month</code> · <code>4-month</code> · <code>1-month</code> ·
-            <code>Punch Pass</code> · <code>Drop-In</code> (or <code>Day Pass</code>).
+            <code>Punch Pass</code> · <code>Drop-In</code> (or <code>Day Pass</code>) ·
+            <code>Half Day Pass</code>.
             <code>Amount</code> is optional and free-form (<code>$160</code>, <code>160</code>) — left
             out, the current price list is used.
           </p>
@@ -392,6 +393,7 @@
               <label>Purchase Type *</label>
               <select id="pur-type" onchange="onPurchaseTypeChange()">
                 <option value="dropin">Drop-In ($20)</option>
+                <option value="halfday">Half Day Pass ($10)</option>
                 <option value="punch10">10× Punch Passes ($160)</option>
                 <option value="mem1m">1-month pass ($55)</option>
                 <option value="mem4m">4-months pass ($200)</option>
@@ -465,7 +467,8 @@
             <code>Annual</code> (or <code>12 months</code>, <code>Student Annual</code>) ·
             <code>8-month</code> · <code>4-month</code> · <code>1-month</code> ·
             <code>Punch Pass</code> (10 punches unless a Punches column says otherwise) ·
-            <code>Drop-In</code> · <code>None</code>. A dated pass runs from Access Pass Start — or
+            <code>Drop-In</code> (or <code>Half Day Pass</code>) · <code>None</code>. A dated pass
+            runs from Access Pass Start — or
             Member Since, or today — and the end date is worked out from its length unless the file
             gives one; a row with dates and no pass column gets the pass those dates describe. Punch
             passes and drop-ins grant no period, so they carry no dates.
@@ -677,7 +680,7 @@
       <div class="modal-row">
         <div class="modal-field"><label>Access Pass Start</label><input type="date" id="edit-access-start" onchange="onEditStartChange()"></div>
         <div class="modal-field"><label>Access Pass End Date</label><input type="date" id="edit-expiry"></div>
-        <div class="modal-field"><label>Punch Passes Remaining</label><input type="number" id="edit-punches" min="0"></div>
+        <div class="modal-field"><label>Punch Passes Remaining</label><input type="number" id="edit-punches" min="0" step="0.5"></div>
       </div>
       <div class="modal-checks">
         <label><input type="checkbox" id="edit-sup"> Supervisor</label>
@@ -928,6 +931,7 @@ const ACCESS_OPTIONS = [
   // load, and one throw in this script takes the whole panel with it. The two
   // must stay in step by hand.
   { id:'dropin',     label:'Drop-In',           accessType:'Drop-in',       notes:'Purchased: Day Pass ($20)' },
+  { id:'halfday',    label:'Half Day Pass',     accessType:'Half Day Pass', notes:'Purchased: Half Day Pass ($10)' },
   { id:'punch10',    label:'10× Punch Passes',  accessType:'Punch pass',    notes:'Purchased: 10× Punch Pass ($160)', punches:10 },
   { id:'mem1m',      label:'1-month pass',       accessType:'1-month pass',  notes:'Purchased: 1-month Membership ($55)', months:1 },
   { id:'mem4m',      label:'4-months pass',      accessType:'4-month pass',  notes:'Purchased: 4-month Membership ($200)', months:4 },
@@ -1003,6 +1007,19 @@ function passFromPurchaseNotes(notes) {
   if (/4[\s-]?month/.test(head)) return '4month';
   if (/1[\s-]?month/.test(head)) return '1month';
   return null;
+}
+/**
+ * Snap a punch balance to whole halves, never below zero.
+ *
+ * A full visit spends a punch and a half-day visit spends half of one, so 4.5
+ * is a balance the member app writes on purpose. This is the guard for the
+ * values that arrive from outside it — a hand-typed field, a CSV column — and
+ * mirrors normalizePunches() in web/src/domain/punchPass.ts.
+ */
+function normalizePunches(n) {
+  const v=Number(n);
+  if(!isFinite(v) || v<=0) return 0;
+  return Math.round(v*2)/2;
 }
 /** True for the passes that run for a period; punch and drop-in do not. */
 function isDatedPass(pass) { return PASS_OPTIONS.some(p=>p.id===pass); }
@@ -1724,7 +1741,7 @@ const IMPORT_PASS_VALUES = [
   { pass:'4month', months:4,  aliases:['4 month','4 months','4 month pass','4month','4mo'] },
   { pass:'1month', months:1,  aliases:['1 month','1 months','1 month pass','1month','1mo','month','monthly'] },
   { pass:'punch',             aliases:['punch','punch pass','punch passes','punches','10 punch','10 punch pass','10x punch pass'] },
-  { pass:'dropin',            aliases:['drop in','dropin','drop in pass','day pass','day','single'] },
+  { pass:'dropin',            aliases:['drop in','dropin','drop in pass','day pass','day','single','half day','half day pass'] },
   { pass:'none',              aliases:['none','no pass','inactive','expired','lapsed','n a'] },
 ];
 /** Header normalisation does the job here too: case, dashes and × all vanish. */
@@ -1864,7 +1881,9 @@ function previewImport() {
     ['legalName','preferredName','phone','ecName','ecRelationship','ecPhone']
       .forEach(f=>{ if(given(row,f)) p[f]=cell(row,f); });
     if(given(row,'memberSince')){ const iso=isoOrNull(cell(row,'memberSince')); if(iso) p.memberSince=iso; else r.notes.push('unreadable member-since date'); }
-    if(given(row,'punchPassRemaining')){ const v=parseInt(cell(row,'punchPassRemaining'),10); if(!isNaN(v)) p.punchPassRemaining=Math.max(0,v); else r.notes.push('unreadable punch count'); }
+    // parseFloat, not parseInt: a half-day visit spends half a punch, so 4.5 is
+    // a real balance and truncating it to 4 would hand the member a free half.
+    if(given(row,'punchPassRemaining')){ const v=parseFloat(cell(row,'punchPassRemaining')); if(!isNaN(v)) p.punchPassRemaining=normalizePunches(v); else r.notes.push('unreadable punch count'); }
     if(given(row,'isSupervisor')) p.isSupervisor=truthy(cell(row,'isSupervisor'));
     if(given(row,'isAdmin'))      p.isAdmin=truthy(cell(row,'isAdmin'));
 
@@ -2515,7 +2534,7 @@ async function saveEdit() {
   const expiry=document.getElementById('edit-expiry').value;
   updates.membershipStart = dated && accessStart ? new Date(accessStart).toISOString() : null;
   updates.membershipExpiry = dated && expiry ? new Date(expiry).toISOString() : null;
-  const punches=parseInt(document.getElementById('edit-punches').value); if (!isNaN(punches)) updates.punchPassRemaining=punches;
+  const punches=parseFloat(document.getElementById('edit-punches').value); if (!isNaN(punches)) updates.punchPassRemaining=normalizePunches(punches);
   // The waiver: one record holding when it was signed and by whom, keeping
   // whatever else was already on it. Emptying the date clears the record — the
   // app then asks the member to sign, which is the honest state for a waiver

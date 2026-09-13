@@ -86,10 +86,13 @@ export function shouldResetLastSignIn(
 export function accessKind(accessType: string): 'member' | 'punch' | 'dropin' | 'other' {
   const t = accessType.toLowerCase()
   // Punch first: "Punch Pass (4 left)" would otherwise be caught by the pass
-  // check below. Membership entries are named after the pass now rather than
-  // logged as "Active Member", so 'pass' has to count as a membership.
+  // check below, and so would "Half Punch Pass (4.5 left)". Membership entries
+  // are named after the pass now rather than logged as "Active Member", so
+  // 'pass' has to count as a membership.
   if (t.includes('punch')) return 'punch'
-  if (t.includes('drop')) return 'dropin'
+  // "Half Day Pass" is a drop-in sold at half the rate, not a membership —
+  // matched on "day pass" before 'pass' below can claim it.
+  if (t.includes('drop') || t.includes('day pass')) return 'dropin'
   if (t.includes('member') || t.includes('pass')) return 'member'
   return 'other'
 }

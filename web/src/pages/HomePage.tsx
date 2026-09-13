@@ -11,6 +11,17 @@ import { useAuth } from '@/context/AuthContext'
 import { useProfile } from '@/context/ProfileContext'
 import { useSchedule } from '@/context/ScheduleContext'
 import { isDatedPass } from '@/domain/membershipPass'
+import {
+  FULL_PUNCH,
+  HALF_PUNCH,
+  canSpendPunches,
+  formatPunches,
+  hasPunchesLeft,
+  punchAccessType,
+  punchPassName,
+  spendPunches,
+  type PunchCost,
+} from '@/domain/punchPass'
 import { hasSignedInToday, passLabel } from '@/domain/signIn'
 import { isPrivileged } from '@/domain/roles'
 import { getGymStatusFromEvents, type GymStatus } from '@/domain/calendarEvent'
@@ -33,6 +44,19 @@ import { formatShortDate } from '@/utils/datetime'
  */
 type SignInTarget = { profile: UserProfile; isSelf: boolean }
 
+/**
+ * A punch about to be spent: on whom, and out of whose account.
+ *
+ * Both routes ask the same question first — a whole punch for the day, or half
+ * of one for a half day — so both go through the one modal, and `donor` is
+ * what tells them apart afterwards.
+ */
+type PunchSpend = {
+  target: SignInTarget
+  /** Whose punches pay. Absent means the target's own. */
+  donor?: UserProfile
+}
+
 // Ported from mobile@1cdfada/app/(tabs)/home.tsx — self sign-in, signing in
 // another climber, purchase access and adding a new member are covered. Still
 // not ported: punch donation between members.
@@ -47,7 +71,7 @@ export function HomePage() {
   const [showAccess, setShowAccess] = useState(false)
   // Who a sign-in is *for*. A supervisor can sign in another climber, so every
   // step of the flow below carries its target rather than assuming the viewer.
-  const [punchChoice, setPunchChoice] = useState<SignInTarget | null>(null)
+  const [punchChoice, setPunchChoice] = useState<PunchSpend | null>(null)
   const [pickingMember, setPickingMember] = useState(false)
   const [accessTarget, setAccessTarget] = useState<SignInTarget | null>(null)
   /** Who is being signed in while we ask whose punch pays for it. */
@@ -89,6 +113,13 @@ export function HomePage() {
     return target.isSelf ? displayName : target.profile.preferredName || target.profile.name
   }
 
+  /** The one-sign-in-per-day refusal, worded for whoever it is about. */
+  function alreadySignedInMessage(target: SignInTarget) {
+    return target.isSelf
+      ? 'You have already signed in today. Sign-ins reset at midnight.'
+      : `${nameOf(target)} has already signed in today. Sign-ins reset at midnight.`
+  }
+
   /** "Signed in!" for yourself, "Jane signed in!" for anyone else. */
   function signedInMessage(target: SignInTarget, detail: string) {
     return target.isSelf ? `✓ Signed in! ${detail}` : `✓ ${nameOf(target)} signed in! ${detail}`
@@ -121,11 +152,7 @@ export function HomePage() {
     if (!profile || !user) return
 
     if (hasSignedInToday(target.profile.lastSignInAt)) {
-      notifyInfo(
-        target.isSelf
-          ? 'You have already signed in today. Sign-ins reset at midnight.'
-          : `${nameOf(target)} has already signed in today. Sign-ins reset at midnight.`,
-      )
+      notifyInfo(alreadySignedInMessage(target))
       return
     }
 
@@ -150,8 +177,10 @@ export function HomePage() {
       return
     }
 
-    if (punchPassRemaining > 0) {
-      setPunchChoice(target)
+    // Half a punch is enough to climb — it buys a half day — so the choice is
+    // offered on any balance that still covers one.
+    if (hasPunchesLeft(punchPassRemaining)) {
+      setPunchChoice({ target })
       return
     }
 
@@ -171,22 +200,35 @@ export function HomePage() {
     void processSignIn({ profile, isSelf: true })
   }
 
-  async function signInWithPunchPass(target: SignInTarget) {
+  /**
+   * Spend `cost` off the target's own punches and sign them in.
+   *
+   * `cost` is a whole punch for a full day, half of one for a half day — the
+   * balance it leaves behind can therefore carry a half, which is why nothing
+   * here does its own arithmetic or pluralising.
+   */
+  async function signInWithPunchPass(target: SignInTarget, cost: PunchCost) {
     if (!profile || !user) return
     setPunchChoice(null)
+    if (!canSpendPunches(target.profile.punchPassRemaining, cost)) {
+      notifyInfo(
+        target.isSelf
+          ? 'You do not have enough punches left for that.'
+          : `${nameOf(target)} does not have enough punches left for that.`,
+      )
+      return
+    }
     setSigningIn(true)
     try {
-      const remaining = target.profile.punchPassRemaining - 1
-      const now = await logAndMarkSignedIn(target, `Punch Pass (${remaining} left)`)
+      const remaining = spendPunches(target.profile.punchPassRemaining, cost)
+      const now = await logAndMarkSignedIn(target, punchAccessType(cost, remaining))
       await updateProfile(
         target.profile.uid,
         { punchPassRemaining: remaining, lastSignInAt: now },
         user.email ?? 'unknown',
       )
       if (target.isSelf) await reloadProfile()
-      notifyOk(
-        signedInMessage(target, `${remaining} punch${remaining !== 1 ? 'es' : ''} remaining.`),
-      )
+      notifyOk(signedInMessage(target, `${formatPunches(remaining)} remaining.`))
     } catch (e) {
       notifyError(e)
     } finally {
@@ -195,33 +237,35 @@ export function HomePage() {
   }
 
   /**
-   * Sign `target` in on a punch from `donor`'s account.
+   * Sign `target` in on a punch — whole or half — from `donor`'s account.
    *
    * Two profile writes, so it is supervisor-only in practice as well as by
    * intent: firestore.rules lets you update `users/{uid}` for yourself or as a
    * supervisor, and this touches two different people.
    */
-  async function signInWithDonatedPunch(target: SignInTarget, donor: UserProfile) {
+  async function signInWithDonatedPunch(
+    target: SignInTarget,
+    donor: UserProfile,
+    cost: PunchCost,
+  ) {
     if (!profile || !user) return
+    setPunchChoice(null)
     const donorName = donor.preferredName || donor.name
-    if (donor.punchPassRemaining < 1) {
-      notifyInfo(`${donorName} has no punch passes remaining.`)
+    if (!canSpendPunches(donor.punchPassRemaining, cost)) {
+      notifyInfo(`${donorName} does not have enough punches left for that.`)
       return
     }
     if (hasSignedInToday(target.profile.lastSignInAt)) {
-      notifyInfo(
-        target.isSelf
-          ? 'You have already signed in today. Sign-ins reset at midnight.'
-          : `${nameOf(target)} has already signed in today. Sign-ins reset at midnight.`,
-      )
+      notifyInfo(alreadySignedInMessage(target))
       return
     }
 
     setSigningIn(true)
     try {
       const now = new Date().toISOString()
-      const donorLeft = donor.punchPassRemaining - 1
+      const donorLeft = spendPunches(donor.punchPassRemaining, cost)
       const pendingStatus = privileged ? undefined : ('pending' as const)
+      const donated = cost === HALF_PUNCH ? 'Half a punch' : 'Punch'
 
       await updateProfile(donor.uid, { punchPassRemaining: donorLeft }, user.email ?? 'unknown')
       await updateProfile(target.profile.uid, { lastSignInAt: now }, user.email ?? 'unknown')
@@ -229,8 +273,8 @@ export function HomePage() {
         timestamp: now,
         userId: target.profile.uid,
         userName: nameOf(target),
-        accessType: `Punch Pass (from ${donorName})`,
-        notes: `Punch donated by ${donorName} — ${donorLeft} punch${donorLeft !== 1 ? 'es' : ''} remaining on their account`,
+        accessType: `${punchPassName(cost)} (from ${donorName})`,
+        notes: `${donated} donated by ${donorName} — ${formatPunches(donorLeft)} remaining on their account`,
         ...(pendingStatus ? { status: pendingStatus } : {}),
       })
 
@@ -238,7 +282,9 @@ export function HomePage() {
       // lastSignInAt or the donor's punch count is now on screen and stale.
       if (target.isSelf || donor.uid === profile.uid) await reloadProfile()
       notifyOk(
-        `✓ ${target.isSelf ? 'Signed in' : `${nameOf(target)} signed in`} using ${donorName}'s punch — ${donorLeft} left on their account.`,
+        `✓ ${target.isSelf ? 'Signed in' : `${nameOf(target)} signed in`} using ${donorName}'s ${
+          cost === HALF_PUNCH ? 'half punch' : 'punch'
+        } — ${formatPunches(donorLeft)} left on their account.`,
       )
     } catch (e) {
       notifyError(e)
@@ -260,8 +306,11 @@ export function HomePage() {
       let accessType = ''
       let notes = `Purchased: ${option.label} ${option.price}`
 
-      if (option.id === 'dropin') {
-        accessType = 'Drop-In'
+      // Per-visit access: a drop-in, or a half day at half the rate. Neither
+      // leaves anything on the profile — the log entry is the whole record —
+      // so the option's own name is what the sign-in book gets.
+      if (option.pass === 'dropin') {
+        accessType = option.label
       } else if (option.punches) {
         const total = option.punches
         const remaining = total - 1
@@ -325,6 +374,26 @@ export function HomePage() {
       setSigningIn(false)
     }
   }
+
+  /** Whose punches are being spent — the donor's, or the target's own. */
+  function punchAccount(spend: PunchSpend): UserProfile {
+    return spend.donor ?? spend.target.profile
+  }
+
+  /** "You have" / "Jane has", naming whoever the punches belong to. */
+  function punchOwnerPhrase(spend: PunchSpend): string {
+    if (spend.donor) return `${spend.donor.preferredName || spend.donor.name} has`
+    return spend.target.isSelf ? 'You have' : `${nameOf(spend.target)} has`
+  }
+
+  /** The one entry point the punch modal uses, whichever route it came by. */
+  function spendPunch(spend: PunchSpend, cost: PunchCost) {
+    return spend.donor
+      ? signInWithDonatedPunch(spend.target, spend.donor, cost)
+      : signInWithPunchPass(spend.target, cost)
+  }
+
+  const punchBalance = punchChoice ? punchAccount(punchChoice).punchPassRemaining : 0
 
   return (
     <div className="mx-auto max-w-xl space-y-6 p-6 pb-16">
@@ -439,16 +508,15 @@ export function HomePage() {
           // Not the person being signed in — spending your own punch on
           // yourself is the ordinary punch flow, not a donation.
           excludeUid={donorFor.profile.uid}
-          filter={(m) => m.punchPassRemaining > 0}
+          filter={(m) => hasPunchesLeft(m.punchPassRemaining)}
           emptyLabel="No other member has a punch left to give."
-          badgeFor={(m) => ({
-            label: `${m.punchPassRemaining} punch${m.punchPassRemaining !== 1 ? 'es' : ''}`,
-            color: KBC.cyan,
-          })}
+          badgeFor={(m) => ({ label: formatPunches(m.punchPassRemaining), color: KBC.cyan })}
           onSelect={(donor) => {
             const target = donorFor
             setDonorFor(null)
-            void signInWithDonatedPunch(target, donor)
+            // Same question as an ordinary punch sign-in — whole or half — so
+            // it goes to the same modal rather than spending a punch outright.
+            setPunchChoice({ target, donor })
           }}
           onClose={() => setDonorFor(null)}
         />
@@ -470,31 +538,39 @@ export function HomePage() {
         <Modal onClose={() => setPunchChoice(null)}>
           <h2 className="text-base font-bold text-black">Sign In</h2>
           <p className="mt-1 text-sm text-neutral-600">
-            {punchChoice.isSelf ? 'You have' : `${nameOf(punchChoice)} has`}{' '}
-            {punchChoice.profile.punchPassRemaining} punch
-            {punchChoice.profile.punchPassRemaining !== 1 ? 'es' : ''} remaining.
+            {punchOwnerPhrase(punchChoice)} {formatPunches(punchBalance)} remaining.
           </p>
           <div className="mt-4 space-y-2">
-            <button
-              type="button"
-              onClick={() => void signInWithPunchPass(punchChoice)}
-              className="w-full rounded-xl p-3 font-bold text-white"
-              style={{ backgroundColor: KBC.cyan }}
-            >
-              Use Punch Pass
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setAccessTarget(punchChoice)
-                setPunchChoice(null)
-                setShowAccess(true)
-              }}
-              className="w-full rounded-xl border p-3 font-bold"
-              style={{ borderColor: KBC.pink, color: KBC.pink }}
-            >
-              Buy Access Pass
-            </button>
+            {/* A balance of half a punch buys a half day and nothing else, so
+                the full-day button is not offered where it cannot be paid. */}
+            {canSpendPunches(punchBalance, FULL_PUNCH) && (
+              <PunchButton
+                onClick={() => void spendPunch(punchChoice, FULL_PUNCH)}
+                filled
+                label="Use Punch Pass"
+                detail="Full day · 1 punch"
+              />
+            )}
+            <PunchButton
+              onClick={() => void spendPunch(punchChoice, HALF_PUNCH)}
+              filled={!canSpendPunches(punchBalance, FULL_PUNCH)}
+              label="Use Half Punch"
+              detail="Half day · ½ punch"
+            />
+            {!punchChoice.donor && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAccessTarget(punchChoice.target)
+                  setPunchChoice(null)
+                  setShowAccess(true)
+                }}
+                className="w-full rounded-xl border p-3 font-bold"
+                style={{ borderColor: KBC.pink, color: KBC.pink }}
+              >
+                Buy Access Pass
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setPunchChoice(null)}
@@ -506,6 +582,43 @@ export function HomePage() {
         </Modal>
       )}
     </div>
+  )
+}
+
+/**
+ * One of the two ways to spend a punch, sized and worded the same either way.
+ *
+ * The cost is on the button rather than only in the sentence above it, because
+ * the two options differ by how much they take off the balance and nothing
+ * else — "Use Punch Pass" and "Use Half Punch" are too easily read as the same
+ * button twice without it. `filled` marks the primary: the full day normally,
+ * the half day when a half punch is all that is left to spend.
+ */
+function PunchButton({
+  onClick,
+  filled,
+  label,
+  detail,
+}: {
+  onClick: () => void
+  filled: boolean
+  label: string
+  detail: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-xl border p-3 font-bold"
+      style={
+        filled
+          ? { backgroundColor: KBC.cyan, borderColor: KBC.cyan, color: '#fff' }
+          : { borderColor: KBC.cyan, color: KBC.cyan }
+      }
+    >
+      {label}
+      <span className="block text-xs font-semibold opacity-80">{detail}</span>
+    </button>
   )
 }
 

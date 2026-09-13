@@ -30,6 +30,9 @@ export type UserProfile = {
   membershipConfirmed: boolean // false = they recorded a purchase, an admin has yet to confirm it
   isAdmin: boolean // dynamically managed via Firestore — except SUPER_ADMIN_EMAIL which is hardcoded
   isSupervisor: boolean
+  // Punches in hand. A half is a legitimate balance: a full visit spends one
+  // punch, a half-day visit spends half. Read and write it through
+  // domain/punchPass.ts rather than assuming a whole number.
   punchPassRemaining: number
   memberSince: string // first registration date (ISO)
   membershipStart: string | null // start of current paid period (ISO)
