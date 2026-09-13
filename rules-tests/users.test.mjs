@@ -320,6 +320,22 @@ test('a member can spend a punch pass on sign-in', async () => {
   )
 })
 
+test('a member can spend half a punch on a half-day sign-in', async () => {
+  await seed('uid-m', profile({ email: 'm@example.com', punchPassRemaining: 5 }))
+  const db = asUser('uid-m', 'm@example.com')
+  // A half-day visit costs half a punch, so the balance a member writes for
+  // themselves is not always a whole number. The rules gate who may touch
+  // punchPassRemaining, never what shape the count is — this is here so that
+  // stays true, since a rule that quietly required an integer would fail every
+  // half-day sign-in at the door.
+  await assertSucceeds(
+    updateDoc(doc(db, 'users', 'uid-m'), {
+      punchPassRemaining: 4.5,
+      lastSignInAt: '2026-08-23T12:00:00.000Z',
+    }),
+  )
+})
+
 test('an unauthenticated caller cannot write profiles', async () => {
   await seed('uid-m', profile())
   const db = testEnv.unauthenticatedContext().firestore()

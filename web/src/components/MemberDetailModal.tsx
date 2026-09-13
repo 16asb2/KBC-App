@@ -1,6 +1,14 @@
 import { useState } from 'react'
 import { KBC } from '@/constants/theme'
 import { PASS_OPTIONS, accessPassLabel, addMonths, isDatedPass } from '@/domain/membershipPass'
+import {
+  HALF_PUNCH,
+  formatPunchCount,
+  formatPunches,
+  hasPunchesLeft,
+  normalizePunches,
+  spendPunches,
+} from '@/domain/punchPass'
 import type { AccessPassId, UserProfile } from '@/types/member'
 import { Modal } from './Modal'
 import { formatShortDate } from '@/utils/datetime'
@@ -209,9 +217,9 @@ export function MemberDetailModal({
       )}
 
       {/* Punch passes */}
-      {member.punchPassRemaining > 0 && (
+      {hasPunchesLeft(member.punchPassRemaining) && (
         <p className="border-t border-neutral-100 py-3 text-sm font-semibold text-neutral-700">
-          🎟 {member.punchPassRemaining} punch{member.punchPassRemaining !== 1 ? 'es' : ''} remaining
+          🎟 {formatPunches(member.punchPassRemaining)} remaining
         </p>
       )}
 
@@ -223,7 +231,9 @@ export function MemberDetailModal({
               onCancel={() =>
                 void onSave({
                   pendingPunches: null,
-                  punchPassRemaining: Math.max(0, member.punchPassRemaining - (pendingPunches - 1)),
+                  punchPassRemaining: normalizePunches(
+                    member.punchPassRemaining - (pendingPunches - 1),
+                  ),
                 })
               }
               onConfirm={() => void onSave({ pendingPunches: null })}
@@ -268,17 +278,24 @@ export function MemberDetailModal({
 
           <FieldLabel>Punch Passes Remaining</FieldLabel>
           <div className="flex items-center gap-4">
+            {/* Steps by a half, not a whole: a half-day visit spends half a
+                punch, so a balance of 4.5 is something an admin has to be able
+                to reach and correct. */}
             <button
               type="button"
-              onClick={() => setPunches((p) => Math.max(0, p - 1))}
+              aria-label="Remove half a punch"
+              onClick={() => setPunches((p) => spendPunches(p, HALF_PUNCH))}
               className="flex size-9 items-center justify-center rounded-full bg-white text-lg font-bold text-neutral-700 shadow-sm"
             >
               −
             </button>
-            <span className="w-6 text-center text-base font-bold text-black">{punches}</span>
+            <span className="w-10 text-center text-base font-bold text-black">
+              {formatPunchCount(punches)}
+            </span>
             <button
               type="button"
-              onClick={() => setPunches((p) => p + 1)}
+              aria-label="Add half a punch"
+              onClick={() => setPunches((p) => normalizePunches(p + HALF_PUNCH))}
               className="flex size-9 items-center justify-center rounded-full bg-white text-lg font-bold text-neutral-700 shadow-sm"
             >
               +
