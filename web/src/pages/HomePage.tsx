@@ -55,6 +55,12 @@ type PunchSpend = {
   target: SignInTarget
   /** Whose punches pay. Absent means the target's own. */
   donor?: UserProfile
+  /**
+   * Set when the punches were bought a moment ago, on the way in. The question
+   * is the same one; only the sentence above it changes, and offering to sell
+   * them another pass directly underneath would not read as an option.
+   */
+  justBought?: boolean
 }
 
 // Ported from mobile@1cdfada/app/(tabs)/home.tsx — self sign-in, signing in
@@ -305,6 +311,8 @@ export function HomePage() {
       const profileUpdates: Partial<UserProfile> = {}
       let accessType = ''
       let notes = `Purchased: ${option.label} ${option.price}`
+      /** Punches just bought, when the visit still has to be priced. */
+      let punchesBought: number | null = null
 
       // Per-visit access: a drop-in, or a half day at half the rate. Neither
       // leaves anything on the profile — the log entry is the whole record —
@@ -313,8 +321,13 @@ export function HomePage() {
         accessType = option.label
       } else if (option.punches) {
         const total = option.punches
-        const remaining = total - 1
-        profileUpdates.punchPassRemaining = remaining
+        // The pack is credited whole and this visit is charged separately.
+        // Buying a pack on the way in used to spend a punch on the spot, which
+        // quietly decided the visit was a full day — the one question a climber
+        // with punches is always asked. It is asked here too now: this branch
+        // records the purchase, and the punch modal below prices the visit.
+        punchesBought = total
+        profileUpdates.punchPassRemaining = total
         profileUpdates.pendingPunches = total // admin confirmation required
         // Punches do not displace a membership: someone on an annual pass who
         // tops up their punches is still on the annual pass. Only a member with
@@ -322,8 +335,8 @@ export function HomePage() {
         if (target.profile.membershipAccessPass === 'none') {
           profileUpdates.membershipAccessPass = 'punch'
         }
-        accessType = `Punch Pass (${remaining} left)`
-        notes += ` — ${total} punches added, 1 used`
+        accessType = `Punch Pass (${total} left)`
+        notes += ` — ${total} punches added`
       } else if (option.months) {
         const expiry = new Date(now)
         expiry.setMonth(expiry.getMonth() + option.months)
@@ -346,7 +359,10 @@ export function HomePage() {
         notes = voucherCode ? `Voucher code: ${voucherCode}` : 'Voucher'
       }
 
-      profileUpdates.lastSignInAt = now.toISOString()
+      // A punch purchase is not itself the visit — the punch spent for it is,
+      // and that has not been priced yet. Everything else admits the member on
+      // the spot, so it stamps the sign-in here as it always did.
+      if (punchesBought === null) profileUpdates.lastSignInAt = now.toISOString()
       await updateProfile(target.profile.uid, profileUpdates, user.email ?? 'unknown')
       if (target.isSelf) await reloadProfile()
 
@@ -358,6 +374,26 @@ export function HomePage() {
         accessType,
         notes,
       })
+
+      if (punchesBought !== null) {
+        // Hand off to the one place that asks how long someone is climbing.
+        // It carries the credited balance rather than the stale profile: the
+        // reload above, when there was one, has not reached this closure.
+        setPunchChoice({
+          justBought: true,
+          target: {
+            ...target,
+            profile: {
+              ...target.profile,
+              punchPassRemaining: punchesBought,
+              membershipAccessPass:
+                profileUpdates.membershipAccessPass ?? target.profile.membershipAccessPass,
+            },
+          },
+        })
+        return
+      }
+
       // Sign-in record (Sign-In History) — every purchase also signs the member in
       await addLogEntry({
         timestamp: new Date(now.getTime() + 1).toISOString(),
@@ -536,8 +572,11 @@ export function HomePage() {
 
       {punchChoice && (
         <Modal onClose={() => setPunchChoice(null)}>
-          <h2 className="text-base font-bold text-black">Sign In</h2>
+          <h2 className="text-base font-bold text-black">
+            {punchChoice.justBought ? 'How long are you climbing?' : 'Sign In'}
+          </h2>
           <p className="mt-1 text-sm text-neutral-600">
+            {punchChoice.justBought && 'Punches added. '}
             {punchOwnerPhrase(punchChoice)} {formatPunches(punchBalance)} remaining.
           </p>
           <div className="mt-4 space-y-2">
@@ -557,7 +596,7 @@ export function HomePage() {
               label="Use Half Punch"
               detail="Half day · ½ punch"
             />
-            {!punchChoice.donor && (
+            {!punchChoice.donor && !punchChoice.justBought && (
               <button
                 type="button"
                 onClick={() => {
