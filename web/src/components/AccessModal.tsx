@@ -13,8 +13,8 @@ export function AccessModal({
 }: {
   onComplete: (option: AccessOption, voucherCode?: string) => void
   /**
-   * Spend a punch from a different member's account. Supply this only for
-   * supervisors and admins: it writes to somebody else's profile, which
+   * Spend a punch — whole or half — from a different member's account. Supply
+   * this only for supervisors and admins: it writes to somebody else's profile, which
    * firestore.rules only lets them do — for a member the write would be
    * rejected, so offering it would be offering a guaranteed failure.
    */
@@ -72,7 +72,7 @@ export function AccessModal({
                 <span>
                   <span className="block font-semibold text-black">Use Another Member&apos;s Punch</span>
                   <span className="block text-xs text-neutral-500">
-                    Deduct a punch from a different member&apos;s account
+                    Deduct a punch, or half a punch, from a different member&apos;s account
                   </span>
                 </span>
                 <span className="text-lg">🎟</span>

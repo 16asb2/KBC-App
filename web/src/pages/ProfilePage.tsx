@@ -16,6 +16,7 @@ import {
 } from '@/domain/memberAccess'
 import { parseAdditionalEmails, parseEmergencyContact } from '@/domain/memberProfile'
 import { accessPassLabel, isDatedPass, passFromDates } from '@/domain/membershipPass'
+import { formatPunchCount, hasPunchesLeft } from '@/domain/punchPass'
 import { isAdmin } from '@/domain/roles'
 import { updateProfile } from '@/services/profiles'
 import type { UserProfile } from '@/types/member'
@@ -249,8 +250,8 @@ function AccessCard({
       <div className="mt-3 flex flex-wrap gap-2">
         <Stat
           label={`Punch${profile.punchPassRemaining === 1 ? '' : 'es'} remaining`}
-          value={String(profile.punchPassRemaining)}
-          color={profile.punchPassRemaining > 0 ? KBC.cyan : '#9ca3af'}
+          value={formatPunchCount(profile.punchPassRemaining)}
+          color={hasPunchesLeft(profile.punchPassRemaining) ? KBC.cyan : '#9ca3af'}
         />
         <Stat
           label="Last signed in"
@@ -275,7 +276,7 @@ function AccessCard({
         </p>
       )}
 
-      {state === 'none' && profile.punchPassRemaining === 0 && (
+      {state === 'none' && !hasPunchesLeft(profile.punchPassRemaining) && (
         <p className="mt-3 text-sm text-neutral-500">
           You have no access pass right now.{' '}
           <Link to="/home" className="font-bold" style={{ color: KBC.cyan }}>

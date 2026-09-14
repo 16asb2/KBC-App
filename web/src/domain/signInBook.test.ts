@@ -145,7 +145,12 @@ describe('accessKind', () => {
     ['Access pass', 'member'],
     ['Punch Pass (4 left)', 'punch'],
     ['Punch Pass (from Jane)', 'punch'],
+    // Half punches: "Pass" in the name must not read as a membership.
+    ['Half Punch Pass (4.5 left)', 'punch'],
+    ['Half Punch Pass (from Jane)', 'punch'],
     ['Drop-In', 'dropin'],
+    // A half day is a drop-in sold at half the rate, not a membership.
+    ['Half Day Pass', 'dropin'],
     ['Voucher', 'other'],
   ])('maps %s to %s', (input, expected) => {
     expect(accessKind(input)).toBe(expected)

@@ -42,6 +42,12 @@ All notable changes to KBC Scheduler are documented here.
   The icon is deliberately tiny — 96px square, a couple of kB — and is the only image the card draws. See the iPhone notes below for why that matters more than it sounds.
 
 ### Added
+- **A half day, for half the price — and half a punch to pay for it.**
+
+  Two new ways to climb for part of a day. **Half Day Pass** is a $10 drop-in, sitting beside the $20 one in the access sheet and recorded the same way: a line in the sign-in book, nothing written to the profile. **Use Half Punch** is the other half of the same idea — the punch modal now asks whether this visit is a full day (1 punch) or a half (½), instead of assuming the whole thing. Supervisors get the same choice when spending a punch out of another member's account.
+
+  So `punchPassRemaining` can now hold a half, and 4.5 is a real balance rather than a corrupt one. Everything that spends, gates on or prints a punch goes through `web/src/domain/punchPass.ts` — halves are exact in floating point, so a run of half-day visits lands on zero and not on 0.0000001, and a balance snaps to the nearest half when it arrives from outside the app. The admin panel's punch field steps by 0.5 to match, and its CSV import reads 4.5 instead of truncating it to 4 and handing the member a free half day.
+
 - **A Popular sort on the Boulders tab**, beside Number, Name and Grade. It ranks by likes plus Climbed — an opinion and traffic, added unweighted, so a problem needs both to reach the top. Ties fall back to boulder number so equally quiet problems keep a stable order.
 
 - **Small and Large versions of Jugs, Crimps, Slopers and Pinches.** A small crimp and a large crimp are not the same problem. The unsized originals stay on the list: every climb logged before today records a bare `Crimps`, and dropping it would orphan those badge counts. The variants reuse their base hold's colour and drawing, scaled up or down, so twelve badges did not become twelve new icons.

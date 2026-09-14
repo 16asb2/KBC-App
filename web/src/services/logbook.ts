@@ -22,7 +22,7 @@ export type LogEntry = {
   timestamp: string // ISO
   userId: string
   userName: string
-  accessType: string // e.g. "Active Member", "Drop-In", "Punch Pass (4 left)"
+  accessType: string // e.g. "Half Day Pass", "Drop-In", "Punch Pass (4 left)"
   notes?: string
   amendedBy?: string
   amendedAt?: string
@@ -49,6 +49,13 @@ export type AccessOption = {
 
 export const ACCESS_OPTIONS: AccessOption[] = [
   { id: 'dropin', label: 'Drop-In', price: '$20', pass: 'dropin' },
+  {
+    id: 'halfday',
+    label: 'Half Day Pass',
+    price: '$10',
+    detail: 'Half the drop-in rate, for a shorter visit',
+    pass: 'dropin',
+  },
   { id: 'punch10', label: '10× Punch Passes', price: '$160', punches: 10, pass: 'punch' },
   { id: 'mem1m', label: '1-month pass', price: '$55', months: 1, pass: '1month' },
   { id: 'mem4m', label: '4-months pass', price: '$200 ($50/m)', months: 4, pass: '4month' },
